@@ -1,0 +1,76 @@
+{
+  "generatedAt": "2026-08-05T14:00:46.167Z",
+  "materialPath": "D:\\code\\Codex项目交接包-2026-07-31\\06_MVP\\ai-digital-employee-mvp\\sample-material\\five-platform-community-guide-20260805\\community-activity-guide-1080x1920.mp4",
+  "copy": {
+    "title": "社区活动报名指南",
+    "body": "社区活动报名开放中。请提前确认活动时间、地点与参与要求，按公告指引提交报名信息，并留意后续通知。欢迎收藏这份报名流程，转给有需要的邻里朋友。"
+  },
+  "precheck": {
+    "path": "D:\\code\\Codex项目交接包-2026-07-31\\06_MVP\\ai-digital-employee-mvp\\sample-material\\five-platform-community-guide-20260805\\community-activity-guide-1080x1920.mp4",
+    "exists": true,
+    "checkedAt": "2026-08-05T14:00:46.163Z",
+    "ruleVersion": "media-2026.08.05.1",
+    "overall": "WARNING",
+    "message": "存在警告，需人工确认后继续",
+    "meta": {
+      "name": "community-activity-guide-1080x1920.mp4",
+      "extension": ".mp4",
+      "type": "video",
+      "format": "isom",
+      "size": 3318041,
+      "modifiedAt": "2026-08-05T14:00:12.379Z",
+      "sha256": "8d798ef4a207a9ccfbfcd299d2b5466edf3e72a95129c634713fc052426de16f",
+      "width": null,
+      "height": null,
+      "aspectRatio": null
+    },
+    "results": [
+      {
+        "platformCode": "xiaohongshu",
+        "status": "WARNING",
+        "reasons": [],
+        "warnings": [
+          "当前环境未安装视频元数据解析器，视频分辨率、画幅比例、时长、编码、码率和帧率尚未自动校验"
+        ]
+      },
+      {
+        "platformCode": "douyin",
+        "status": "WARNING",
+        "reasons": [],
+        "warnings": [
+          "当前环境未安装视频元数据解析器，视频分辨率、画幅比例、时长、编码、码率和帧率尚未自动校验"
+        ]
+      },
+      {
+        "platformCode": "wechat_channels",
+        "status": "WARNING",
+        "reasons": [],
+        "warnings": [
+          "当前环境未安装视频元数据解析器，视频分辨率、画幅比例、时长、编码、码率和帧率尚未自动校验"
+        ]
+      },
+      {
+        "platformCode": "bilibili",
+        "status": "WARNING",
+        "reasons": [],
+        "warnings": [
+          "当前环境未安装视频元数据解析器，视频分辨率、画幅比例、时长、编码、码率和帧率尚未自动校验"
+        ]
+      },
+      {
+        "platformCode": "weibo",
+        "status": "WARNING",
+        "reasons": [],
+        "warnings": [
+          "当前环境未安装视频元数据解析器，视频分辨率、画幅比例、时长、编码、码率和帧率尚未自动校验"
+        ]
+      }
+    ]
+  },
+  "compliance": {
+    "overall": "PASSED",
+    "findings": [],
+    "ruleVersion": "xhs-local-2026.08.04.1",
+    "checkedAt": "2026-08-05T14:00:46.167Z"
+  }
+}

@@ -1,0 +1,30 @@
+.document-upload { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px; background: #f5f8fc; border: 1px solid #dce5ef; border-radius: 12px; margin: 18px 0 12px; }
+.document-upload input { flex: 1; min-width: 200px; max-width: 100%; }
+.document-upload .primary-btn, #documentSearchForm .primary-btn { width: auto; flex: 0 0 auto; padding: 0 22px; }
+#knowledgePanel > .document-upload, #knowledgePanel > .section-note, #knowledgePanel > .document-layout, #knowledgePanel > .toast { margin-left: 24px; margin-right: 24px; }
+#knowledgePanel > .document-layout { margin-bottom: 24px; }
+#reviewPanel { padding: 24px; align-content: start; }
+#reviewTitle { margin: 0 0 8px; }
+#documentFilter, #documentSearchQuery { border: 1px solid #dce5ef; border-radius: 8px; padding: 11px 12px; background: #fff; color: #243840; }
+#documentFilter:focus, #documentSearchQuery:focus { outline: 2px solid #0f766e; outline-offset: 1px; }
+.document-layout { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(280px, 1fr); gap: 20px; align-items: start; margin-top: 16px; }
+.document-list, .document-preview-pane { min-width: 0; }
+.document-list > input { width: 100%; margin-bottom: 12px; }
+#documentRows, #documentPreview { max-height: 62vh; overflow: auto; }
+.document-preview-pane { padding: 18px; border: 1px solid #dce5ef; border-radius: 12px; background: #f8fafc; }
+.document-preview-pane { min-height: 260px; }
+.document-preview-pane h4 { margin: 0 0 14px; overflow-wrap: anywhere; }
+.document-row { padding: 16px 12px; border-bottom: 1px solid #dce5ef; overflow-wrap: anywhere; }
+.document-row.selected { background: #eff6ff; border-radius: 8px; }
+.document-row > strong { display: block; }
+.document-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.document-actions button { padding: 5px 10px; font-size: 12px; }
+.document-notice { font-size: 12px; color: #925318; margin: 8px 0; }
+.document-passage { padding: 14px 0; border-bottom: 1px solid #dce5ef; overflow-wrap: anywhere; }
+.document-passage strong { color: #245390; font-size: 13px; }
+.document-passage p { white-space: pre-wrap; line-height: 1.8; margin: 8px 0; font-size: 14px; }
+#documentToast { white-space: pre-wrap; }
+#documentSearchForm { display: flex; gap: 12px; margin: 22px 0; }
+#documentSearchQuery { flex: 1; min-width: 0; }
+@media (max-width: 950px) { .document-layout { grid-template-columns: 1fr; } #documentRows, #documentPreview { max-height: 45vh; } }
+@media (max-width: 600px) { .document-upload .primary-btn { width: 100%; } #documentSearchForm { flex-wrap: wrap; } #documentSearchQuery { flex-basis: 100%; } }

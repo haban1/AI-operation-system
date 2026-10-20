@@ -1,0 +1,2 @@
+FROM registry.cn-shenzhen.aliyuncs.com/houhou/wechat-robot-admin-frontend:latest
+COPY dist /app/dist

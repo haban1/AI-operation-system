@@ -1,0 +1,2 @@
+FROM registry.cn-shenzhen.aliyuncs.com/houhou/wechat-robot-admin-backend:latest
+COPY .build/wechat-robot-admin-backend /app/wechat-robot-admin-backend

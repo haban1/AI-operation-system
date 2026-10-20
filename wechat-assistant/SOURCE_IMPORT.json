@@ -1,0 +1,2069 @@
+{
+  "copiedAtUtc": "2026-09-16T10:47:29.257108+00:00",
+  "sourceDirectory": "E:\\projects\\weixin_robot",
+  "sourceHead": "fbc24fd3386453e92188c699f6d7e83da381696c",
+  "sourceIsDirty": true,
+  "selection": "Existing Git-tracked and unignored untracked working-tree files, with additional code-only exclusions. Git-ignored files were not enumerated.",
+  "files": [
+    {
+      "path": ".dockerignore",
+      "size": 198,
+      "sha256": "0e47238bdbc350b41c755e62bf02e4d26c733c17e5d975c6e077f84d33ceee68"
+    },
+    {
+      "path": ".env.example",
+      "size": 4763,
+      "sha256": "b8db2260c8081eab7d9f032312b8cd3eaaf2db53fd67b7cbb1ec02aa40e6d917"
+    },
+    {
+      "path": ".gitignore",
+      "size": 1197,
+      "sha256": "b6b0a229b3be767dd7e1cf79df1db4a9499d09239364570bc0a3cbddfafa4900"
+    },
+    {
+      "path": "Dockerfile",
+      "size": 592,
+      "sha256": "97fb5e517763e2dd1376df63bca7597b4af9d494cfe747381df8ac81dd31ea46"
+    },
+    {
+      "path": "README.md",
+      "size": 12227,
+      "sha256": "38990a2ed3413b271282582fe9cfbdb6dc60fc4c04ea9e6b0e7050acb562545c"
+    },
+    {
+      "path": "alembic.ini",
+      "size": 613,
+      "sha256": "1d6450322edaaf6926f43b983861e85cd711f6cc7701168fe5ccb648e88cfd7d"
+    },
+    {
+      "path": "alembic/env.py",
+      "size": 1240,
+      "sha256": "95ca9a79dd0352abb0521212ad418622185819af7829ff725b0cf38f766a07fd"
+    },
+    {
+      "path": "alembic/versions/.gitkeep",
+      "size": 2,
+      "sha256": "7eb70257593da06f682a3ddda54a9d260d4fc514f645237f5ca74b08f8da61a6"
+    },
+    {
+      "path": "app/__init__.py",
+      "size": 53,
+      "sha256": "a8d7f2ec50d5c22936c04ac6b0467af9ab8738bcf731d5ed69281b09ed137c9c"
+    },
+    {
+      "path": "app/agent/__init__.py",
+      "size": 41,
+      "sha256": "ec8745eb52de7ff47977048cff984d282127de395b37c47f15ea83213d9f5f8e"
+    },
+    {
+      "path": "app/agent/intent.py",
+      "size": 11126,
+      "sha256": "f28ac734b2aaaccf2645b8dac792846879f38639ca1752b25c9a2ca831664f5c"
+    },
+    {
+      "path": "app/agent/memory.py",
+      "size": 1810,
+      "sha256": "5f19f46522b83e1b22bb87041364ffc79af5e8f150c2a0c3fee289593ae4ff19"
+    },
+    {
+      "path": "app/agent/retrieval.py",
+      "size": 1573,
+      "sha256": "bac1c441dfc98f13232fd11b9b79305693abd747243efc9be3b9157c3d63f814"
+    },
+    {
+      "path": "app/agent/service.py",
+      "size": 14565,
+      "sha256": "399a8b12d974d99c38293f58d01e107da40f8d826a3b31c3669515ee3367d7f2"
+    },
+    {
+      "path": "app/agent/tool_chain.py",
+      "size": 8608,
+      "sha256": "071fde2e031f7449a5cd24a806a02df3fb06d410a3039eecc5a1876f01ce22b5"
+    },
+    {
+      "path": "app/agent/tools.py",
+      "size": 1147,
+      "sha256": "066d97801b84ecd99171a688d6b3d4bab7e76fd467c6c77b85ef82ae3bffb62d"
+    },
+    {
+      "path": "app/agent/workflow.py",
+      "size": 17199,
+      "sha256": "84f279badc232992828591bee701fc2a69d5f2789df1d4b59f80f50cbb12974f"
+    },
+    {
+      "path": "app/api/__init__.py",
+      "size": 27,
+      "sha256": "fad9106f21617da61cf6876ddbc49b13e939f0850629b9da9ee4397c4a78022f"
+    },
+    {
+      "path": "app/api/auth.py",
+      "size": 1690,
+      "sha256": "daf39b5c99d18c0e5ad6130e6a8f8b13de6a4417c17af78a1bf30b6e427eb0b4"
+    },
+    {
+      "path": "app/api/chat.py",
+      "size": 3777,
+      "sha256": "49406683966a0034928c77f2ef5a7a786cd770bf78bc350aceef027b8dc9a3da"
+    },
+    {
+      "path": "app/api/courses.py",
+      "size": 6622,
+      "sha256": "3ccfe79adcd7ddb55b556c6acb6164748591f332998ce7c1cc38d22796405713"
+    },
+    {
+      "path": "app/api/deps.py",
+      "size": 861,
+      "sha256": "5358223c7358479f47ead1fae4f3679ec6d83234a051932176a8ae1ec8811344"
+    },
+    {
+      "path": "app/api/faqs.py",
+      "size": 32894,
+      "sha256": "90b7378f6eead33958f75a96b090308b1aeabe6a96ff961476195b3a2199577e"
+    },
+    {
+      "path": "app/api/knowledge.py",
+      "size": 4762,
+      "sha256": "7f7efacf0e99f5434f1d1e2da9626a8ba48923f7b7f79d4354d81327c284a0b9"
+    },
+    {
+      "path": "app/api/materials.py",
+      "size": 2304,
+      "sha256": "58df9b1525f0e704126c0589ecb0743779ae980f77c4de517764d8cdbcec1af8"
+    },
+    {
+      "path": "app/api/schemas.py",
+      "size": 8781,
+      "sha256": "69836dba84235e4f59790ac7eb6aba31e996b334188ce619dc9884c83131b931"
+    },
+    {
+      "path": "app/api/wechat_robot.py",
+      "size": 15562,
+      "sha256": "4a9deba55d30997781e1359ce2adb7e9398d5c38c036a83c3bdb40dd50214e73"
+    },
+    {
+      "path": "app/api/wecom.py",
+      "size": 7553,
+      "sha256": "98cf270ea0f7e1e6204d8c1db3aea2386414fd605ed8a526fd6e646dcd8231e8"
+    },
+    {
+      "path": "app/core/__init__.py",
+      "size": 56,
+      "sha256": "80ebf731c1b24ccbfc7c4cbdfe0e15b45ebb37ee5d3d1552a09c844a5b0c7b79"
+    },
+    {
+      "path": "app/core/cache.py",
+      "size": 1715,
+      "sha256": "c11c17da4a47b0710d95abb326eda37b65f3d628e46fa35a4cb0011cd0668b32"
+    },
+    {
+      "path": "app/core/celery_app.py",
+      "size": 515,
+      "sha256": "b943daf1ff19c1041eeff0dc39e919af27c3ef6263e74accabab4a66ffe45fbe"
+    },
+    {
+      "path": "app/core/config.py",
+      "size": 5196,
+      "sha256": "270e54abc2fd2fe011c2aef54706779e52f435ab7309f1f672003f8811bca2a3"
+    },
+    {
+      "path": "app/core/database.py",
+      "size": 15368,
+      "sha256": "75a318b12241f737699d196ae22c37b19c3eddcd905da1f11256d4770284112b"
+    },
+    {
+      "path": "app/core/legacy_config.py",
+      "size": 1195,
+      "sha256": "a0dd15bd8c7b541e7d0a045a2a2782743146256ce84f685f9d493800d1c5e634"
+    },
+    {
+      "path": "app/core/llm.py",
+      "size": 2269,
+      "sha256": "e0daf2d50e9168915ba0e2436cb26a6f049e3903f9e3587e4dbf8099aaf5b0ec"
+    },
+    {
+      "path": "app/core/permissions.py",
+      "size": 388,
+      "sha256": "837f48a73246476030ded5cd50ca3c980935e51a5dc1831135a0dea3358a083e"
+    },
+    {
+      "path": "app/core/security.py",
+      "size": 1024,
+      "sha256": "7fe30dac0f2fd43b4d1a944ec772ebe9b5df3118ae04158222c091ada7a36b88"
+    },
+    {
+      "path": "app/core/vector_store.py",
+      "size": 3809,
+      "sha256": "4d186d2671debd5adf32d7eb6b6f89ae5fb912cac5e4b123227cac3d051a2cee"
+    },
+    {
+      "path": "app/faq/__init__.py",
+      "size": 36,
+      "sha256": "de849b83430fe39065a0c3f06faf68c4fda6758f564eaf2d9e99ccfb6fb9257c"
+    },
+    {
+      "path": "app/faq/embeddings.py",
+      "size": 5646,
+      "sha256": "3ef4f97468379773048be938bf8bf3c6cf7886298864683d58222a886d43c36e"
+    },
+    {
+      "path": "app/faq/facts.py",
+      "size": 2656,
+      "sha256": "582e244c0a1d0f44dc1b16c0b9fa8ee006d0c420840e9a2ffd3a07b9b640507e"
+    },
+    {
+      "path": "app/faq/service.py",
+      "size": 19707,
+      "sha256": "3a9dda6fdf2ab704042403a7111979926ad93224a7c4048e2534e86d144e7a71"
+    },
+    {
+      "path": "app/ingestion/__init__.py",
+      "size": 38,
+      "sha256": "eec20f547cd6717680b84b21d6c4a2daef54f90ca9679a8a3b0e34865006714e"
+    },
+    {
+      "path": "app/ingestion/parsers.py",
+      "size": 2181,
+      "sha256": "2d6ba26663169e65541df1d8815e459fc020b8c7590e75a8f65ceb9316631b4a"
+    },
+    {
+      "path": "app/ingestion/service.py",
+      "size": 2663,
+      "sha256": "8dfdb8c0c6f734ae1d6ddd61ab36a3021fb0b014075b9bdc69ec4455da47db3a"
+    },
+    {
+      "path": "app/ingestion/tasks.py",
+      "size": 454,
+      "sha256": "0ec69fda1bba4fc94f4d0999ddf8f23bf4996dc4cdcb11dce836d553d52fbbfc"
+    },
+    {
+      "path": "app/intent/__init__.py",
+      "size": 59,
+      "sha256": "f9177ce271ee57e7574b5c632d898e80046ed51dcf2a55879655255345da2f7d"
+    },
+    {
+      "path": "app/intent/embeddings.py",
+      "size": 5750,
+      "sha256": "71cc7b18b47904e2647d53e76798ea62cca2648fe8f2ea6427230366d54e8bf4"
+    },
+    {
+      "path": "app/intent/models.py",
+      "size": 3261,
+      "sha256": "b2f9cebf5a62c346328d93fa37553c4a464183da174309dafc16ca1797d1f283"
+    },
+    {
+      "path": "app/intent/router.py",
+      "size": 34146,
+      "sha256": "0838b79b03cdee548d0e4fecc5661fed024bf9be1199f01db9de160e9ee977a5"
+    },
+    {
+      "path": "app/intent/service.py",
+      "size": 20750,
+      "sha256": "0deefdf44b37e4f9afcf33454b2cf40901bb589d6885e04508b8ac03dadd2dde"
+    },
+    {
+      "path": "app/intent/taxonomy.py",
+      "size": 11228,
+      "sha256": "1c2c10e33b0c3b9635e4f71b1d2c3485a17b0845a547b2152e0d07d4839d05dc"
+    },
+    {
+      "path": "app/knowledge/__init__.py",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "app/knowledge/answers.py",
+      "size": 3162,
+      "sha256": "3ca335f54916d0aa9231e7d2edff77c46540fc06e3eceec8410249ddf6a3d5a9"
+    },
+    {
+      "path": "app/knowledge/parsers.py",
+      "size": 3965,
+      "sha256": "37851ebc8fac63ca7ee1bf7990fef30edbe0baa9fa6992233a6ee40ace39020f"
+    },
+    {
+      "path": "app/knowledge/service.py",
+      "size": 5177,
+      "sha256": "497149746da2505967bc04e92c8a01d7e1b36dae70c7aaa1ecce413f580249a4"
+    },
+    {
+      "path": "app/llm/__init__.py",
+      "size": 66,
+      "sha256": "d08650045fdcd2c898ec1038b8e114de5c40c86302ca35187ec35f12441c0392"
+    },
+    {
+      "path": "app/llm/client.py",
+      "size": 7305,
+      "sha256": "68f01d949b0a13d7a67615f751d6f8e3bcb70a1a71ceefa73b9fffe637b720ce"
+    },
+    {
+      "path": "app/llm/faq_orchestrator.py",
+      "size": 48770,
+      "sha256": "0356ef8532f927f9cc14dbf44aa22cad1a521fa581d830bcb01010c943fff157"
+    },
+    {
+      "path": "app/llm/tools.py",
+      "size": 1638,
+      "sha256": "be3f98a646ff36d876aa16a4d8228d27bc9bf1753bfe5e963903bd6a52fe101e"
+    },
+    {
+      "path": "app/main.py",
+      "size": 2301,
+      "sha256": "f64915fc025aba2d661589dcd5dd5b38c63519ab4b3d87325d84d00716883c14"
+    },
+    {
+      "path": "app/models/__init__.py",
+      "size": 26,
+      "sha256": "3ddde8c2634ac923e6930abec36fc587e83cc1c340244a28ee2e741d8e8c8ac6"
+    },
+    {
+      "path": "app/models/entities.py",
+      "size": 21541,
+      "sha256": "0b7f184b7dd9d5db6b0136ff80d21d5f67143cb9f7517b1c16e734c088a5f0c3"
+    },
+    {
+      "path": "app/retrieval/__init__.py",
+      "size": 33,
+      "sha256": "377f8c79ad2435ba7870b057e24c1a9d8f753565369db596bbaaea11096aaba6"
+    },
+    {
+      "path": "app/retrieval/bm25.py",
+      "size": 2875,
+      "sha256": "ff595bbf77b6fcf7560b1a600c5daab9c6c2b5fe70d89a61381a5ac6c925596a"
+    },
+    {
+      "path": "app/wechat_robot/__init__.py",
+      "size": 50,
+      "sha256": "73fc18ede7f74eb05fcb617b36d3d8009c751e70712d3efde6fd0e1bbbadfc6b"
+    },
+    {
+      "path": "app/wechat_robot/broadcast.py",
+      "size": 5160,
+      "sha256": "838c73461320309018bd86df7714becbcc326530a1858c205a9fa39711722e53"
+    },
+    {
+      "path": "app/wechat_robot/client.py",
+      "size": 6469,
+      "sha256": "b6cdf43cd12c83aee49ec73063e1d382a8b3aaf279cf6567c803a9aba56ad59f"
+    },
+    {
+      "path": "app/wechat_robot/service.py",
+      "size": 23632,
+      "sha256": "4e7937ec974ccda36f9bf7cb5fe6d2375d50e7e09fc33db5acb9faeb22ab6b9f"
+    },
+    {
+      "path": "app/wecom/__init__.py",
+      "size": 2,
+      "sha256": "7eb70257593da06f682a3ddda54a9d260d4fc514f645237f5ca74b08f8da61a6"
+    },
+    {
+      "path": "app/wecom/account_resolver.py",
+      "size": 2178,
+      "sha256": "39fc98b7dc0f8a47012e91e257490a35c8270e925f6b39ea2da40f56e15615f9"
+    },
+    {
+      "path": "app/wecom/client.py",
+      "size": 12493,
+      "sha256": "af06b0bbd4bc82026ad344e909bbbecdbf153b6cab8ba96f84e8026f4464f6b3"
+    },
+    {
+      "path": "app/wecom/crypto.py",
+      "size": 4888,
+      "sha256": "d3d0d73d9c0ec99cd49994270a3bb251248b4e4f22fa3f324cb8580cf295f9c9"
+    },
+    {
+      "path": "app/wecom/customer_service.py",
+      "size": 12057,
+      "sha256": "fbee449733900fda6031ef75c86b68c55f815f7036e63e6f8998fa50c7207423"
+    },
+    {
+      "path": "app/wecom/service.py",
+      "size": 2389,
+      "sha256": "fbf0302718e1a4eca265bb54ce13a7c1593ab9cac1336cd804f9510f8186d68c"
+    },
+    {
+      "path": "app/wecom/servicer_manager.py",
+      "size": 1194,
+      "sha256": "6eb178610e53a04cddf7e9c4e9661cf2791e0cc42c96c5dc5dde9f9792d39b93"
+    },
+    {
+      "path": "app/worker.py",
+      "size": 150,
+      "sha256": "84daf76a7bd753cca0c26f18268203882bbff7604ff2124de60cd6db1f471995"
+    },
+    {
+      "path": "deploy/yunxiao-deploy.sh",
+      "size": 7837,
+      "sha256": "d68aa5aac7b5859cef5515ad26ba3ddca9dbb116635db2c3fbb0104b53f9dc14"
+    },
+    {
+      "path": "docker-compose.yml",
+      "size": 1017,
+      "sha256": "3c7e6d7a10d67e861a66ac00a5d9169a2285c6273102ba550791266f67774f70"
+    },
+    {
+      "path": "docs/个人微信AI客服部署与操作说明.md",
+      "size": 20693,
+      "sha256": "0ddba4dbc84111c45616e6f6343e181e1c03b2a5bdb9942bfa649973238c558a"
+    },
+    {
+      "path": "docs/企业微信智能客服产品最终形态与实施方案.md",
+      "size": 4263,
+      "sha256": "5229b170585b4d2903e497ae50d50e7d2ea8045c0a38cd61ff9f3983501f9970"
+    },
+    {
+      "path": "environment.yml",
+      "size": 135,
+      "sha256": "396c90a0fc7d3b25ee19e33df196aa0690989d28a45a06828c37202b3a977505"
+    },
+    {
+      "path": "frontend/index.html",
+      "size": 93992,
+      "sha256": "f08a888775b61d818cbbe558621848237f25bdfe073396a9505018807e6102af"
+    },
+    {
+      "path": "frontend/knowledge.css",
+      "size": 2638,
+      "sha256": "3c6b0fce7e48b430f9cc49420aacc9e6c0a3506e2a238c019f85c7d6e5f077e6"
+    },
+    {
+      "path": "frontend/knowledge.js",
+      "size": 8486,
+      "sha256": "b5bb7d70755cfd14dbd8053096f07036961d4f927c1344ff4e75adcfc68a67f0"
+    },
+    {
+      "path": "frontend/package-lock.json",
+      "size": 32847,
+      "sha256": "44d5ff685be150037e278bda33a5abdc97de9d6b20431fe0ef3d8fc6e3de9aee"
+    },
+    {
+      "path": "frontend/package.json",
+      "size": 353,
+      "sha256": "2fb5529a3d628450854127358b3fff69e4e33740ba5c043119af081b77d31fa4"
+    },
+    {
+      "path": "frontend/vite.config.js",
+      "size": 610,
+      "sha256": "9ae959709ba3128faef33631da6d77ae70da5cf97a80e9a462bc1afcb1c611e0"
+    },
+    {
+      "path": "frontend/workspace.css",
+      "size": 8824,
+      "sha256": "f50587357f764b339026af2174525fa10510a5ed955eced86a6d91f5d9ae938c"
+    },
+    {
+      "path": "intent-routing-flow.vsdx",
+      "size": 18781,
+      "sha256": "43d9f4bacdd2dee3d4f49e9e9eb6baad99d4360bd81cd47566d834be0e7f95ee"
+    },
+    {
+      "path": "main.py",
+      "size": 866,
+      "sha256": "e3269a21c1832c6cfde21a8c649e4d723f48a8c87caeb2e8f05be47fbd1e2733"
+    },
+    {
+      "path": "pyproject.toml",
+      "size": 957,
+      "sha256": "0580cb0bf7bee7646ac443d86038ff2dc50c5104b1d94a1f9cc9bb496e2fcb96"
+    },
+    {
+      "path": "requirements-prod.txt",
+      "size": 326,
+      "sha256": "a42f93252aff9e4edb4b866933199101d1da22e1e6446eb0b3def62a3653ad8c"
+    },
+    {
+      "path": "requirements.txt",
+      "size": 358,
+      "sha256": "54fa40e0ce1836cb10da0bf1fb1a6ebea85a79babb47fc0f911e889838ac71ef"
+    },
+    {
+      "path": "scripts/deploy-check.sh",
+      "size": 4988,
+      "sha256": "e3ae23346a8fbf122c3ba239bbe473a41ba982b49c8e986a88db95bc22008965"
+    },
+    {
+      "path": "scripts/generate_wecom_qa_import.py",
+      "size": 10535,
+      "sha256": "b8f4c823405d5b92852a2cdab80389914462dbacf09a4750ac93ce82981a9fd4"
+    },
+    {
+      "path": "scripts/poll_wecom_kf.py",
+      "size": 1656,
+      "sha256": "fb655bc288a3ee33d1e366e68b57d9def36e7fb696fa465b72ee43cb0e05d2c3"
+    },
+    {
+      "path": "spreadsheet_work/generate_wecom_qa.mjs",
+      "size": 19500,
+      "sha256": "3b443114a47a330d41695ba7f7801cd104f8681846751d08c55bc0a7f6a3f39b"
+    },
+    {
+      "path": "spreadsheet_work/generate_wecom_qa_20260624-101756.mjs",
+      "size": 19537,
+      "sha256": "889f835d1894307629e40a349d7590756684d7473da4cab61762d0eb5e492cde"
+    },
+    {
+      "path": "spreadsheet_work/inspect_template.mjs",
+      "size": 486,
+      "sha256": "935ee1c0771a104340b25c70444ed1a1724ffebd7441b7b6ea98a19571bff90a"
+    },
+    {
+      "path": "spreadsheet_work/list_wecom_qa_questions.mjs",
+      "size": 596,
+      "sha256": "dfd2eb094860b0bd6f11f88f7163b43dd89f4df6e70746983e7954f939cd0a65"
+    },
+    {
+      "path": "spreadsheet_work/patch_wecom_qa_dedupe.mjs",
+      "size": 3326,
+      "sha256": "2a0765e8d704ba2711f74e5f47b8e97defa37b205d85adec6305be6f4123eb63"
+    },
+    {
+      "path": "tests/__init__.py",
+      "size": 14,
+      "sha256": "14a272de191ef5de47d1830c42c5fc79bdb7eaeab8b953e425ddf03e5d7c269a"
+    },
+    {
+      "path": "tests/conftest.py",
+      "size": 780,
+      "sha256": "c9e6200da13db4cb1eba71d0997de2c5982562843a0b17cd461a6043179e6c1a"
+    },
+    {
+      "path": "tests/llm_fakes.py",
+      "size": 1908,
+      "sha256": "174e40810ff94c77047e96f1b751211bd627204b74ccaef06a5f845723a5475d"
+    },
+    {
+      "path": "tests/test_bm25.py",
+      "size": 3851,
+      "sha256": "990bcc6a915021c169c28da501d70663adcc71e0960f91bbf84be06ae1390962"
+    },
+    {
+      "path": "tests/test_chat_stream.py",
+      "size": 1259,
+      "sha256": "ac0f46202b15844fd1c1d0b9f67841c1ece917492a9216413c0d3f2b07d2908e"
+    },
+    {
+      "path": "tests/test_courses_api.py",
+      "size": 2555,
+      "sha256": "9666c85038543555916cb5070d8cb6a98cfe67bcc5b3ac202fc0081c85c569ba"
+    },
+    {
+      "path": "tests/test_database_migrations.py",
+      "size": 8462,
+      "sha256": "7254885b1c3403aabdd4dbc93976b86ddeeabb318d4c5ab7cfcdf1ad391e2d3d"
+    },
+    {
+      "path": "tests/test_document_knowledge.py",
+      "size": 9733,
+      "sha256": "4de83fa9cb53e79e2b6127151f854bc855e0529f0e6bbc711fb31d8a542746b1"
+    },
+    {
+      "path": "tests/test_faq.py",
+      "size": 25577,
+      "sha256": "ce2b3ac87ba50c19e07103471f66ca8273a10dde6f779c43cbf6775702cf3eaf"
+    },
+    {
+      "path": "tests/test_faq_embeddings.py",
+      "size": 10354,
+      "sha256": "520c458276b2ec50111c824bb9fe8ed4d0d1cd26384c81e97feff6e606deb9f7"
+    },
+    {
+      "path": "tests/test_faq_taxonomy.py",
+      "size": 2098,
+      "sha256": "d453e2aaae983388f28b969a1fff404edf09f792a36ee9783d2b99ee0f1fc0c0"
+    },
+    {
+      "path": "tests/test_ingestion.py",
+      "size": 401,
+      "sha256": "a6358c2ebea98472cf770f8e5f69d38c2742fa38ab01279c40e2fe039fad1887"
+    },
+    {
+      "path": "tests/test_intent_registry.py",
+      "size": 15467,
+      "sha256": "1cdeb56af87a2ca1a3f84224df9913c593ca57299368e12fc35367937a416dfa"
+    },
+    {
+      "path": "tests/test_llm_client.py",
+      "size": 970,
+      "sha256": "bb9ffa647e8d41d48419ecfba3b21a35e31af57c029725b18b188eaab5308679"
+    },
+    {
+      "path": "tests/test_llm_faq.py",
+      "size": 24371,
+      "sha256": "94ba2cf3587e237ea1a55d3e5cd66c2a18150c3cf9121e81faa255fec0180b15"
+    },
+    {
+      "path": "tests/test_material_retriever.py",
+      "size": 1722,
+      "sha256": "e198775cbede51198e97a9f3fe160cbe5c88644e6de497cfce7d80f6a2b58090"
+    },
+    {
+      "path": "tests/test_memory_agent.py",
+      "size": 2528,
+      "sha256": "970a3be32ad44dcf9704306fcded885f242f773975f4ffe3d8a741593a62e4a3"
+    },
+    {
+      "path": "tests/test_natural_chat.py",
+      "size": 9435,
+      "sha256": "5f7de34fe03df1deb8c2a90bf2767fdb37e10f6de8a3ff8546d46a5a2391ac38"
+    },
+    {
+      "path": "tests/test_permissions_cache.py",
+      "size": 1341,
+      "sha256": "540ebd3f9a006b772b760ea0b553396fcd4685cc9b40ca1979e75135585bdbcc"
+    },
+    {
+      "path": "tests/test_tool_calling.py",
+      "size": 11241,
+      "sha256": "198905227d4497e66e151e9775e9e893701bf1e75e53d25dccbd51646b11c5b5"
+    },
+    {
+      "path": "tests/test_tool_chain.py",
+      "size": 11642,
+      "sha256": "3486a602be93fa4825b53e00497de9d0727634cde338f33fdf7950aad6b6ce10"
+    },
+    {
+      "path": "tests/test_vector_filter.py",
+      "size": 1063,
+      "sha256": "732cac216fe9abfb1bd34448ec1bfc2291717483567ac0fb4d5d3d9405dadf2a"
+    },
+    {
+      "path": "tests/test_wechat_robot.py",
+      "size": 39775,
+      "sha256": "2917437e678fccf2cbebdafdcf474ea37436e915073f354d8e2661d6590f0ee0"
+    },
+    {
+      "path": "tests/test_wecom.py",
+      "size": 25281,
+      "sha256": "bef02944771c6c8c7995a89a4fafb9f4d3674976664894f8afcc7e072cf2cfaa"
+    },
+    {
+      "path": "tests/test_wecom_account_resolver.py",
+      "size": 1381,
+      "sha256": "106ebeb96ad758b31516a71e0f140534d6d94148e7d2f740b79e59db1556f1a0"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/.env.example",
+      "size": 431,
+      "sha256": "2c924a80b510abb7985502c6bbce14e5939ec960360c028de43c53a013875af4"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/docker-compose.yml",
+      "size": 8275,
+      "sha256": "fdfc1f3b83404189dd933378037da363dd90e2fd717ea43bbd8ebbfa739bc444"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/docker-compose2.yml",
+      "size": 8632,
+      "sha256": "8c255c84bd2de7a2628c2651e11c27db8ac4e7aa263be932c4ac7b80e168859a"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/gen-self-signed-cert.ps1",
+      "size": 2285,
+      "sha256": "901af08a96adf35bfa4ac9dc390fafdd8867f0a3b57323bc2e43fdcdad4352d0"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/gen-self-signed-cert.sh",
+      "size": 2700,
+      "sha256": "6ef2ea0e9044c2c6ce159225526e16eb4523e44d31aafeeda4263e48909d7f5c"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/longlink-fix/Dockerfile",
+      "size": 220,
+      "sha256": "9bec774cce1878f7f02d58142e0ef6de339de1343d1c4c69bf6138d6ad595c28"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/longlink-fix/entrypoint.sh",
+      "size": 743,
+      "sha256": "3390bc951aa20148a5d9c595881a385555d463a6eed6dc56f1a93a436596a591"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/my.cnf",
+      "size": 1449,
+      "sha256": "985a80908bd463f50946d1b90b766a45031cebf3e45916328590c3e0a2658198"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/nginx.conf",
+      "size": 2503,
+      "sha256": "06caa6393bf0e74f9dbfdbac1d547c6d67b97757097f314726dd8fe7ba8d5f50"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/redis.conf",
+      "size": 609,
+      "sha256": "14482d936fd6965cf7bd7ef9558e010bcbb52b1957518eadfb4f3b95ce6a8a41"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/reset.bat",
+      "size": 671,
+      "sha256": "a517858c2c87de66a283830e2542d5782bd8b802f471b4dd4a3cdc504f77257a"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/reset.sh",
+      "size": 519,
+      "sha256": "55b54e6adfb2b3e5c778fe1c6248e3b2d2b23cbcf3cabbe1afbac94e78049923"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/secrets/mysql_root_password.txt.example",
+      "size": 44,
+      "sha256": "93e35966c9792b7f8dc1407ec52b5263523c5a428de38531a9f25ff358a6f08c"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/secrets/mysql_user_password.txt.example",
+      "size": 44,
+      "sha256": "8fb0b115ae7eb5e4328fa5ff7fd175a4856b925803b837775336f98cd22aaa0e"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/secrets/redis_password.txt.example",
+      "size": 39,
+      "sha256": "50fdc19f32f04054bf4160d91f82b2479074700590e44f5ee536eb8b741721ca"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/server/.env.example",
+      "size": 369,
+      "sha256": "6a931b52b94ede2c2ab9b8cf2af17e5955db1b85f0e8d7fe8ea5c30f8635fbf7"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/server/docker-compose.yml",
+      "size": 8180,
+      "sha256": "93f884c3067e5e9359b21f06c058ec4018c4f86c1a3082ee9eda1e59a36cca45"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/server/my.cnf",
+      "size": 1449,
+      "sha256": "985a80908bd463f50946d1b90b766a45031cebf3e45916328590c3e0a2658198"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/server/nginx.conf",
+      "size": 1347,
+      "sha256": "eeb3980bf1aa804acfecc96684e3d317f7bc80683d6a4e046e605a927846743c"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/server/redis.conf",
+      "size": 609,
+      "sha256": "14482d936fd6965cf7bd7ef9558e010bcbb52b1957518eadfb4f3b95ce6a8a41"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/server/secrets/mysql_root_password.txt.example",
+      "size": 44,
+      "sha256": "93e35966c9792b7f8dc1407ec52b5263523c5a428de38531a9f25ff358a6f08c"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/server/secrets/mysql_user_password.txt.example",
+      "size": 44,
+      "sha256": "8fb0b115ae7eb5e4328fa5ff7fd175a4856b925803b837775336f98cd22aaa0e"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/server/secrets/redis_password.txt.example",
+      "size": 39,
+      "sha256": "50fdc19f32f04054bf4160d91f82b2479074700590e44f5ee536eb8b741721ca"
+    },
+    {
+      "path": "wechat-robot-client/.dockerignore",
+      "size": 123,
+      "sha256": "83f3ee69a7be279af2da8dd4e639931b29224c13b502faa9b90ff55ddb0c1d95"
+    },
+    {
+      "path": "wechat-robot-client/.env.example",
+      "size": 2327,
+      "sha256": "57ad4ea6538d9076044c26c94cdae77052b15aa70a5488efd2837ab1b3b4caeb"
+    },
+    {
+      "path": "wechat-robot-client/.github/workflows/ci-cd.yml",
+      "size": 1569,
+      "sha256": "43b70ae715a07409e8810205a17990d1e732e33d5f96bcb8724e9dd603769952"
+    },
+    {
+      "path": "wechat-robot-client/.gitignore",
+      "size": 477,
+      "sha256": "f1a8272ffa1118146fadfa840e066ba0e9445ebf1c979061e530b06babecc736"
+    },
+    {
+      "path": "wechat-robot-client/.vscode/launch.json",
+      "size": 463,
+      "sha256": "d310b368a452d690e933c8be4d716b62ad6446d392c37e9f85a13a5a111db5e2"
+    },
+    {
+      "path": "wechat-robot-client/AGENTS.local.example.md",
+      "size": 773,
+      "sha256": "012f70df6b02bcf4e58cdd521b43e5c3d4ffe384d6239f40ba7d21d6fd3fb407"
+    },
+    {
+      "path": "wechat-robot-client/AGENTS.md",
+      "size": 4232,
+      "sha256": "eef82bbaf0d7792b57017e064a291e4fed26e1711be489cbe13ba2527a93172c"
+    },
+    {
+      "path": "wechat-robot-client/CHANGELOG.md",
+      "size": 13140,
+      "sha256": "ba2a43bf1d605b019d7cf6b10d13aa16cebed150c5fcccf955fcdeb937676780"
+    },
+    {
+      "path": "wechat-robot-client/Dockerfile",
+      "size": 834,
+      "sha256": "542ba091193a774b6c969c4f12c5a5ca1ed35972153e8ac78fe04629b74b6989"
+    },
+    {
+      "path": "wechat-robot-client/LICENSE",
+      "size": 885,
+      "sha256": "41a610053cbf16d81984af9546b2458cd71701186f1f96e7e50e252bb257a427"
+    },
+    {
+      "path": "wechat-robot-client/README.md",
+      "size": 16641,
+      "sha256": "b02b8c24500ad0f5fde392089aa7e905e114a42683230072907b15e4cddc2d53"
+    },
+    {
+      "path": "wechat-robot-client/common_cron/chat_room_ranking_daily.go",
+      "size": 1397,
+      "sha256": "bc0187c41b3e47e4a56db4d57609950913db88bf0108633f102f4b262a27d5dc"
+    },
+    {
+      "path": "wechat-robot-client/common_cron/chat_room_ranking_month.go",
+      "size": 1545,
+      "sha256": "488cd15413f014f3af0d153585ee38c54e860e1f58f31fd3126eb66869fa9d00"
+    },
+    {
+      "path": "wechat-robot-client/common_cron/chat_room_ranking_weekly.go",
+      "size": 1554,
+      "sha256": "3360a3c4530e5144d2acd7e845f4a2373dd5eaaf03c71ba8058bdce2820d2832"
+    },
+    {
+      "path": "wechat-robot-client/common_cron/chat_room_summary.go",
+      "size": 1336,
+      "sha256": "ea9c8fbbff9049455c50f5c475e11dfe7d0b2aaaeb959c3d3cdf8b6eeefec591"
+    },
+    {
+      "path": "wechat-robot-client/common_cron/good_morning.go",
+      "size": 3067,
+      "sha256": "df722cb9efc886b1e5855a24afcc5bf3614e6327fcd507da89e677834130d68c"
+    },
+    {
+      "path": "wechat-robot-client/common_cron/manage.go",
+      "size": 3930,
+      "sha256": "a145323b05de226a2c1ba459c2b034e541d51835ea436f448f924dd376089728"
+    },
+    {
+      "path": "wechat-robot-client/common_cron/news.go",
+      "size": 3560,
+      "sha256": "bd7f9cb8db6f709a10d89a5ba0269edf4f37c7eb0ad290ad70cad784c39ff0cd"
+    },
+    {
+      "path": "wechat-robot-client/common_cron/sync-contact.go",
+      "size": 1097,
+      "sha256": "17bf8d5685e347edcdee432fb40e85fb986b993d4235a665ced997fc404c2510"
+    },
+    {
+      "path": "wechat-robot-client/common_cron/word_cloud_daily.go",
+      "size": 3900,
+      "sha256": "eb3497cd5ba7d2f39860dc79f3d2b56ff47476bdc09e3e40a2d77fb37b1f1457"
+    },
+    {
+      "path": "wechat-robot-client/controller/ai_callback.go",
+      "size": 669,
+      "sha256": "1c61b7593f2e0e804579cb6aa87898bcaa38c7a276f3fbbf24bdd752c34a041b"
+    },
+    {
+      "path": "wechat-robot-client/controller/attach_download.go",
+      "size": 5870,
+      "sha256": "ec9cdb3adbbbc7d46e304766994b03c2bed1f650b5d6f580a9d012e29ee13bfb"
+    },
+    {
+      "path": "wechat-robot-client/controller/chat_history.go",
+      "size": 741,
+      "sha256": "eff5861b3d520437103a65d0707a3863126a582a265a3632f9069e5adf273c80"
+    },
+    {
+      "path": "wechat-robot-client/controller/chat_room.go",
+      "size": 6220,
+      "sha256": "cd80a0517fc6fd7013943076b6a871d95b2dc2c252e2634d6b313202f9fd819f"
+    },
+    {
+      "path": "wechat-robot-client/controller/chat_room_settings.go",
+      "size": 2771,
+      "sha256": "f5278d7f11571268527a7b7c52d0df6e771a6db05c98ed1c0304673917482523"
+    },
+    {
+      "path": "wechat-robot-client/controller/contact.go",
+      "size": 3404,
+      "sha256": "2b010d2065601da6c64de70155c16aef08e7c49e027579f3127c6ea1324a74fc"
+    },
+    {
+      "path": "wechat-robot-client/controller/friend_settings.go",
+      "size": 1274,
+      "sha256": "28d57e25401b99a836cc06abb4f78d02e3712ae4d84d4395a828165ff76c7bf7"
+    },
+    {
+      "path": "wechat-robot-client/controller/global_settings.go",
+      "size": 4156,
+      "sha256": "a661058821b096d5af0042a05c522573a3ed1bb83f49a1281db06aeacee23eca"
+    },
+    {
+      "path": "wechat-robot-client/controller/knowledge.go",
+      "size": 10105,
+      "sha256": "a1088bbd41574f8a5fa030b4981216ea555c69bc91e7bf16375d1477e25fe5eb"
+    },
+    {
+      "path": "wechat-robot-client/controller/knowledge_category.go",
+      "size": 2231,
+      "sha256": "f056d121d0627783760845d77067d9ccc2ac1c7744bab2b7f83bf511d57873b1"
+    },
+    {
+      "path": "wechat-robot-client/controller/login.go",
+      "size": 4954,
+      "sha256": "f4c3f5a4b515af47879c07eb34dadfb9f95fe7f62dbc22d29a13ca25450212f3"
+    },
+    {
+      "path": "wechat-robot-client/controller/mcp_server.go",
+      "size": 3403,
+      "sha256": "75d898faa559da1817cad9540daf05ff74e587392e005f8f3ee4611fe1ec2f5b"
+    },
+    {
+      "path": "wechat-robot-client/controller/message.go",
+      "size": 11892,
+      "sha256": "ec0e92d27fbe82521704713d262e696a856eac9d721d2beffb61420550d775ea"
+    },
+    {
+      "path": "wechat-robot-client/controller/moments.go",
+      "size": 5837,
+      "sha256": "d9953570e5ca2ef765878e726fce0b56015b71fda0224667c2a327b9c7ad58d5"
+    },
+    {
+      "path": "wechat-robot-client/controller/official_account.go",
+      "size": 711,
+      "sha256": "758ebcb1972c3788c6a2863878df0ab59ddab5026e3dbf05f95f99fdcf29d23e"
+    },
+    {
+      "path": "wechat-robot-client/controller/oss_settings.go",
+      "size": 927,
+      "sha256": "b2087b179c4876f5a2a18793c3e9e635cb8c226723fa3f0f9450b02c7f5f7dbe"
+    },
+    {
+      "path": "wechat-robot-client/controller/pprof_proxy.go",
+      "size": 4539,
+      "sha256": "30fc965b30f8e0e246cdb4bef59e7244320cc26d095fdcdaf33301e48c5b5047"
+    },
+    {
+      "path": "wechat-robot-client/controller/probe.go",
+      "size": 266,
+      "sha256": "a9be7f180d0a8672b95c7b237fd480f1c149ff47f466e88d0a59d3d3837ac590"
+    },
+    {
+      "path": "wechat-robot-client/controller/skill.go",
+      "size": 4855,
+      "sha256": "d179df0a1039cb24ffb736a624cbb0265f58c3593ca432c1be63e15eea59c6f5"
+    },
+    {
+      "path": "wechat-robot-client/controller/system_message.go",
+      "size": 958,
+      "sha256": "c0cc45be1151c424234b0454479d3afd28d0a0e9123834cc300349c93a205f6a"
+    },
+    {
+      "path": "wechat-robot-client/controller/system_prompt.go",
+      "size": 2431,
+      "sha256": "4fab797453993238fd512915f3c7450a8fc94761fbd5ee03740f14d291ec9b1e"
+    },
+    {
+      "path": "wechat-robot-client/controller/system_settings.go",
+      "size": 954,
+      "sha256": "479321d3266d6b291da15b69b177396d132cfab69f1d93723ca4c32cb84f3a8a"
+    },
+    {
+      "path": "wechat-robot-client/controller/wechat_server_callback.go",
+      "size": 1373,
+      "sha256": "e8e4a15fec31203c7e56f76ab631f434a2ff55163910e490e5cd469b4d62d298"
+    },
+    {
+      "path": "wechat-robot-client/controller/wx_app.go",
+      "size": 665,
+      "sha256": "5ee806ac71a6861e58588e22ebbdeb936b521fd6dfb752675139eac58a9b4f7b"
+    },
+    {
+      "path": "wechat-robot-client/dev-wechat-ipad-example.yml",
+      "size": 463,
+      "sha256": "187a53051e6d315238dd66eed44e3e5c4b453340279fefbc4439ba3e36ba2d6f"
+    },
+    {
+      "path": "wechat-robot-client/dto/ai_voice.callback.go",
+      "size": 1348,
+      "sha256": "4b8faf6b4a2e3431c2a0bfdfc3d86346e2ae8d6f8433265cfc9f2517ac6f6ddd"
+    },
+    {
+      "path": "wechat-robot-client/dto/attach_download.go",
+      "size": 130,
+      "sha256": "cf7d30661626c02c5eafd576e05f1c62f2216d828347faaf579c24e9abe2176b"
+    },
+    {
+      "path": "wechat-robot-client/dto/chat_history.go",
+      "size": 383,
+      "sha256": "f7d1cbab62f78aa64fbebc5e26f333dc981a788fc2a37144ec3e1e1ab64ec419"
+    },
+    {
+      "path": "wechat-robot-client/dto/chat_room.go",
+      "size": 2294,
+      "sha256": "66be760a34a89cb502a1757940890c23d834cce5a1cb278c6fde787b13fb8ef0"
+    },
+    {
+      "path": "wechat-robot-client/dto/contact.go",
+      "size": 1626,
+      "sha256": "a3f00482d13aa19bed7c8f505f48f2f80a0c73a687cad5a766ea0af5a9dd821f"
+    },
+    {
+      "path": "wechat-robot-client/dto/friend_settings.go",
+      "size": 131,
+      "sha256": "cc18291e97b14e016f66197db48618ea3da8a56c087437878d56ffc17a18cd73"
+    },
+    {
+      "path": "wechat-robot-client/dto/knowledge.go",
+      "size": 3311,
+      "sha256": "715fcdbe091aacd8d2d1747a376c052d928d061eb3ebf359ea9f11c1a2cd7f7a"
+    },
+    {
+      "path": "wechat-robot-client/dto/login.go",
+      "size": 2238,
+      "sha256": "bc7fa3ea3825c57b585a728e2b0ded249160704ffd9aed199bdd96345ac2339d"
+    },
+    {
+      "path": "wechat-robot-client/dto/message.go",
+      "size": 3118,
+      "sha256": "a25d0c900e1f600be5c50de0fc8035e5e3c88ab8a0832db7f57ff5368f4009f0"
+    },
+    {
+      "path": "wechat-robot-client/dto/moments.go",
+      "size": 2048,
+      "sha256": "bf14f552d73c32606af7c79ceaf7ec524f438fd50328c21b0b08e6d3b0506c64"
+    },
+    {
+      "path": "wechat-robot-client/dto/system_message.go",
+      "size": 113,
+      "sha256": "19b018c44f4bff6390067266b0cc09978877059db63413b10cdc777203b1f75c"
+    },
+    {
+      "path": "wechat-robot-client/dto/system_prompt.go",
+      "size": 928,
+      "sha256": "170b288af21f1378cbb4b101f0b3f1651e6745a69374e114ee5f837223fd1364"
+    },
+    {
+      "path": "wechat-robot-client/dto/word_cloud.go",
+      "size": 163,
+      "sha256": "fbaf8873176ea75ca04f65d129e389f14ac994617af8f16ef90a040e5e0615b5"
+    },
+    {
+      "path": "wechat-robot-client/dto/wx_app.go",
+      "size": 117,
+      "sha256": "ac80b4c6beda491a21bf0116b7b2f3d0c039a8ab419198461844561f8280944a"
+    },
+    {
+      "path": "wechat-robot-client/go.mod",
+      "size": 4921,
+      "sha256": "875be61d04c27a0bb8e69c8e54a7af2729647020b6c2570560678f50f6c9c2b5"
+    },
+    {
+      "path": "wechat-robot-client/go.sum",
+      "size": 28569,
+      "sha256": "909ea10816deef50a4857d1ac03deba601d44ab67baeaf3b0aef0171fead6f41"
+    },
+    {
+      "path": "wechat-robot-client/interface/ai/agent.go",
+      "size": 624,
+      "sha256": "7309fc96e8d47bdc71162f60fda707fe568a9f860a0c3ea8328af96087053428"
+    },
+    {
+      "path": "wechat-robot-client/interface/ai/rag.go",
+      "size": 2010,
+      "sha256": "481da880253b9797da57846962aa88ab490b1bb129d6d938febc5b2789f29610"
+    },
+    {
+      "path": "wechat-robot-client/interface/plugin/message.go",
+      "size": 2473,
+      "sha256": "94e7b0d3bf1fb2330f284fdf405d246512e49d7091b34c3d12c4ded32dfd22e0"
+    },
+    {
+      "path": "wechat-robot-client/interface/settings/settings.go",
+      "size": 860,
+      "sha256": "8f0fc785e9df3f6edaf13e1f968f2889c12c717fb076c7311052ea0a6e2bf967"
+    },
+    {
+      "path": "wechat-robot-client/ipad.swagger.yml",
+      "size": 84665,
+      "sha256": "f34e9bffa4e174bb82c7c71f339cb7944818f04e9e3ce130cbb56cbad2d31a0d"
+    },
+    {
+      "path": "wechat-robot-client/main.go",
+      "size": 2589,
+      "sha256": "256a30a03a9e636a7ea09057fc38d23a8ca398f8df51df7f6e2f222e04d1fd58"
+    },
+    {
+      "path": "wechat-robot-client/message_callback.md",
+      "size": 69027,
+      "sha256": "26d3824c8fd45bbb0c5bfe9e6da40c5777dd41fdd13f7fcdf089920c6acb7ef2"
+    },
+    {
+      "path": "wechat-robot-client/middleware/err_recovery.go",
+      "size": 480,
+      "sha256": "386a415ef2446df62dd363bd951b3127353711b62b727d84ca55142d280eaf10"
+    },
+    {
+      "path": "wechat-robot-client/model/ai_task.go",
+      "size": 1848,
+      "sha256": "1cd826b27b6eb8a854291002e1c08105cd0b273864957dba5894c56e3d08c289"
+    },
+    {
+      "path": "wechat-robot-client/model/chat_room_member.go",
+      "size": 4178,
+      "sha256": "f2dbaaf88f343e8a8f06a493092c5e36f2b913cb1485f1d7810ee08eab601b36"
+    },
+    {
+      "path": "wechat-robot-client/model/chat_room_settings.go",
+      "size": 7999,
+      "sha256": "4644cceaa8c0486ef153b326d39c5ac191f2b8a0e2edcdee7ed839258cb9ef3c"
+    },
+    {
+      "path": "wechat-robot-client/model/contact.go",
+      "size": 3911,
+      "sha256": "048ebb213baf2d8512f2d60614e6fa05c96464d78ed6f49e460075dc822ebd0e"
+    },
+    {
+      "path": "wechat-robot-client/model/friend_settings.go",
+      "size": 2180,
+      "sha256": "8cb611abce80970790fbe78044697226db26715a1550b5cbd0b1d0ab5cdbc80c"
+    },
+    {
+      "path": "wechat-robot-client/model/global_settings.go",
+      "size": 8991,
+      "sha256": "1d949e250d6917d97c22ea61e9ce6c874a9f6231f168e8edfe2c9c6f1145a2ab"
+    },
+    {
+      "path": "wechat-robot-client/model/image_knowledge_document.go",
+      "size": 927,
+      "sha256": "f8007756ff067046062dfb453968166e261a591d6153dd3ddfacc111c3e482d9"
+    },
+    {
+      "path": "wechat-robot-client/model/knowledge_category.go",
+      "size": 1232,
+      "sha256": "38127ed2a153a478a8e7690c2f2d40b87e8f2d19cceea9b373c2fc75440d292d"
+    },
+    {
+      "path": "wechat-robot-client/model/knowledge_document.go",
+      "size": 1103,
+      "sha256": "4093a8cc1fd23403e04a81ab8d328f765659f3430d860e97e74979f64398f51d"
+    },
+    {
+      "path": "wechat-robot-client/model/mcp_server.go",
+      "size": 10099,
+      "sha256": "51a614c7fa08a08dfc83ce1eb542c15132706f42b8834fe64125503eba1cb098"
+    },
+    {
+      "path": "wechat-robot-client/model/memory.go",
+      "size": 8329,
+      "sha256": "15583a77c77c45dc5ffaa447d4e0c7a9048f6cfe77b29594d59b8abe5790c855"
+    },
+    {
+      "path": "wechat-robot-client/model/message.go",
+      "size": 5420,
+      "sha256": "030c36f9de1ecde8a50ff3c4dcf08bf816b016922f71d2979281fa5ef815d6ef"
+    },
+    {
+      "path": "wechat-robot-client/model/moment.go",
+      "size": 1278,
+      "sha256": "472ed7fc13f3488679369bdef77881e774483959d44696641c97ec58beb33e54"
+    },
+    {
+      "path": "wechat-robot-client/model/moment_comment.go",
+      "size": 629,
+      "sha256": "2562d697f3acb6946b9a2ac765ed93e01741dc1c60ef2b254dca9dca4f960494"
+    },
+    {
+      "path": "wechat-robot-client/model/moment_settings.go",
+      "size": 1879,
+      "sha256": "98b2719cfd2d87c76600ebd06d4dd99da642dfd06688a6ba1e47e6c301448d89"
+    },
+    {
+      "path": "wechat-robot-client/model/oss_settings.go",
+      "size": 5302,
+      "sha256": "fbc51a698d10a3037894fb64e03c47980edf11e7b2bca1e0805627796b01b7b4"
+    },
+    {
+      "path": "wechat-robot-client/model/robot_admin.go",
+      "size": 2701,
+      "sha256": "a7f1e679b30652ce5ba83a550f057381de6be99554062c3ef5feaa306304cbdb"
+    },
+    {
+      "path": "wechat-robot-client/model/skill.go",
+      "size": 1793,
+      "sha256": "92d3f2fc32618d4f1fffa793da342e00e223fc4edbd6f6883ab537d73a12dbd7"
+    },
+    {
+      "path": "wechat-robot-client/model/system_message.go",
+      "size": 1651,
+      "sha256": "75bae92de08eed7688f5bad710cc146c44b5e400fdaf78fb3a2094cc2d443b12"
+    },
+    {
+      "path": "wechat-robot-client/model/system_prompt.go",
+      "size": 519,
+      "sha256": "514ef16265e8bba23813bc92edfa84f74ffc045917aebdf5f45dbd2f7a0d5db0"
+    },
+    {
+      "path": "wechat-robot-client/model/system_settings.go",
+      "size": 3246,
+      "sha256": "e73bb5d3d56a30a755cf3d4d722adedfce9236eb628eeb4260634a5ca732870d"
+    },
+    {
+      "path": "wechat-robot-client/pkg/appx/req.go",
+      "size": 1228,
+      "sha256": "0b5bcdb1cf7a44793a67402cc763f3a6d96d73eece478774d10dff6eaee471e7"
+    },
+    {
+      "path": "wechat-robot-client/pkg/appx/resp.go",
+      "size": 1997,
+      "sha256": "5a298d32c27cb44465d32f7ec3fc59c3494c4b0a437145327c8008f49782cb96"
+    },
+    {
+      "path": "wechat-robot-client/pkg/distributedlock/distributedlock.go",
+      "size": 5640,
+      "sha256": "1dc959074ec6ce745217c12f8e9065be78fa67d0e44982551c5f79906f8ae4bc"
+    },
+    {
+      "path": "wechat-robot-client/pkg/good_morning/good_morning.go",
+      "size": 2614,
+      "sha256": "1b2a0b653229e3f9dcb4f37066e0ca44f0ee465b9cee0d38a0f7682892c15bbc"
+    },
+    {
+      "path": "wechat-robot-client/pkg/good_morning/good_morning_test.go",
+      "size": 1704,
+      "sha256": "61623e747817c7d474176e71b6bf6556ddaa02377f3415a1800b85df1e5dab83"
+    },
+    {
+      "path": "wechat-robot-client/pkg/gormx/gormx.go",
+      "size": 563,
+      "sha256": "02ea31388e4dff8d5feccaee7a7139a59dc6afbe6a82e8e3c60e2f62aae1f789"
+    },
+    {
+      "path": "wechat-robot-client/pkg/gtool/gtool.go",
+      "size": 198,
+      "sha256": "67528ea36981cef582fafa3b093aaae2159e1b8fd9e935d7f5c7f4ac0eaaaa2d"
+    },
+    {
+      "path": "wechat-robot-client/pkg/mcp/client.go",
+      "size": 3290,
+      "sha256": "1fe97700c642d7a5940c63d5a7dfb907a7a70698ec926baff995285cede2425a"
+    },
+    {
+      "path": "wechat-robot-client/pkg/mcp/errors.go",
+      "size": 2915,
+      "sha256": "16b99f823a477f60fed32c062b28962a077567f4824e553645e2bf2a82c144d6"
+    },
+    {
+      "path": "wechat-robot-client/pkg/mcp/manager.go",
+      "size": 19419,
+      "sha256": "64c65258ef1c6ece061824d2cfb4a9e40fbd721018611ad5f82c6532cb326028"
+    },
+    {
+      "path": "wechat-robot-client/pkg/mcp/stdio_client.go",
+      "size": 6361,
+      "sha256": "9f458dc66ef5515c9ad90ec9f911ded24427ccb9ffd906cb7c00b45a7a619e91"
+    },
+    {
+      "path": "wechat-robot-client/pkg/mcp/streamable_client.go",
+      "size": 5191,
+      "sha256": "f84de67377a28d38c2e9b4d154535b83254e03bbc8227de82f6ee760de9510be"
+    },
+    {
+      "path": "wechat-robot-client/pkg/mcp/types.go",
+      "size": 1119,
+      "sha256": "bb7c40c031ccde7eee240aa23a69ee6d6b70d8273a5d4a8ea3718244d6be5beb"
+    },
+    {
+      "path": "wechat-robot-client/pkg/openai_tools/manager.go",
+      "size": 2632,
+      "sha256": "7c621ef4cce8df37d4627f2391cff0a0464dcac45d3f8ae1bffaac737f0b3ce5"
+    },
+    {
+      "path": "wechat-robot-client/pkg/openai_tools/search_chat_room_memory.go",
+      "size": 14168,
+      "sha256": "5e41995bca64a5714d159349d911b7b11adcee71d71096fb1577388365c5fae1"
+    },
+    {
+      "path": "wechat-robot-client/pkg/openai_tools/search_knowledge.go",
+      "size": 5991,
+      "sha256": "5f60a22ca0c820c73edbba53038fbde12dd1dfbf3ca5c5acd397e7b9060eb16b"
+    },
+    {
+      "path": "wechat-robot-client/pkg/openai_tools/search_memory.go",
+      "size": 2602,
+      "sha256": "3e159fa4b8bb39aa23dca0f6721c4fd7a8762cf1076375c7a51b95d8aae5e19b"
+    },
+    {
+      "path": "wechat-robot-client/pkg/openai_tools/send_local_image.go",
+      "size": 2558,
+      "sha256": "a0df0f366cfb52ae6bc579dc59cbf7f473f7d50c0b18fd353f1d9de3c17c18a3"
+    },
+    {
+      "path": "wechat-robot-client/pkg/openai_tools/send_remote_image.go",
+      "size": 2560,
+      "sha256": "a532d639435912e70fb025c9497c650e1d7112bd6cabcc327c585366072ebf33"
+    },
+    {
+      "path": "wechat-robot-client/pkg/qdrantx/client.go",
+      "size": 6561,
+      "sha256": "75a136ff24071af6008164879c2791ad3aa0c63a50424d3a392bcbed9f49a135"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/cached_info.go",
+      "size": 5222,
+      "sha256": "5c7f433f1e3702dbb7101e14b5e6729f5d7981f1ac531de0e9c7e4f1a04dd387"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/chat_history.go",
+      "size": 10443,
+      "sha256": "5ee686904f1f8b2a5e23fefe272603aa0dcc48d0651bab3d06b00a5e866ba3e7"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/chat_history_test.go",
+      "size": 4416,
+      "sha256": "116813a9d1ee5e5e4879e4daa600f21552fbdf636b407d54bfb86db3e9b19ab1"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/chat_room.go",
+      "size": 3970,
+      "sha256": "55d6675cebe888bba88fe79a904e38b90285ed19e8ca7f9ee67e8b9987691fd7"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/client.go",
+      "size": 47394,
+      "sha256": "ef96f8abec127d40f2c78b60ed9c5907c41e67662709a7b41db6885a92ed6179"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/client_test.go",
+      "size": 9465,
+      "sha256": "8a9e5b8dbe88eacaacb281a9de18cfba54e39f93753eb7b2d7d482bcda891647"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/common.go",
+      "size": 3283,
+      "sha256": "dfd9870e35c3ae3ba4259b77ead550274d40028c62cff486562ca92dc9a4d741"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/contact.go",
+      "size": 14497,
+      "sha256": "7fdbba0668e61e838e91d1cdcb6b70747e6b09ec1d61d7707b9175c36eb3d305"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/contact_list_test.go",
+      "size": 3622,
+      "sha256": "795739c2a4f43b418537031203a840739f513a9104663e74b28f8de287144891"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/download.go",
+      "size": 6061,
+      "sha256": "8be6d887275d09defba79cf2e0784983007f0be4ddea97fd3007b0748356d239"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/heartbeat.go",
+      "size": 227,
+      "sha256": "8517367a73413142a095e4e59a69d67c28e245df70e2d9d4d1b56a1918b9a238"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/login.go",
+      "size": 6344,
+      "sha256": "9f820a46885ec048cb3be01887ec014ebfef7f9dcedca385e063dcbb936febd7"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/message.go",
+      "size": 26210,
+      "sha256": "839e0660013e81b9d54a75299aee9b9555340c026aa0da9e68d58e68939a9fa0"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/moments.go",
+      "size": 17616,
+      "sha256": "15ca5b1fca1a6fe2150973c4a1cc1252cf16ff450f72da36e432903ebfee0fcb"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/robot.go",
+      "size": 43282,
+      "sha256": "a0d9a9e7ef730a14ae7a3dc853d10dd8ad6d96f388e27102e1c565860c6b6204"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/robot_test.go",
+      "size": 6886,
+      "sha256": "44de8329da1ac9127bc0e50d5a43e842510d830a0b94c680f47df3c6d95c869a"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/share_link.go",
+      "size": 830,
+      "sha256": "baf2764b8a6bc42b98728ebab5a498bf5741ec10fa53e128df9c887fa0c281ca"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/url.go",
+      "size": 4159,
+      "sha256": "65b3651e32145fd0b5be0ef5f2aac4edb968a9e58a7dc5cbb79702ba6e955543"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robot/user.go",
+      "size": 13030,
+      "sha256": "e72436665135c9d06fefee744534a55befec5fc459e35d73b5b47b6acdb02fc6"
+    },
+    {
+      "path": "wechat-robot-client/pkg/robotctx/robotctx.go",
+      "size": 1201,
+      "sha256": "446aa3b602bb3c3eb2bf68733ef92b7f982c5a88fc3c2283d1b3a6fc76241958"
+    },
+    {
+      "path": "wechat-robot-client/pkg/shutdown/db_connection.go",
+      "size": 615,
+      "sha256": "5ee4dd7255c3a4e670da50b7dcd2b6d19cc92d1f7756452427b52594922bb8f0"
+    },
+    {
+      "path": "wechat-robot-client/pkg/shutdown/manage.go",
+      "size": 2163,
+      "sha256": "019ad916a03384da51171bde3f6434f20efc096a7d43ec255a61dc9b1879e98a"
+    },
+    {
+      "path": "wechat-robot-client/pkg/shutdown/redis_connection.go",
+      "size": 357,
+      "sha256": "5c56dd8a771cd40668cb7079b5e5842429cc118c23de17ce0784d6f42c3b4303"
+    },
+    {
+      "path": "wechat-robot-client/pkg/skills/installer.go",
+      "size": 5591,
+      "sha256": "a3286cab1b41ee22fc66ad77a981994e738e7dc41bb8fbd35fb7e4079388d5f0"
+    },
+    {
+      "path": "wechat-robot-client/pkg/skills/manager.go",
+      "size": 19067,
+      "sha256": "da9cde877042bba77971bcc9c6e74175a51d305e0cb7732cdeebfcfcd6dfec19"
+    },
+    {
+      "path": "wechat-robot-client/pkg/skills/parser.go",
+      "size": 5406,
+      "sha256": "7d51081ae764c3357afc020a49a4c531cdb065f8347bcc6b9c94baa2e8138c44"
+    },
+    {
+      "path": "wechat-robot-client/pkg/skills/skills_test.go",
+      "size": 4301,
+      "sha256": "9ed7c8614255e6c19eb3c11815d6c55e784cb0363c98de16de402fe4650d08da"
+    },
+    {
+      "path": "wechat-robot-client/pkg/skills/types.go",
+      "size": 2244,
+      "sha256": "2de6addb4cf870caeca8aee289967895dbef49ebd107e8afb7df420192ece490"
+    },
+    {
+      "path": "wechat-robot-client/pkg/templates/chatroomsummary/chat_room_summary.html",
+      "size": 12007,
+      "sha256": "07136e5432bc73489b36b911609580a674f76a61d2364370242532b0f481e837"
+    },
+    {
+      "path": "wechat-robot-client/pkg/templates/chatroomsummary/embed.go",
+      "size": 175,
+      "sha256": "917d04d335203dd7e1b7fc5482422ab33bfca68cd392533368be65189d5df42d"
+    },
+    {
+      "path": "wechat-robot-client/pkg/templates/goodmorning/assets/background.jpg",
+      "size": 405007,
+      "sha256": "784a0bc18578abe41895c307dfc03bc63ed838ca320427e2263dfb9fbb179891"
+    },
+    {
+      "path": "wechat-robot-client/pkg/templates/goodmorning/assets/index.html",
+      "size": 3368,
+      "sha256": "1454fde7d6b8080a55cc311799ac98b8b39fa4b170f8f0ef58f8a632f6201e75"
+    },
+    {
+      "path": "wechat-robot-client/pkg/templates/goodmorning/embed.go",
+      "size": 114,
+      "sha256": "45007e20d1a12544c9db674b56bc4215064604d6b7f58a02c04263d73edaf440"
+    },
+    {
+      "path": "wechat-robot-client/pkg/templates/robot/embed.go",
+      "size": 68,
+      "sha256": "d208bd3b5e71e6e2b0f25570681b3a6e565d6ee83af6f8cef90c0b26e2cb2b32"
+    },
+    {
+      "path": "wechat-robot-client/pkg/templates/robot/xml/app_tail.xml",
+      "size": 2116,
+      "sha256": "d4826dcca7077d71c9fdd1c72a096daddc01ca4563c2e8181020a9dfde9300e6"
+    },
+    {
+      "path": "wechat-robot-client/pkg/templates/robot/xml/music.xml",
+      "size": 897,
+      "sha256": "4e71041f323326ca9d0a48574193ffddde00606e941a49670e8b4efe0aee2e13"
+    },
+    {
+      "path": "wechat-robot-client/pkg/templates/robot/xml/welcome_new.xml",
+      "size": 176,
+      "sha256": "62f4bb1a2356412276a1096c47409d292e882970034fd8d143617dedda814d62"
+    },
+    {
+      "path": "wechat-robot-client/pkg/utils/cron.go",
+      "size": 660,
+      "sha256": "99ce570318a3c4b76ef183fbda589875cb23c95573778543ecfb2f0fd6415d14"
+    },
+    {
+      "path": "wechat-robot-client/pkg/utils/env.go",
+      "size": 677,
+      "sha256": "ebd1239697abad2079dfd311f89c7565ea3c63284a2532e0f067c973b689fb06"
+    },
+    {
+      "path": "wechat-robot-client/plugin/pkg/doubao_tts.go",
+      "size": 6135,
+      "sha256": "1d52e5ea420119403a9cbf370784ec787f63f7848200279194ff455cae835cc1"
+    },
+    {
+      "path": "wechat-robot-client/plugin/pkg/mimo_tts.go",
+      "size": 2747,
+      "sha256": "d071dac823d55b0bdd442787ad8c22b32e322aaf4b637a5ebbe7efaebd5e00d8"
+    },
+    {
+      "path": "wechat-robot-client/plugin/pkg/podcast/podcast_test.go",
+      "size": 474,
+      "sha256": "10df18ecc9fc467659ce762bfc342cc5253a4869ea258cfdc6f00d54a9d486cf"
+    },
+    {
+      "path": "wechat-robot-client/plugin/pkg/podcast/podcasts.go",
+      "size": 9109,
+      "sha256": "25784e7277ebce1cf871fde23e152c8f17074ecf21ec614d27740ca85540e378"
+    },
+    {
+      "path": "wechat-robot-client/plugin/pkg/podcast/protocols.go",
+      "size": 22561,
+      "sha256": "7d08c2acf14889b3fe96c3b9b91d9d56236c7ba6162db3b5e474122a5fa3c766"
+    },
+    {
+      "path": "wechat-robot-client/plugin/pkg/slider_access_secret.go",
+      "size": 1206,
+      "sha256": "7c4f26871e55f5cde67d07e85e67168a15d384a759cd6378e1c5ab34bd5786b9"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugin.go",
+      "size": 322,
+      "sha256": "7f30d27a25a6ef6729ed41a64f754b5c1f37f22c8a7eb963c2922a03f3072aa3"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/ai_attach_upload.go",
+      "size": 2343,
+      "sha256": "cc8dfebc8842068d15aefa6a0f463303016711dc60668186ea3db3fbe47ec493"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/ai_chat.go",
+      "size": 16746,
+      "sha256": "87abb1306fd56a4d97edab3d08468d441378aff196385b946e260920e58b0dd8"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/ai_emoji_upload.go",
+      "size": 2351,
+      "sha256": "046b644b9c6c2e8f055e263aac92d16a40efe0fbbb7e70801f362ab50a5d29cf"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/ai_image_upload.go",
+      "size": 2336,
+      "sha256": "13d56a9aefd53d5aec5766314c84bfac4d22ba7cf47b9e25952b821099143e71"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/ai_video_upload.go",
+      "size": 2336,
+      "sha256": "644fdc161410aba26bcc7018b1ea1662b1fdbbca63c45c3ceea997e3ca45bc5b"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/ai_voice_upload.go",
+      "size": 2336,
+      "sha256": "daa540981606c167efc22357cb92a4c941a8eed574fa27c3363d8171f938ea65"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/auto_join_group.go",
+      "size": 1262,
+      "sha256": "7596de44347c0346f4cef10a7aa4c9f9b15c1bdc9681fab7816a883a7300943a"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/bilibili_video_parse.go",
+      "size": 4089,
+      "sha256": "cbbbbfe428cccebe932a41fd6b78d9f6dee7b3be0780184fb95fa5fe4d4c258e"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/chatroom_chat.go",
+      "size": 1262,
+      "sha256": "c30333c2fcac890a527fd060ac7e643297f5e1b90b9d232d2dc3969e530dd91f"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/chatroom_common.go",
+      "size": 1298,
+      "sha256": "27c970912cd2f4eef458d04ee47a78fb84edddbc56d6ece7af1240a8e420a91e"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/chatroom_member_blacklist.go",
+      "size": 2129,
+      "sha256": "9e56607ae938098ec863317faa8a17f6dba1ca4ce79a1bb9e03bfb97d91bc80a"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/chatroom_wxhb_notify.go",
+      "size": 4029,
+      "sha256": "715bac0226cb8de3d3e5720a04dce9cde8feeb46e849eff10d73c19cb6f77ebc"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/douyin_video_parse.go",
+      "size": 29328,
+      "sha256": "a895ca5d664ba56a1bf9e1bbf07b5e5c412eb7a4f8cb4284e19d22b70705487c"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/douyin_video_parse_test.go",
+      "size": 1038,
+      "sha256": "64c0978764e6172b52155e78191d9efeee7d0165fced7d3ad4c98ef3a2246cfd"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/friend_chat.go",
+      "size": 1266,
+      "sha256": "1d333f3c408bcf257c97febb4386cdaeb0a7dcb40037d0e507e73b6759f891a3"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/image_auto_upload.go",
+      "size": 1612,
+      "sha256": "76f883c97fce9176dc96217fd5c430451d2eb02c773857fd4b5c75ec0cffc71f"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/knowledge_base.go",
+      "size": 4252,
+      "sha256": "aac619d45163903b34262ce69f79397452cb25a6f3b82d7ca25c7962853ff26a"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/pat.go",
+      "size": 3644,
+      "sha256": "0f5ddb37fee82d743126226639ec91273efd77d68d65de62a587c732698878a2"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/podcast.go",
+      "size": 8629,
+      "sha256": "5b7c1b5e24cbf9bc13eccc4320b641d5ca722252e24f61be0dd67ed77e55449d"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/slider_access_secret.go",
+      "size": 1454,
+      "sha256": "34079aaabecd01ca2e9141b70bfb4f7d9351a714bcca4e65cff0c2643ab2bb71"
+    },
+    {
+      "path": "wechat-robot-client/plugin/plugins/switch_chat_model.go",
+      "size": 3284,
+      "sha256": "27d7f5308a4b2a339377f35160d5a6d36ab26123638dbee3d3a40c6172375e05"
+    },
+    {
+      "path": "wechat-robot-client/repository/admin.go",
+      "size": 1080,
+      "sha256": "09f29f242d72f7fb32ec24fe4655daef4c9567d15786271aeb45e79cf302cd8d"
+    },
+    {
+      "path": "wechat-robot-client/repository/ai_task.go",
+      "size": 1986,
+      "sha256": "474dcfe645a1d2256713f60aefd44f9f3d0d6306a7c1a45945391ba7308657f8"
+    },
+    {
+      "path": "wechat-robot-client/repository/chat_room_member.go",
+      "size": 6790,
+      "sha256": "72bad4242523ae9a3821016017a0c627bed83a32d922961e98bbb2aff29b0eaf"
+    },
+    {
+      "path": "wechat-robot-client/repository/chat_room_settings.go",
+      "size": 2529,
+      "sha256": "f69cdd7207240668fa0f3341a60a9c8b56e4b23dc8158e7ca029bb4be8b768d4"
+    },
+    {
+      "path": "wechat-robot-client/repository/contact.go",
+      "size": 4636,
+      "sha256": "8343b6fbb4bc81220cf7538ea47ef44a68fe7e735cbcecb0cf618d0373119e35"
+    },
+    {
+      "path": "wechat-robot-client/repository/friend_settings.go",
+      "size": 1155,
+      "sha256": "9a7c4e45f489de64181911ea2218102db3f03bf17f6ed0ac96d94bf2a0800e19"
+    },
+    {
+      "path": "wechat-robot-client/repository/global_settings.go",
+      "size": 1267,
+      "sha256": "78cec2d36d15f718d806aa87700d1d65a4efb2fcd567138ea65b6096bfe23a26"
+    },
+    {
+      "path": "wechat-robot-client/repository/image_knowledge_document.go",
+      "size": 3385,
+      "sha256": "d31bd1e3b1c77b43e28a00f04a51f1ada9e2fcb0af071860ec2c115b3619dbe1"
+    },
+    {
+      "path": "wechat-robot-client/repository/knowledge_category.go",
+      "size": 3791,
+      "sha256": "123af3dfbe0c22a743ba17ad0c140bb972c058e38ae8ffb5f0fef2c7f7cbd743"
+    },
+    {
+      "path": "wechat-robot-client/repository/knowledge_document.go",
+      "size": 4382,
+      "sha256": "6dcaad37cf158b242e40cdaf584e55fb86debd7328d9c1979d063a9b34c75955"
+    },
+    {
+      "path": "wechat-robot-client/repository/mcp_server.go",
+      "size": 8748,
+      "sha256": "71056ed2c57ae1bffd42b292efae356ccb81759497a7cb5224a749ac8e1ca0a7"
+    },
+    {
+      "path": "wechat-robot-client/repository/memory.go",
+      "size": 6559,
+      "sha256": "a525d5e76219d2546e3fed12ddf7b3fb52138b0013f5041da151bc5af21cbfd1"
+    },
+    {
+      "path": "wechat-robot-client/repository/message.go",
+      "size": 18841,
+      "sha256": "ab0c9a710d0cf2f48a59c57200db52cc32c003b1d2e4c0c2a910e2ccec16f387"
+    },
+    {
+      "path": "wechat-robot-client/repository/moment.go",
+      "size": 847,
+      "sha256": "3b8a1e7cbbad68d6f3dfecefd98ef4d495154d76da25c463ced2be903f9d016b"
+    },
+    {
+      "path": "wechat-robot-client/repository/moment_comment.go",
+      "size": 1372,
+      "sha256": "8d316e6fe6750501a1621bc7b5d20c77c3475379a7bac60d8c1be54b8de1d9ff"
+    },
+    {
+      "path": "wechat-robot-client/repository/moment_settings.go",
+      "size": 916,
+      "sha256": "7ee7800b0d8d90483c59ee361c88f242ee5f33b508f585b8ccb30fef2209ba8b"
+    },
+    {
+      "path": "wechat-robot-client/repository/oss_settings.go",
+      "size": 871,
+      "sha256": "b320f26eb6013f344dad9ed3f5c9fb806f9be0ff9dfc63d0857cdbdf320015c8"
+    },
+    {
+      "path": "wechat-robot-client/repository/skill.go",
+      "size": 2350,
+      "sha256": "00c27acb74da09445fcb7a8fe3b35d04a139806d422d2665f9a189def1e7ad45"
+    },
+    {
+      "path": "wechat-robot-client/repository/system_message.go",
+      "size": 2752,
+      "sha256": "8320f9a7e76a3a955bcd4709719f894919b541fbb4bf15e892ff7c343604880a"
+    },
+    {
+      "path": "wechat-robot-client/repository/system_prompt.go",
+      "size": 1564,
+      "sha256": "8eee27b987c5112f33ba4b760610db4f1f8d81b47cfc548177007c1396d7884a"
+    },
+    {
+      "path": "wechat-robot-client/repository/system_settings.go",
+      "size": 916,
+      "sha256": "1f23272f61572583cd56c0eeb3b410e1d6b61850664738d01a2ff963df316e6b"
+    },
+    {
+      "path": "wechat-robot-client/router/router.go",
+      "size": 12605,
+      "sha256": "b7c7ea3c7566e1b91ae3d7091d974b43d69578b63d4b9068fe6eeadd5c35d1ac"
+    },
+    {
+      "path": "wechat-robot-client/service/admin.go",
+      "size": 562,
+      "sha256": "e7b9a67ca1231825df724ef1a46711d044e090c5db446005756a31a541367809"
+    },
+    {
+      "path": "wechat-robot-client/service/agent.go",
+      "size": 8768,
+      "sha256": "2989e8a9c4342c04112ba7ff60bbc91b171652ed3c1c3978ccf44eb57c56eec6"
+    },
+    {
+      "path": "wechat-robot-client/service/ai_callback.go",
+      "size": 2525,
+      "sha256": "f5297d6a9f52788cb17f97c1140e7e703536aad9a433799b688d2cb76d132ff2"
+    },
+    {
+      "path": "wechat-robot-client/service/ai_chat.go",
+      "size": 6249,
+      "sha256": "12eedc02499727d4107c5aed5aaf4a5b94a4f15f32728f9cf78de03f21a586db"
+    },
+    {
+      "path": "wechat-robot-client/service/ai_moment.go",
+      "size": 6832,
+      "sha256": "19407519be95cf722849d6cf71facff69650ce4727559b041035dfe52cc58796"
+    },
+    {
+      "path": "wechat-robot-client/service/ai_task.go",
+      "size": 901,
+      "sha256": "75124fb00e09d11d434d0c58bb6b3a321b0deb88ca3074953ea292bba030b832"
+    },
+    {
+      "path": "wechat-robot-client/service/attach_download.go",
+      "size": 3751,
+      "sha256": "206548da5398eb0911029de12ffe32ed1cddff2b6ee99f8cebaba897d31a863a"
+    },
+    {
+      "path": "wechat-robot-client/service/chat_history.go",
+      "size": 651,
+      "sha256": "530554a77a197dbbb489c9ddcad7cb923f676f4d4e110c0b542d745d81cf2b1f"
+    },
+    {
+      "path": "wechat-robot-client/service/chat_room.go",
+      "size": 33892,
+      "sha256": "42bad17ba68bb4156cdf14594c93016516b3bfd2ab85b6dd13f89092b93bdbee"
+    },
+    {
+      "path": "wechat-robot-client/service/chat_room_settings.go",
+      "size": 14366,
+      "sha256": "06f993db52526ac30e5d0eeccae15bde1abb132c734817b68adaa4e9001c5e49"
+    },
+    {
+      "path": "wechat-robot-client/service/chat_room_summary.go",
+      "size": 16404,
+      "sha256": "5209441a4741c544146321c698f4702e0c13d87fb1fb3348a51ba0c4470c738f"
+    },
+    {
+      "path": "wechat-robot-client/service/chat_room_summary_test.go",
+      "size": 8294,
+      "sha256": "a5e46460361b6cd5a49295acc61932601d17d0ba0f5ab44f5aabeb84f898ad2d"
+    },
+    {
+      "path": "wechat-robot-client/service/chat_room_test.go",
+      "size": 1022,
+      "sha256": "c398b03638aa5163373366cbc563216305ee2247bdd48ff660697bca84a5946a"
+    },
+    {
+      "path": "wechat-robot-client/service/contact.go",
+      "size": 15882,
+      "sha256": "d1012a8ceebe05b1481f4ce844621c0285b9c150acd351044398ed9d085b7505"
+    },
+    {
+      "path": "wechat-robot-client/service/contact_sync_test.go",
+      "size": 5724,
+      "sha256": "63a9a760d4fac2c9234edd8cf7724af233214667f80a722f44b339a98df805a0"
+    },
+    {
+      "path": "wechat-robot-client/service/embedding_service.go",
+      "size": 4072,
+      "sha256": "23f49d2b9108fd72cd4340c82fd6e0068b1b9f5e9ac7cd5d2443655450492622"
+    },
+    {
+      "path": "wechat-robot-client/service/friend_settings.go",
+      "size": 5892,
+      "sha256": "c6ab005331c97d7e173a1bf19ba4501d0ea99673f680f8f4dd8e6b77188b0f4e"
+    },
+    {
+      "path": "wechat-robot-client/service/global_settings.go",
+      "size": 977,
+      "sha256": "900a64046f8768e4f4197bede879785c21420a6602af9dde47069c34b316a626"
+    },
+    {
+      "path": "wechat-robot-client/service/image_embedding_service.go",
+      "size": 2866,
+      "sha256": "e8867165ebbb4eff5eacc7b7f03744fa4720f793675cd00010d42992da4a654b"
+    },
+    {
+      "path": "wechat-robot-client/service/image_knowledge_service.go",
+      "size": 5065,
+      "sha256": "078cf1ee51f13ab09ca81e0413c562d566176e8ba38a31fd359d54c7a3dcbe49"
+    },
+    {
+      "path": "wechat-robot-client/service/knowledge_category.go",
+      "size": 5521,
+      "sha256": "d265d46fd22c49c5a297e99b3da25fcec61954a41663cb6b7789eb16ec0a008b"
+    },
+    {
+      "path": "wechat-robot-client/service/knowledge_service.go",
+      "size": 9259,
+      "sha256": "8ecfb0d0136752752af63b4967f24d4b34fd5f8a4986d38afd8b54ddb6bb035e"
+    },
+    {
+      "path": "wechat-robot-client/service/login.go",
+      "size": 13896,
+      "sha256": "3ed0ad62855680dd2dceb84031ae2ef4d4395c0276fd65ed2ff494333e5ff0ff"
+    },
+    {
+      "path": "wechat-robot-client/service/mcp.go",
+      "size": 7068,
+      "sha256": "c58c5d92760f753ed6a3586eecff5d61f6d67f7eb5ace66704a9ca06b4cf6adf"
+    },
+    {
+      "path": "wechat-robot-client/service/memory_service.go",
+      "size": 35088,
+      "sha256": "ea5d321f38fc4029f1b4bff30afe3d0b9485cb5c65e86d3da096844448b3c9d4"
+    },
+    {
+      "path": "wechat-robot-client/service/message.go",
+      "size": 75639,
+      "sha256": "b68045767acaa74f8bc9881827a279ad5a924982d89375bfc44dca3053e883e7"
+    },
+    {
+      "path": "wechat-robot-client/service/moments.go",
+      "size": 22764,
+      "sha256": "473989ddbffd65ce75717722d6dd825109e3f80391186055610252a352473928"
+    },
+    {
+      "path": "wechat-robot-client/service/official_account.go",
+      "size": 400,
+      "sha256": "ff9634eecc8e98f59144a83f45cc7ee590f19d659a33a117543a02ddd7e45adf"
+    },
+    {
+      "path": "wechat-robot-client/service/oss_settings.go",
+      "size": 18760,
+      "sha256": "11dd85fc83ae43ac08a17608fefed6b5552c1074d7bc1e57e4d332ad978445b8"
+    },
+    {
+      "path": "wechat-robot-client/service/skill.go",
+      "size": 4016,
+      "sha256": "58399298bf571dd9af4554c8e1ceeea2a93acc57f7fc8684d9cb0d3594c1f8bd"
+    },
+    {
+      "path": "wechat-robot-client/service/system_message.go",
+      "size": 705,
+      "sha256": "fbd300c30793ef625ce66761cc1ec6bcec418d04f9def47105b88a4835bc2e37"
+    },
+    {
+      "path": "wechat-robot-client/service/system_prompt.go",
+      "size": 2590,
+      "sha256": "3edde179cc8ab8e62d6ee5c6012bae88bf8ce98f5e0aab20b30f169a77673fcb"
+    },
+    {
+      "path": "wechat-robot-client/service/system_prompt_test.go",
+      "size": 1016,
+      "sha256": "75574a4cbbcbbbbca5a903bc44f8bb39bf30328278fafb3785e7bc86b0e4ef4c"
+    },
+    {
+      "path": "wechat-robot-client/service/system_settings.go",
+      "size": 1824,
+      "sha256": "c73eec6cde1ef8d942e9bc394fb18abb6348256af6b903423a17fc0a6af823bf"
+    },
+    {
+      "path": "wechat-robot-client/service/utils.go",
+      "size": 899,
+      "sha256": "b78346b4f374139ee823a3aac4de350d198adcd954abc43eacb5127258ae3034"
+    },
+    {
+      "path": "wechat-robot-client/service/vector_store_service.go",
+      "size": 10692,
+      "sha256": "8a816a99e1c26a599efc319de90ccd7941cc8ec25727cf361a9a95b631fde3f0"
+    },
+    {
+      "path": "wechat-robot-client/service/word_cloud.go",
+      "size": 1685,
+      "sha256": "4173e8b6456e7d2d3e0ab7d4ffbfec9eae53ab727ad4c63ac5d669904ae5a415"
+    },
+    {
+      "path": "wechat-robot-client/service/wx_app.go",
+      "size": 356,
+      "sha256": "06581d33d347efd63985de884d187d3ccdb148d747051248e71d83fddbaec84d"
+    },
+    {
+      "path": "wechat-robot-client/startup/agent.go",
+      "size": 326,
+      "sha256": "f7bf701ee0a47e10de2d1020214cf79603a2823971212ba398983dad049766c6"
+    },
+    {
+      "path": "wechat-robot-client/startup/config.go",
+      "size": 3552,
+      "sha256": "a025663cfaa258e43d03a696271e4993540bc9e615bf4d8f29d75ff9d917515b"
+    },
+    {
+      "path": "wechat-robot-client/startup/migrate.go",
+      "size": 4277,
+      "sha256": "13437d5972a7f57138ab31ee903857811850cd7dd380c310a6bfa7b11e2b02a2"
+    },
+    {
+      "path": "wechat-robot-client/startup/plugin.go",
+      "size": 1164,
+      "sha256": "cf2320fcfa621d71444aad4a6764296ec7e53afd42c860ea583a49c3fa1004e3"
+    },
+    {
+      "path": "wechat-robot-client/startup/rag.go",
+      "size": 4905,
+      "sha256": "3cc342eeaf70a4e15f4baa9caa69b6558a0a812c200b00315d9e03a82525c537"
+    },
+    {
+      "path": "wechat-robot-client/startup/robot.go",
+      "size": 3217,
+      "sha256": "35519bc386232c962afe996e97a2f5e4889ff9baeb0718a37760aaf40ea28d60"
+    },
+    {
+      "path": "wechat-robot-client/startup/seed.go",
+      "size": 1212,
+      "sha256": "ed6fea888afbb3ab9fe951213a47e97fed778833d2c091b45510ef1d4f977d82"
+    },
+    {
+      "path": "wechat-robot-client/startup/vars.go",
+      "size": 2491,
+      "sha256": "d76152acc25e60ecb9f8536d22bca73285cbddc1ae9df9eb88a3b428d68706f4"
+    },
+    {
+      "path": "wechat-robot-client/tips/remote-debugger.md",
+      "size": 1403,
+      "sha256": "c924b136cbf09158a7bdbc3e7f788250d98b0756c01beaaee457eaa7a22c3234"
+    },
+    {
+      "path": "wechat-robot-client/utils/ai.go",
+      "size": 923,
+      "sha256": "4aa45b311f6c3e0331ebe0c959a746f401d3715cbadfabd3fd5269bfde5166dd"
+    },
+    {
+      "path": "wechat-robot-client/utils/ai_test.go",
+      "size": 1809,
+      "sha256": "a74008761168d0b89022dea6fb8ff1844d39d5527f326fce8bd42407ed5544fb"
+    },
+    {
+      "path": "wechat-robot-client/utils/common.go",
+      "size": 159,
+      "sha256": "066650340ae70a996d478a725b5eb7546e053ad26da4162cc606fcda9b6012be"
+    },
+    {
+      "path": "wechat-robot-client/utils/media.go",
+      "size": 5231,
+      "sha256": "6133188ca455245961e235f8eeed661c1a5a5e9d9c605c0d9134b659aeae0180"
+    },
+    {
+      "path": "wechat-robot-client/utils/pointer.go",
+      "size": 5293,
+      "sha256": "990f4734377cf6fd23f06ade50229b1faf631a7de8499238b2d3c046fcaabc6e"
+    },
+    {
+      "path": "wechat-robot-client/vars/cron.go",
+      "size": 1184,
+      "sha256": "062fd0ee70bfb7276992148b1d82eab8a924886185adf43fb19ece0f91807c75"
+    },
+    {
+      "path": "wechat-robot-client/vars/global_settings_observer.go",
+      "size": 1464,
+      "sha256": "89080b82f5bb1aaded79120b13ba784d6ffb580ef1938dd85a0722b8096a7ff1"
+    },
+    {
+      "path": "wechat-robot-client/vars/settings.go",
+      "size": 921,
+      "sha256": "ed84501cb6000b54881c38e0182506b6659b6a32bc161d3cb6a7f35b90f71dc4"
+    },
+    {
+      "path": "wechat-robot-client/vars/vars.go",
+      "size": 2645,
+      "sha256": "6a8b78a648e7d8a8b94c970168ef32d29c0c66843341f31cf1c9b890250d62c3"
+    }
+  ],
+  "excludedCandidates": [
+    {
+      "path": ".env.user.bak",
+      "reason": "local configuration or backup"
+    },
+    {
+      "path": ".env.user.bak.0907",
+      "reason": "local configuration or backup"
+    },
+    {
+      "path": "outputs/wecom_qa/智能客服批量导入_聊天记录归纳.xlsx",
+      "reason": "runtime, generated output or cache"
+    },
+    {
+      "path": "outputs/wecom_qa/智能客服批量导入_聊天记录归纳_去重分工版.xlsx",
+      "reason": "runtime, generated output or cache"
+    },
+    {
+      "path": "spreadsheet_work/template.xlsx",
+      "reason": "runtime data, credentials or non-code spreadsheet"
+    },
+    {
+      "path": "wechat-robot-client/.codegraph/.gitignore",
+      "reason": "runtime, generated output or cache"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/.env.user.bak",
+      "reason": "local configuration or backup"
+    },
+    {
+      "path": "wechat-robot-client/.deploy/local/.env.user.bak.0907",
+      "reason": "local configuration or backup"
+    }
+  ],
+  "verification": "Every copied file matches the current source SHA-256 at copy completion."
+}

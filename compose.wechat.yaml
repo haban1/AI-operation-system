@@ -1,0 +1,16 @@
+# WeChat business features run in the native robot at 8080.
+# The robot still uses Tianhe's unified model gateway.
+services:
+  web:
+    environment:
+      WECHAT_ROBOT_ADMIN_URL: http://10.70.72.78:8080
+      # Both services are published on this host; keep embedded login cookies same-site.
+      WECHAT_ROBOT_ADMIN_FOLLOW_HOST: "true"
+    networks:
+      default:
+      wechat-robot:
+        aliases:
+          - tianhe-model-gateway
+networks:
+  wechat-robot:
+    external: true

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#080d12" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <title>智慧驱动 · AI 运营中枢</title>
+  <link rel="stylesheet" href="/styles.css?v=20260917-intellidriven-operations-workspace" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" role="img"><path d="M8 8.5 16 4l8 4.5v9L16 22l-8-4.5z"/><path d="m8 17.5 8 4.5 8-4.5V24l-8 4-8-4z"/></svg>
+        </div>
+        <div class="brand-copy"><strong>智慧驱动</strong><span>AI OPERATIONS CENTER</span></div>
+      </div>
+      <div class="nav-label">工作空间</div>
+      <nav id="nav"></nav>
+      <div class="sidebar-spacer"></div>
+      <div class="side-status">
+        <div class="side-status-head"><span>系统运行状态</span><em id="operationsBadge">LIVE</em></div>
+        <div class="status-line"><i id="cloudDot"></i><span>云端服务</span><b id="cloudStatus">检查中</b></div>
+        <div class="status-line"><i id="agentDot"></i><span>Local Agent</span><b id="agentStatus">检查中</b></div>
+        <small><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.6 2.9 8.1 7 10 4.1-1.9 7-5.4 7-10V6z"/><path d="m9 12 2 2 4-4"/></svg>素材仅在本机处理，元数据安全上云</small>
+      </div>
+      <div class="sidebar-foot"><span>智慧驱动</span><b>v0.1 MVP</b></div>
+    </aside>
+    <main>
+      <header class="topbar">
+        <div class="page-heading">
+          <span class="eyebrow">AI DIGITAL EMPLOYEE</span>
+          <h1 id="pageTitle">运营总览</h1>
+          <p id="pageSubtitle">推广、内容、活动转化与 AI 运营建议</p>
+        </div>
+        <div class="top-actions">
+          <span class="mode-pill" id="qwenMode"><i></i>千问：—</span>
+          <button class="master-switch is-on" id="masterSwitch" type="button" role="switch" aria-checked="true" aria-label="全局运行总开关">
+            <span class="master-switch-track" aria-hidden="true"><i></i></span>
+            <span class="master-switch-copy"><b>全局运行</b><small>自动任务已开启</small></span>
+          </button>
+          <button class="ghost" id="logoutBtn" type="button" hidden>退出</button>
+          <button class="ghost icon-button" id="refreshBtn" title="刷新当前页面" aria-label="刷新当前页面">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M18.5 9A7 7 0 1 0 19 15"/></svg><span>刷新</span>
+          </button>
+          <div class="operator" title="当前运营席位"><span>AI</span><div><b>运营席位</b><small>管理员</small></div></div>
+        </div>
+      </header>
+      <section id="content" class="content"><div class="loading"><i></i><span>正在加载运营工作台…</span></div></section>
+    </main>
+  </div>
+  <div id="loginScreen" class="login-screen" hidden>
+    <div class="login-card">
+      <div class="login-brand"><span>AI</span><div><b>智慧驱动</b><small>ADMIN CONSOLE</small></div></div>
+      <div class="login-copy"><span>管理端安全登录</span><h2>欢迎回到运营工作台</h2><p>登录后可统一管理五平台任务流、内容创作、人工审核与问题汇总。</p></div>
+      <form id="loginForm" class="login-form">
+        <label>管理员账号<input name="username" autocomplete="username" value="admin" required></label>
+        <label>登录密码<input name="password" type="password" autocomplete="current-password" required></label>
+        <p id="loginError" class="login-error" role="alert"></p>
+        <button id="loginSubmit" class="btn full" type="submit">安全登录</button>
+      </form>
+      <small class="login-security">Cookie 仅用于管理端会话；Local Agent 请求使用 Token 校验。</small>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script type="module" src="/app.js?v=20261016-wechat-workspace"></script>
+</body>
+</html>

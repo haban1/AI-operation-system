@@ -1,0 +1,4 @@
+FROM registry.cn-shenzhen.aliyuncs.com/houhou/wechat-ipad-8074@sha256:f32ac5b1b5e05a88b0736c483e1248887845293e6f8670ecd51243d8dd16b620
+COPY --chmod=755 server-main.patched /usr/wic-go/main
+LABEL tianhe.protocol.fix="moments-empty-recipient-lists-v1"
+LABEL tianhe.protocol.original-main-sha256="39de506fd266bf126f62c11f7bfcb0c17a4aaedb0565e808a35cd7708ae4dc95"

@@ -1,0 +1,481 @@
+CREATE TABLE IF NOT EXISTS `global_settings` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '公共配置表主键ID',
+  -- 聊天模型AI设置
+  `chat_ai_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用AI聊天功能',
+  `chat_ai_trigger` VARCHAR(20) DEFAULT '' COMMENT '触发聊天AI的关键词',
+  `chat_base_url` VARCHAR(255) DEFAULT '' COMMENT '聊天AI的基础URL地址',
+  `chat_api_key` VARCHAR(255) DEFAULT '' COMMENT '聊天AI的API密钥',
+  `chat_model` VARCHAR(100) DEFAULT '' COMMENT '聊天AI使用的模型名称',
+  `image_recognition_model` VARCHAR(100) DEFAULT '' COMMENT '图像识别模型名称',
+  `chat_prompt` TEXT COMMENT '聊天AI系统提示词',
+  `max_completion_tokens` INT DEFAULT 0 COMMENT '最大回复',
+  -- 绘图模型AI设置
+  `image_ai_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用AI绘图功能',
+  `image_ai_settings` JSON COMMENT '绘图AI配置项',
+  -- 文本转语音AI设置
+  `tts_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用AI文本转语音功能',
+  `tts_settings` JSON COMMENT '文本转语音AI配置项',
+  -- 拍一拍
+  `pat_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用AI拍一拍功能',
+  `pat_type` ENUM('text', 'voice') NOT NULL DEFAULT 'text' COMMENT '拍一拍方式：text-文本，voice-语音',
+  `pat_text` VARCHAR(255) DEFAULT '' COMMENT '拍一拍文本',
+  `pat_voice_timbre` VARCHAR(100) DEFAULT '' COMMENT '拍一拍音色',
+  -- 欢迎新人
+  `welcome_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用新成员加群欢迎功能',
+  `welcome_type` ENUM('text','emoji', 'image', 'url') NOT NULL DEFAULT 'text' COMMENT '欢迎方式：text-文本，emoji-表情，image-图片，url-链接',
+  `welcome_text` VARCHAR(255) DEFAULT '' COMMENT '欢迎新成员的文本',
+  `welcome_emoji_md5` VARCHAR(64) DEFAULT '' COMMENT '欢迎新成员的表情MD5',
+  `welcome_emoji_len` BIGINT DEFAULT 0 COMMENT '欢迎新成员的表情MD5长度',
+  `welcome_image_url` VARCHAR(255) DEFAULT '' COMMENT '欢迎新成员的图片URL',
+  `welcome_url` VARCHAR(255) DEFAULT '' COMMENT '欢迎新成员的URL',
+  -- 退出群聊提醒
+  `leave_chat_room_alert_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用群聊退出提醒功能',
+  `leave_chat_room_alert_text` VARCHAR(255) DEFAULT '' COMMENT '群聊退出提醒文本',
+  -- 群聊排行榜
+  `chat_room_ranking_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用群聊排行榜功能',
+  `chat_room_ranking_daily_cron` VARCHAR(255) DEFAULT '' COMMENT '每日定时任务表达式',
+  `chat_room_ranking_weekly_cron` VARCHAR(255) DEFAULT '' COMMENT '每周定时任务表达式',
+  `chat_room_ranking_month_cron` VARCHAR(255) DEFAULT '' COMMENT '每月定时任务表达式',
+  -- 群聊总结
+  `chat_room_summary_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用聊天记录总结功能',
+  `chat_room_summary_model` VARCHAR(100) DEFAULT '' COMMENT '聊天总结使用的AI模型名称',
+  `chat_room_summary_cron` VARCHAR(100) DEFAULT '' COMMENT '群聊总结的定时任务表达式',
+  -- 每日早报
+  `news_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用每日早报功能',
+  `news_type` ENUM('text', 'image') NOT NULL DEFAULT 'text' COMMENT '是否启用每日早报功能',
+  `news_cron` VARCHAR(100) DEFAULT '' COMMENT '每日早报的定时任务表达式',
+  -- 每日早安
+  `morning_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用早安问候功能',
+  `morning_cron` VARCHAR(100) DEFAULT '' COMMENT '早安问候的定时任务表达式',
+  -- 同步联系人
+  `friend_sync_cron` VARCHAR(100) DEFAULT '' COMMENT '好友同步的定时任务表达式'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `friend_settings` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '群聊配置表主键ID',
+  `wechat_id` VARCHAR(64) DEFAULT '' COMMENT '好友微信ID',
+  -- 聊天模型AI设置
+  `chat_ai_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用AI聊天功能',
+  `chat_base_url` VARCHAR(255) DEFAULT '' COMMENT '聊天AI的基础URL地址',
+  `chat_api_key` VARCHAR(255) DEFAULT '' COMMENT '聊天AI的API密钥',
+  `chat_model` VARCHAR(100) DEFAULT '' COMMENT '聊天AI使用的模型名称',
+  `image_recognition_model` VARCHAR(100) DEFAULT '' COMMENT '图像识别模型名称',
+  `chat_prompt` TEXT COMMENT '聊天AI系统提示词',
+  `max_completion_tokens` INT DEFAULT 0 COMMENT '最大回复',
+  -- 绘图模型AI设置
+  `image_ai_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用AI绘图功能',
+  `image_ai_settings` JSON COMMENT '绘图AI配置项',
+   -- 文本转语音AI设置
+  `tts_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用AI文本转语音功能',
+  `tts_settings` JSON COMMENT '文本转语音AI配置项',
+  KEY `idx_wechat_id` (`wechat_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `chat_room_settings` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '群聊配置表主键ID',
+  `chat_room_id` VARCHAR(64) DEFAULT '' COMMENT '群聊微信ID',
+  -- 聊天模型AI设置
+  `chat_ai_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用AI聊天功能',
+  `chat_ai_trigger` VARCHAR(20) DEFAULT '' COMMENT '触发聊天AI的关键词',
+  `chat_base_url` VARCHAR(255) DEFAULT '' COMMENT '聊天AI的基础URL地址',
+  `chat_api_key` VARCHAR(255) DEFAULT '' COMMENT '聊天AI的API密钥',
+  `chat_model` VARCHAR(100) DEFAULT '' COMMENT '聊天AI使用的模型名称',
+  `image_recognition_model` VARCHAR(100) DEFAULT '' COMMENT '图像识别模型名称',
+  `chat_prompt` TEXT COMMENT '聊天AI系统提示词',
+  `max_completion_tokens` INT DEFAULT 0 COMMENT '最大回复',
+  -- 绘图模型AI设置
+  `image_ai_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用AI绘图功能',
+  `image_ai_settings` JSON COMMENT '绘图AI配置项',
+   -- 文本转语音AI设置
+  `tts_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用AI文本转语音功能',
+  `tts_settings` JSON COMMENT '文本转语音AI配置项',
+  -- 短视频解析
+  `short_video_parsing_enabled` BOOLEAN DEFAULT TRUE COMMENT '是否启用短视频解析功能',
+  -- 微信红包通知
+  `wxhb_notify_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用微信红包通知功能',
+  `wxhb_notify_member_list` TEXT COMMENT '微信红包通知的成员列表，逗号分隔的微信ID',
+  -- AI 播客
+  `podcast_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用AI播客功能',
+  `podcast_config` JSON COMMENT 'AI播客配置',
+  -- 拍一拍
+  `pat_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用AI拍一拍功能',
+  `pat_type` ENUM('text', 'voice') NOT NULL DEFAULT 'text' COMMENT '拍一拍方式：text-文本，voice-语音',
+  `pat_text` VARCHAR(255) DEFAULT '' COMMENT '拍一拍文本',
+  `pat_voice_timbre` VARCHAR(100) DEFAULT '' COMMENT '拍一拍音色',
+  -- 欢迎新人
+  `welcome_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用新成员加群欢迎功能',
+  `welcome_type` ENUM('text','emoji', 'image', 'url') NOT NULL DEFAULT 'text' COMMENT '欢迎方式：text-文本，emoji-表情，image-图片，url-链接',
+  `welcome_text` VARCHAR(255) DEFAULT '' COMMENT '欢迎新成员的文本',
+  `welcome_emoji_md5` VARCHAR(64) DEFAULT '' COMMENT '欢迎新成员的表情MD5',
+  `welcome_emoji_len` BIGINT DEFAULT 0 COMMENT '欢迎新成员的表情MD5长度',
+  `welcome_image_url` VARCHAR(255) DEFAULT '' COMMENT '欢迎新成员的图片URL',
+  `welcome_url` VARCHAR(255) DEFAULT '' COMMENT '欢迎新成员的URL',
+    -- 退出群聊提醒
+  `leave_chat_room_alert_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用群聊退出提醒功能',
+  `leave_chat_room_alert_text` VARCHAR(255) DEFAULT '' COMMENT '群聊退出提醒文本',
+  -- 群聊排行榜
+  `chat_room_ranking_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用群聊排行榜功能',
+  -- 群聊总结
+  `chat_room_summary_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用聊天记录总结功能',
+  `chat_room_summary_model` VARCHAR(100) DEFAULT '' COMMENT '聊天总结使用的AI模型名称',
+  -- 每日早报
+  `news_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用每日早报功能',
+  `news_type` ENUM('', 'text', 'image') DEFAULT NULL COMMENT '每日早报类型：text-文本，image-图片',
+  -- 每日早安
+  `morning_enabled` BOOLEAN DEFAULT FALSE COMMENT '是否启用早安问候功能',
+  `knowledge_categories` JSON COMMENT '绑定的知识库分类编码列表',
+  KEY `idx_chat_room_id` (`chat_room_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `messages` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `msg_id` BIGINT NOT NULL,
+  `client_msg_id` BIGINT NOT NULL,
+  `type` INT NOT NULL,
+  `app_msg_type` INT DEFAULT NULL,
+  `is_chat_room` BOOLEAN DEFAULT FALSE COMMENT '是否为群聊消息',
+  `is_at_me` BOOLEAN DEFAULT FALSE COMMENT '消息是否@我',
+  `is_ai_context` BOOLEAN DEFAULT FALSE COMMENT '消息是否是AI的上下文',
+  `is_recalled` BOOLEAN DEFAULT FALSE COMMENT '消息是否已经撤回',
+  `content` TEXT,
+  `display_full_content` TEXT,
+  `message_source` TEXT,
+  `from_wxid` VARCHAR(64),
+  `sender_wxid` VARCHAR(64),
+  `reply_wxid` VARCHAR(64),
+  `to_wxid` VARCHAR(64),
+  `attachment_url` VARCHAR(1024),
+  `created_at` BIGINT NOT NULL,
+  `updated_at` BIGINT NOT NULL,
+  UNIQUE KEY `uniq_msg_id` (`msg_id`),
+  KEY `idx_from_wxid` (`from_wxid`),
+  KEY `idx_type` (`type`),
+  KEY `idx_sender_wxid` (`sender_wxid`),
+  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `system_messages` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `msg_id` BIGINT NOT NULL,
+  `client_msg_id` BIGINT NOT NULL,
+  `type` INT NOT NULL,
+  `image_url` VARCHAR(512) DEFAULT NULL COMMENT '图片URL',
+  `description` VARCHAR(255) DEFAULT NULL COMMENT '备注',
+  `content` TEXT,
+  `from_wxid` VARCHAR(64),
+  `to_wxid` VARCHAR(64),
+  `status` INT NOT NULL DEFAULT 0 COMMENT '消息状态：0-未处理，1-已处理',
+  `is_read` BOOLEAN DEFAULT FALSE COMMENT '是否已读',
+  `created_at` BIGINT NOT NULL,
+  `updated_at` BIGINT NOT NULL,
+  UNIQUE KEY `uniq_msg_id` (`msg_id`),
+  KEY `idx_from_wxid` (`from_wxid`),
+  KEY `idx_type` (`type`),
+  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `contacts` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `wechat_id` VARCHAR(64) NOT NULL COMMENT '微信ID',
+  `alias` VARCHAR(64) DEFAULT NULL COMMENT '微信号',
+  `nickname` VARCHAR(64) DEFAULT NULL COMMENT '昵称',
+  `avatar` VARCHAR(255) DEFAULT NULL COMMENT '头像',
+  `type` ENUM('friend','chat_room', 'official_account') NOT NULL COMMENT '联系人类型：friend-好友，chat_room-群组，official_account-公众号',
+  `remark` VARCHAR(255) DEFAULT NULL COMMENT '备注',
+  `pyinitial` VARCHAR(64) DEFAULT NULL COMMENT '昵称拼音首字母大写',
+  `quan_pin` VARCHAR(255) DEFAULT NULL COMMENT '昵称拼音全拼小写',
+  `sex` TINYINT DEFAULT 0 COMMENT '性别 0：未知 1：男 2：女',
+  `country` VARCHAR(64) DEFAULT NULL COMMENT '国家',
+  `province` VARCHAR(64) DEFAULT NULL COMMENT '省份',
+  `city` VARCHAR(64) DEFAULT NULL COMMENT '城市',
+  `signature` VARCHAR(255) DEFAULT NULL COMMENT '个性签名',
+  `sns_background` VARCHAR(255) DEFAULT NULL COMMENT '朋友圈背景图',
+  `chat_room_owner` VARCHAR(64) NOT NULL DEFAULT '' COMMENT '群聊所有者微信ID',
+  `created_at` BIGINT NOT NULL COMMENT '创建时间',
+  `last_active_at` BIGINT NOT NULL COMMENT '最近活跃时间',
+  `updated_at` BIGINT NOT NULL COMMENT '更新时间',
+  `deleted_at` DATETIME DEFAULT NULL COMMENT '软删除时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_wechat_id` (`wechat_id`),
+  KEY `idx_last_active_at` (`last_active_at`),
+  KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `chat_room_members` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `chat_room_id` VARCHAR(64) NOT NULL COMMENT '群ID',
+  `wechat_id` VARCHAR(64) NOT NULL COMMENT '微信ID',
+  `alias` VARCHAR(64) DEFAULT NULL COMMENT '微信号',
+  `nickname` VARCHAR(64) DEFAULT NULL COMMENT '昵称',
+  `avatar` VARCHAR(255) DEFAULT NULL COMMENT '头像',
+  `inviter_wechat_id` VARCHAR(64) NOT NULL COMMENT '邀请人微信ID',
+  `is_admin` BOOLEAN DEFAULT FALSE COMMENT '是否群管理员',
+  `is_blacklisted` BOOLEAN DEFAULT FALSE COMMENT '是否在黑名单',
+  `is_leaved` BOOLEAN DEFAULT FALSE COMMENT '是否已经离开群聊',
+  `score` BIGINT NOT NULL DEFAULT 0 COMMENT '积分',
+  `temporary_score` BIGINT NOT NULL DEFAULT 0 COMMENT '临时积分',
+  `temporary_score_expiry` BIGINT NOT NULL DEFAULT 0 COMMENT '临时积分有效期',
+  `remark` VARCHAR(255) DEFAULT NULL COMMENT '备注',
+  `joined_at` BIGINT NOT NULL COMMENT '加入时间',
+  `last_active_at` BIGINT NOT NULL COMMENT '最近活跃时间',
+  `leaved_at` BIGINT DEFAULT NULL COMMENT '离开时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_chat_room_id` (`chat_room_id`),
+  KEY `idx_wechat_id` (`wechat_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `ai_task` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `contact_id` VARCHAR(64) NOT NULL COMMENT '联系人ID',
+  `message_id` BIGINT NOT NULL COMMENT '消息ID，关联messages表的msg_id',
+  `ai_provider_task_id` VARCHAR(64) DEFAULT NULL COMMENT 'AI服务商任务ID',
+  `ai_task_type` ENUM('tts') NOT NULL COMMENT 'tts-文本转语音',
+  `ai_task_status` ENUM('pending', 'processing', 'completed', 'failed') NOT NULL COMMENT '任务状态：pending-待处理，processing-处理中，completed-已完成，failed-已失败',
+  `extra` JSON COMMENT '额外信息',
+  `created_at` BIGINT NOT NULL COMMENT '创建时间',
+  `updated_at` BIGINT NOT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_contact_id` (`contact_id`),
+  UNIQUE KEY  `uk_message_id` (`message_id`),
+  UNIQUE KEY  `uk_ai_provider_task_id` (`ai_provider_task_id`),
+  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `moment_settings` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '表主键ID',
+  `sync_key` TEXT COMMENT '朋友圈同步的key',
+  `auto_like` BOOLEAN DEFAULT FALSE COMMENT '开启自动点赞',
+  `auto_comment` BOOLEAN DEFAULT FALSE COMMENT '开启自动评论',
+  `whitelist` TEXT COMMENT '自动点赞、评论白名单',
+  `blacklist` TEXT COMMENT '自动点赞、评论黑名单',
+  `ai_base_url` VARCHAR(255) DEFAULT '' COMMENT 'AI的基础URL地址',
+  `ai_api_key` VARCHAR(255) DEFAULT '' COMMENT 'AI的API密钥',
+  `workflow_model` VARCHAR(100) DEFAULT '' COMMENT '工作流模型',
+  `comment_model` VARCHAR(100) DEFAULT '' COMMENT '评论模型',
+  `comment_prompt` TEXT COMMENT '评论系统提示词',
+  `max_completion_tokens` INT DEFAULT 0 COMMENT '评论最大回复'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `moments` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `wechat_id` VARCHAR(64),
+  `moment_id` BIGINT UNSIGNED NOT NULL,
+  `type` INT NOT NULL,
+  `app_msg_type` INT DEFAULT NULL,
+  `content` TEXT,
+  `message_source` TEXT,
+  `img_buf` TEXT,
+  `status` INT NOT NULL DEFAULT 0,
+  `img_status` INT NOT NULL DEFAULT 0,
+  `push_content` TEXT,
+  `message_seq` INT NOT NULL DEFAULT 0,
+  `created_at` BIGINT NOT NULL,
+  `updated_at` BIGINT NOT NULL,
+  UNIQUE KEY `uniq_moment_id` (`moment_id`),
+  KEY `idx_wechat_id` (`wechat_id`),
+  KEY `idx_type` (`type`),
+  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `moment_comments` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `wechat_id` VARCHAR(64),
+  `moment_id` BIGINT UNSIGNED NOT NULL,
+  `comment` TEXT NOT NULL,
+  `created_at` BIGINT NOT NULL,
+  `updated_at` BIGINT NOT NULL,
+  UNIQUE KEY `uniq_moment_id` (`moment_id`), # 唯一索引确保每条朋友圈只会被评论一次
+  KEY `idx_wechat_id` (`wechat_id`),
+  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `system_settings` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '表主键ID',
+  `webhook_url` VARCHAR(255) DEFAULT '' COMMENT 'Webhook 地址',
+  `webhook_headers` JSON DEFAULT NULL COMMENT 'Webhook 请求头',
+  `api_token_enabled` BOOLEAN DEFAULT FALSE COMMENT '启用API Token',
+  `offline_notification_enabled` BOOLEAN DEFAULT FALSE COMMENT '启用离线通知',
+  `notification_type` ENUM('push_plus', 'email', 'wecom') NOT NULL DEFAULT 'push_plus' COMMENT '通知方式：push_plus-推送加，email-邮件，wecom-企业微信应用',
+  `push_plus_url` VARCHAR(255) DEFAULT '' COMMENT 'Push Plus的URL',
+  `push_plus_token` VARCHAR(255) DEFAULT '' COMMENT 'Push Plus的Token',
+  `wecom_corp_id` VARCHAR(255) DEFAULT '' COMMENT '企业微信企业ID',
+  `wecom_agent_id` VARCHAR(255) DEFAULT '' COMMENT '企业微信应用AgentId',
+  `wecom_secret` VARCHAR(255) DEFAULT '' COMMENT '企业微信应用Secret',
+  `wecom_proxy_url` VARCHAR(255) DEFAULT '' COMMENT '企业微信代理地址',
+  `wecom_to_user` VARCHAR(512) DEFAULT '' COMMENT '企业微信推送用户ID，留空默认ALL',
+  `auto_verify_user` BOOLEAN DEFAULT FALSE COMMENT '自动通过好友验证',
+  `verify_user_delay` INT DEFAULT 60 COMMENT '自动通过好友验证延迟时间(秒)',
+  `auto_chatroom_invite` BOOLEAN DEFAULT FALSE COMMENT '自动邀请进群',
+  `created_at` BIGINT NOT NULL,
+  `updated_at` BIGINT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `oss_settings` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '表主键ID',
+  `auto_upload_image` BOOLEAN DEFAULT FALSE COMMENT '启用自动上传图片',
+  `auto_upload_image_mode` ENUM('all', 'ai_only') NOT NULL DEFAULT 'ai_only' COMMENT '自动上传图片模式',
+  `auto_upload_video` BOOLEAN DEFAULT FALSE COMMENT '启用自动上传视频',
+  `auto_upload_video_mode` ENUM('all', 'ai_only') NOT NULL DEFAULT 'ai_only' COMMENT '自动上传视频模式',
+  `auto_upload_file` BOOLEAN DEFAULT FALSE COMMENT '启用自动上传文件',
+  `auto_upload_file_mode` ENUM('all', 'ai_only') NOT NULL DEFAULT 'ai_only' COMMENT '自动上传文件模式',
+  `oss_provider` ENUM('aliyun', 'tencent_cloud', 'cloudflare') NOT NULL DEFAULT 'aliyun' COMMENT '对象存储服务商',
+  `aliyun_oss_settings` JSON COMMENT '阿里云OSS配置项',
+  `tencent_cloud_oss_settings` JSON COMMENT '腾讯云OSS配置项',
+  `cloudflare_r2_settings` JSON COMMENT 'Cloudflare R2配置项',
+  `created_at` BIGINT NOT NULL,
+  `updated_at` BIGINT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- MCP服务器配置表
+-- 支持四种传输模式：stdio(命令行)、stream
+-- 创建时间：2025-10-02
+CREATE TABLE IF NOT EXISTS `mcp_servers` (
+  -- 基础字段
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT 'MCP服务器配置表主键ID',
+  `name` varchar(100) NOT NULL COMMENT 'MCP服务器名称',
+  `is_built_in` tinyint(1) DEFAULT 0 COMMENT '是否内置MCP服务器',
+  `description` varchar(500) DEFAULT '' COMMENT 'MCP服务器描述',
+  `transport` enum('stdio','stream') NOT NULL COMMENT '传输类型',
+  `enabled` tinyint(1) DEFAULT 0 COMMENT '是否启用该MCP服务器',
+  `priority` int DEFAULT 0 COMMENT '优先级，数字越大优先级越高',
+  
+  -- Stdio模式专用字段（命令行模式）
+  `command` varchar(255) DEFAULT '' COMMENT '命令行模式的可执行命令',
+  `args` json DEFAULT NULL COMMENT '命令行参数数组 []string',
+  `working_dir` varchar(500) DEFAULT '' COMMENT '工作目录',
+  `env` json DEFAULT NULL COMMENT '环境变量键值对 map[string]string',
+  
+  -- 网络模式专用字段（SSE/HTTP/WS共用）
+  `url` varchar(500) DEFAULT '' COMMENT '服务器URL地址（SSE/HTTP/WS模式）',
+  `client_name` varchar(100) DEFAULT '' COMMENT '客户端名称',
+  `auth_type` enum('none','bearer','basic','apikey') DEFAULT 'none' COMMENT '认证类型：none-无认证，bearer-Bearer Token，basic-Basic认证，apikey-API Key',
+  `auth_token` varchar(500) DEFAULT '' COMMENT '认证令牌（Bearer Token或API Key）',
+  `auth_username` varchar(100) DEFAULT '' COMMENT 'Basic认证用户名',
+  `auth_password` varchar(255) DEFAULT '' COMMENT 'Basic认证密码',
+  `headers` json DEFAULT NULL COMMENT '自定义HTTP请求头 map[string]string',
+  `tls_skip_verify` tinyint(1) DEFAULT 0 COMMENT '是否跳过TLS证书验证',
+  
+  -- 超时和重连配置
+  `connect_timeout` int DEFAULT 30 COMMENT '连接超时时间（秒）',
+  `read_timeout` int DEFAULT 60 COMMENT '读取超时时间（秒）',
+  `write_timeout` int DEFAULT 60 COMMENT '写入超时时间（秒）',
+  `max_retries` int DEFAULT 3 COMMENT '最大重试次数',
+  `retry_interval` int DEFAULT 5 COMMENT '重试间隔时间（秒）',
+  `heartbeat_enable` tinyint(1) DEFAULT 1 COMMENT '是否启用心跳检测',
+  `heartbeat_interval` int DEFAULT 30 COMMENT '心跳间隔时间（秒）',
+  
+  -- 高级配置
+  `capabilities` json DEFAULT NULL COMMENT 'MCP服务器能力配置',
+  `custom_config` json DEFAULT NULL COMMENT '自定义配置项',
+  `tags` json DEFAULT NULL COMMENT '标签列表 []string',
+  
+  -- 状态追踪
+  `last_connected_at` datetime DEFAULT NULL COMMENT '最后连接成功时间',
+  `last_error` text COMMENT '最后一次错误信息',
+  `connection_count` bigint DEFAULT 0 COMMENT '累计连接次数',
+  `error_count` bigint DEFAULT 0 COMMENT '累计错误次数',
+  
+  -- 时间戳
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted_at` datetime DEFAULT NULL COMMENT '软删除时间',
+  
+  PRIMARY KEY (`id`),
+  KEY `idx_mcp_servers_deleted_at` (`deleted_at`),
+  KEY `idx_enabled_priority` (`enabled`, `priority`),
+  KEY `idx_transport` (`transport`),
+  KEY `idx_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='MCP服务器配置表';
+
+-- Agent Skills 表
+-- 创建时间：2026-03-06
+CREATE TABLE IF NOT EXISTS `skills` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'Skill主键ID',
+  `name` VARCHAR(128) NOT NULL COMMENT 'Skill名称',
+  `path` VARCHAR(512) NOT NULL COMMENT 'Skill在磁盘上的绝对路径',
+  `enabled` TINYINT(1) DEFAULT 1 COMMENT '是否启用',
+  `source_type` VARCHAR(20) DEFAULT 'local' COMMENT '来源类型：local/git',
+  `source` JSON COMMENT '来源详情(JSON)',
+  `installed_at` DATETIME DEFAULT NULL COMMENT '安装时间',
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_skills_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent Skills 表';
+
+CREATE TABLE IF NOT EXISTS `memories` (
+  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `contact_wxid` varchar(255) NOT NULL DEFAULT '' COMMENT '联系人微信ID',
+  `chat_room_id` varchar(255) NOT NULL DEFAULT '' COMMENT '群聊ID',
+  `type` varchar(32) NOT NULL COMMENT '记忆类型: fact/preference/event/relation/summary',
+  `key` varchar(255) NOT NULL DEFAULT '' COMMENT '记忆键',
+  `content` text COMMENT '记忆内容',
+  `source` varchar(32) NOT NULL DEFAULT 'auto' COMMENT '来源: auto/manual',
+  `importance` int NOT NULL DEFAULT 5 COMMENT '重要性 1-10',
+  `access_count` int NOT NULL DEFAULT 0 COMMENT '访问次数',
+  `last_access_at` bigint NOT NULL DEFAULT 0 COMMENT '最后访问时间',
+  `expire_at` bigint NOT NULL DEFAULT 0 COMMENT '过期时间',
+  `created_at` bigint NOT NULL DEFAULT 0 COMMENT '创建时间',
+  `updated_at` bigint NOT NULL DEFAULT 0 COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_memories_contact_wxid` (`contact_wxid`),
+  KEY `idx_memories_chat_room_id` (`chat_room_id`),
+  KEY `idx_memories_type` (`type`),
+  KEY `idx_memories_last_access_at` (`last_access_at`),
+  KEY `idx_memories_expire_at` (`expire_at`),
+  KEY `idx_contact_key` (`contact_wxid`, `key`),
+  KEY `idx_contact_type` (`contact_wxid`, `type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='长期记忆表';
+
+CREATE TABLE IF NOT EXISTS `knowledge_documents` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `title` VARCHAR(255) DEFAULT NULL,
+  `content` LONGTEXT,
+  `source` VARCHAR(64) DEFAULT NULL COMMENT 'file / url / manual',
+  `category` VARCHAR(128) DEFAULT NULL COMMENT '知识分类',
+  `chunk_index` INT DEFAULT NULL,
+  `chunk_total` INT DEFAULT NULL,
+  `vector_id` VARCHAR(128) DEFAULT NULL COMMENT 'Qdrant 中的点 ID',
+  `enabled` TINYINT(1) DEFAULT 1,
+  `created_at` BIGINT DEFAULT NULL,
+  `updated_at` BIGINT DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_knowledge_documents_title` (`title`),
+  KEY `idx_knowledge_documents_category` (`category`),
+  KEY `idx_knowledge_documents_enabled` (`enabled`),
+  KEY `idx_chunk_category` (`chunk_index`, `category`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库文档';
+
+CREATE TABLE IF NOT EXISTS embedding_tasks (
+  id BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  source_type VARCHAR(32) NOT NULL COMMENT '来源类型: message / memory / knowledge',
+  source_id BIGINT NOT NULL COMMENT '来源ID',
+  content TEXT COMMENT '向量化内容',
+  status VARCHAR(32) NOT NULL DEFAULT 'pending' COMMENT '任务状态: pending / processing / done / failed',
+  vector_id VARCHAR(128) NOT NULL DEFAULT '' COMMENT '向量ID',
+  error_msg TEXT COMMENT '错误信息',
+  created_at BIGINT NOT NULL DEFAULT 0 COMMENT '创建时间',
+  processed_at BIGINT NOT NULL DEFAULT 0 COMMENT '处理时间',
+  PRIMARY KEY (id),
+  KEY idx_source (source_type, source_id, status),
+  KEY idx_embedding_tasks_status (status),
+  KEY idx_status_processed (status, processed_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='向量化任务队列';
+
+CREATE TABLE IF NOT EXISTS `conversation_sessions` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `contact_wxid` VARCHAR(255) DEFAULT NULL,
+  `chat_room_id` VARCHAR(255) DEFAULT NULL,
+  `summary` TEXT,
+  `message_count` INT DEFAULT NULL,
+  `first_msg_id` BIGINT DEFAULT NULL,
+  `last_msg_id` BIGINT DEFAULT NULL,
+  `last_active_at` BIGINT DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+  `created_at` BIGINT DEFAULT NULL,
+  `updated_at` BIGINT DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_active_contact` (`is_active`, `contact_wxid`),
+  KEY `idx_active_chatroom` (`is_active`, `chat_room_id`),
+  KEY `idx_active_time` (`is_active`, `last_active_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='向量化任务队列';

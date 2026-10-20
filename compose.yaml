@@ -1,0 +1,77 @@
+name: tianhe-dev
+
+services:
+  web:
+    build: .
+    init: true
+    env_file: .env.docker
+    environment:
+      SERVER_HOST: 0.0.0.0
+      PORT: "3100"
+      DATABASE_PATH: /app/data/mvp.db
+      RAG_BASE_URL: http://rag:18080
+      RAG_AUTO_START: "false"
+      RAG_FORMAL_ROUTING_ENABLED: "true"
+      RAG_ADMIN_ENABLED: "true"
+      CLOUD_BASE_URL: http://127.0.0.1:3100
+      RPA_MODE: simulated
+      LOCAL_AGENT_AUTO_START: "true"
+      AUTO_COLLECT_ENABLED: "false"
+      MINI_PROGRAM_API_ENABLED: "false"
+    ports:
+      - "0.0.0.0:3100:3100"
+    volumes:
+      - ./src:/app/src:ro
+      - ./agent:/app/agent:ro
+      - ./public:/app/public:ro
+      - ./scripts:/app/scripts:ro
+      - ./test:/app/test:ro
+      - ./platform-workflows:/app/platform-workflows:ro
+      - ./sample-material:/app/sample-material:ro
+      - web_data:/app/data
+      - web_logs:/app/logs
+    depends_on:
+      rag:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3100/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+    stop_grace_period: 20s
+
+  rag:
+    build: ./rag-service
+    init: true
+    env_file: .env.docker
+    environment:
+      RAG_HOST: 0.0.0.0
+      RAG_PORT: "18080"
+      RAG_DATA_DIR: /app/data
+      RAG_UPLOAD_DIR: /app/data/uploads
+      RAG_SQLITE_PATH: /app/data/rag.db
+      RAG_QDRANT_PATH: /app/data/qdrant
+      RAG_MODEL_CACHE_DIR: /app/models
+      RAG_TIANHE_AI_ENABLED: "true"
+      RAG_TIANHE_AI_BASE_URL: http://web:3100/api/model/v1
+    volumes:
+      - ./rag-service/app:/app/app:ro
+      - ./rag-service/static:/app/static:ro
+      - ./rag-service/scripts:/app/scripts:ro
+      - ./rag-service/tests:/app/tests:ro
+      - ./rag-service/models:/app/models:ro
+      - ./rag-service/data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,urllib.request; r=urllib.request.Request('http://127.0.0.1:18080/rag-api/v1/health',headers={'Authorization':'Bearer '+os.environ['RAG_BEARER_TOKEN']}); urllib.request.urlopen(r,timeout=5)"]
+      interval: 10s
+      timeout: 10s
+      start_period: 120s
+      retries: 12
+    stop_grace_period: 20s
+
+volumes:
+  web_data:
+  web_logs:
+  rag_data:
+

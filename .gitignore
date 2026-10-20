@@ -1,0 +1,91 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Runtime secrets and local configuration
+.env
+.env.*
+!.env.example
+!.env.docker.example
+*.pem
+*.p12
+*.pfx
+*.key
+
+# Runtime data, databases, credentials and browser sessions
+data/
+logs/
+backups/
+runtime/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+.settings-key*
+*.pid
+
+# Generated builds, installers and delivery artifacts
+dist/
+packaging/staging/
+output/
+outputs/
+reports/
+*.exe
+*.msi
+*.rar
+*.zip
+*.7z
+*.sha256.txt
+
+# Local temporary/tool state
+.tmp/
+tmp/
+.codex-work/
+.env.robot-*
+wechat-assistant/**/.build/
+.worktrees/
+.codex-last-collect-job.txt
+NUL
+packaging/write-test.txt
+
+# Manual backup copies; Git history replaces these
+*.bak
+*.bak-*
+*.bak.*
+*.before-*
+*.pre-*
+*.old
+*.orig
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local RAG source data and credentials (framework code may be published)
+token.pdf
+公共知识库-可检索FAQ扩充版-115条.csv
+AI数字运营2-完整Codex交接包-20260827.tar
+rag-service/data/
+rag-service/models/
+rag-service/.venv/
+rag-service/eval/questions-200.json
+rag-service/eval/results-*.json
+rag-service/eval/trace-review-*.json
+rag-service/eval/FINAL_REPORT.md
+rag-service/.playwright-cli/
+rag-service/rag-*.png
+rag-service/rag-*.yaml
+
+# Local handoff artifacts are not part of the source repository
+database/*.db
+首次登录信息.txt
+WORKTREE_DIFF*.patch
+GIT_LOG_*.txt
+GIT_STATUS_*.txt
+UNTRACKED_FILES_*.txt

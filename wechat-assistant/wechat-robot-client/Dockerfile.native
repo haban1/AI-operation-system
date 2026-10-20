@@ -1,0 +1,3 @@
+# Build .build/wechat-robot-client with scripts/build-robot-native.ps1 first.
+FROM registry.cn-shenzhen.aliyuncs.com/houhou/wechat-robot-client:latest
+COPY .build/wechat-robot-client /app/wechat-robot-client

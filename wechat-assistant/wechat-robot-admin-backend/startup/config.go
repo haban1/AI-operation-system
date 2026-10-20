@@ -1,0 +1,82 @@
+package startup
+
+import (
+	"log"
+	"os"
+	"strconv"
+	"strings"
+	"wechat-robot-admin-backend/vars"
+
+	"github.com/joho/godotenv"
+)
+
+func LoadConfig() error {
+	loadEnvConfig()
+	return nil
+}
+
+func loadEnvConfig() {
+	// 本地开发模式
+	isDevMode := strings.ToLower(os.Getenv("GO_ENV")) == "dev"
+	if isDevMode {
+		err := godotenv.Load()
+		if err != nil {
+			log.Fatal("加载本地环境变量失败，请检查是否存在 .env 文件")
+		}
+	}
+
+	vars.SessionSecret = os.Getenv("SESSION_SECRET")
+	if vars.SessionSecret == "" {
+		log.Fatal("SESSION_SECRET 环境变量未设置")
+	}
+
+	vars.DockerNetwork = os.Getenv("DOCKER_NETWORK")
+	vars.DockerComposeCmd = os.Getenv("DOCKER_COMPOSE_CMD")
+
+	vars.LoginMethod = os.Getenv("LOGIN_METHOD")
+	if vars.LoginMethod == "" {
+		log.Fatal("LOGIN_METHOD 环境变量未设置")
+	}
+	vars.LoginToken = os.Getenv("LOGIN_TOKEN")
+	vars.WeChatServerAddress = os.Getenv("WECHAT_SERVER_ADDRESS")
+	vars.WeChatServerToken = os.Getenv("WECHAT_SERVER_TOKEN")
+	vars.WeChatOfficialAccountAuthURL = os.Getenv("WECHAT_OFFICIAL_ACCOUNT_AUTH_URL")
+
+	vars.SliderServerBaseURL = os.Getenv("SLIDER_SERVER_BASE_URL")
+	vars.SliderToken = os.Getenv("SLIDER_TOKEN")
+	vars.UUIDURL = os.Getenv("UUID_URL")
+	if vars.SliderServerBaseURL == "" || vars.SliderToken == "" || vars.UUIDURL == "" {
+		log.Fatal("vars.SliderServerBaseURL 或 vars.SliderToken 或 vars.UUIDURL 环境变量未设置，具体请查看 .env.example 文件")
+	}
+
+	vars.OpenAIApiKey = os.Getenv("OPENAI_API_KEY")
+	vars.ThirdPartyApiKey = os.Getenv("THIRD_PARTY_API_KEY")
+	vars.HostDataDir = os.Getenv("HOST_DATA_DIR")
+	vars.SliderAccessKey = os.Getenv("SLIDER_ACCESS_KEY")
+
+	// mysql
+	vars.MysqlSettings.Driver = os.Getenv("MYSQL_DRIVER")
+	vars.MysqlSettings.Host = os.Getenv("MYSQL_HOST")
+	vars.MysqlSettings.Port = os.Getenv("MYSQL_PORT")
+	vars.MysqlSettings.User = os.Getenv("MYSQL_USER")
+	vars.MysqlSettings.Password = os.Getenv("MYSQL_PASSWORD")
+	vars.MysqlSettings.Db = os.Getenv("MYSQL_DB")
+	vars.MysqlSettings.Schema = os.Getenv("MYSQL_SCHEMA")
+
+	//redis
+	vars.RedisSettings.Host = os.Getenv("REDIS_HOST")
+	vars.RedisSettings.Port = os.Getenv("REDIS_PORT")
+	vars.RedisSettings.Password = os.Getenv("REDIS_PASSWORD")
+
+	// qdrant
+	vars.QdrantSettings.Host = os.Getenv("QDRANT_HOST")
+	qdrantPort := os.Getenv("QDRANT_PORT")
+	if qdrantPort != "" {
+		port, err := strconv.Atoi(qdrantPort)
+		if err != nil {
+			log.Fatalf("QDRANT_PORT 转换失败: %v", err)
+		}
+		vars.QdrantSettings.Port = port
+	}
+	vars.QdrantSettings.ApiKey = os.Getenv("QDRANT_API_KEY")
+}

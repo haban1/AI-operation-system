@@ -1,0 +1,29 @@
+{
+  "name": "?????????????",
+  "generatedDate": "2026-08-05",
+  "video": {
+    "file": "community-activity-guide-1080x1920.mp4",
+    "bytes": 3318041,
+    "sha256": "8d798ef4a207a9ccfbfcd299d2b5466edf3e72a95129c634713fc052426de16f",
+    "container": "MP4/isom",
+    "videoCodec": "H.264 High",
+    "pixelFormat": "yuv420p",
+    "resolution": "1080x1920",
+    "aspectRatio": "9:16",
+    "durationSeconds": 15,
+    "frameRate": 24,
+    "audioCodec": "AAC-LC",
+    "audioSampleRateHz": 44100
+  },
+  "platforms": [
+    "xiaohongshu",
+    "douyin",
+    "wechat_channels",
+    "bilibili",
+    "weibo"
+  ],
+  "projectPrecheck": "WARNING (all 5 platforms; only because video metadata parser is not installed)",
+  "blockedPlatforms": [],
+  "contentCompliance": "PASSED",
+  "decodeCheck": "PASSED"
+}

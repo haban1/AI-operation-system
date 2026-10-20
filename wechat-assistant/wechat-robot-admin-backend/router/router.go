@@ -1,0 +1,377 @@
+package router
+
+import (
+	"net/http"
+
+	"wechat-robot-admin-backend/controller"
+	_ "wechat-robot-admin-backend/docs"
+	"wechat-robot-admin-backend/middleware"
+
+	"github.com/gin-gonic/gin"
+	"github.com/swaggo/swag"
+)
+
+var probeCtl *controller.Probe
+var wechatCtl *controller.WeChat
+var userCtl *controller.User
+var robotLoginCtl *controller.RobotLogin
+var robotManageCtl *controller.RobotManage
+var contactCtl *controller.Contact
+var chatRoomCtl *controller.ChatRoom
+var chatHistoryCtl *controller.ChatHistory
+var dockerCtl *controller.DockerController
+var globalSettingsCtl *controller.GlobalSettings
+var friendSettingsCtl *controller.FriendSettings
+var chatRoomSettingsCtl *controller.ChatRoomSettings
+var messageCtl *controller.Message
+var systemMessageCtl *controller.SystemMessage
+var momentsCtl *controller.Moments
+var systemSettingsCtl *controller.SystemSettings
+var ossSettingsCtl *controller.OSSSettings
+var mcpServerCtl *controller.MCPServer
+var skillsCtl *controller.Skills
+var knowledgeCtl *controller.Knowledge
+var wxAppCtl *controller.WXApp
+var aiCallbackCtl *controller.AICallback
+var pprofProxyCtl *controller.PprofProxy
+var systemPromptCtl *controller.SystemPrompt
+
+func initController() {
+	probeCtl = controller.NewProbeController()
+	wechatCtl = controller.NewWeChatAuthController()
+	userCtl = controller.NewUserController()
+	robotLoginCtl = controller.NewRobotLoginController()
+	robotManageCtl = controller.NewRobotManageController()
+	contactCtl = controller.NewContactController()
+	dockerCtl = controller.NewDockerController()
+	chatRoomCtl = controller.NewChatRoomController()
+	chatHistoryCtl = controller.NewChatHistoryController()
+	messageCtl = controller.NewMessageController()
+	globalSettingsCtl = controller.NewGlobalSettingsController()
+	friendSettingsCtl = controller.NewFriendSettingsController()
+	chatRoomSettingsCtl = controller.NewChatRoomSettingsController()
+	aiCallbackCtl = controller.NewAICallbackController()
+	momentsCtl = controller.NewMomentsController()
+	systemMessageCtl = controller.NewSystemMessageController()
+	systemSettingsCtl = controller.NewSystemSettingsController()
+	ossSettingsCtl = controller.NewOSSSettingsController()
+	skillsCtl = controller.NewSkillsController()
+	knowledgeCtl = controller.NewKnowledgeController()
+	wxAppCtl = controller.NewWXAppController()
+	pprofProxyCtl = controller.NewPprofProxyController()
+	systemPromptCtl = controller.NewSystemPromptController()
+}
+
+func RegisterRouter(r *gin.Engine) error {
+	r.Use(middleware.ErrorRecover)
+	r.Use(middleware.Cors)
+
+	initController()
+
+	api := r.Group("/api/v1")
+	{
+		api.GET("/swagger/doc.json", func(c *gin.Context) {
+			doc, err := swag.ReadDoc()
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.Data(http.StatusOK, "application/json; charset=utf-8", []byte(doc))
+		})
+	}
+
+	{
+		probe := api.Group("/probe")
+		probe.GET("", probeCtl.Probe)
+	}
+
+	{
+		user := api.Group("/login")
+		user.POST("", userCtl.Login)
+	}
+
+	{
+		oauth := api.Group("/oauth")
+		oauth.GET("/official-account/url", wechatCtl.WeChatOfficialAccountAuthURL)
+		oauth.POST("/wechat", wechatCtl.WeChatAuth)
+	}
+
+	{
+		user := api.Group("/user")
+		user.GET("/self", userCtl.LoginUser)
+		user.POST("/api-token/refresh", middleware.UserAuth(), userCtl.RefreshUserApiToken)
+		user.DELETE("/logout", userCtl.Logout)
+	}
+
+	{
+		system := api.Group("/system")
+		system.Use(middleware.UserAuth())
+		system.GET("/robot-container-stats", middleware.UserOwnerAuth(), dockerCtl.RobotContainerStats)
+		system.GET("/robot-container-logs", middleware.UserOwnerAuth(), dockerCtl.GetRobotContainerLogs)
+	}
+
+	{
+		support := api.Group("/support")
+		support.Use(middleware.UserAuth(), middleware.UserOwnerAuth())
+		support.GET("", controller.SupportProxy)
+		support.POST("/settings", controller.SupportProxy)
+		support.POST("/reception", controller.SupportProxy)
+		support.POST("/broadcasts", controller.SupportProxy)
+	}
+
+	{
+		contact := api.Group("/contact")
+		contact.Use(middleware.UserAuth())
+		contact.GET("/list", middleware.UserOwnerAuth(), contactCtl.GetContacts)
+		contact.POST("/friend/search", middleware.UserOwnerAuth(), contactCtl.FriendSearch)
+		contact.POST("/friend/add", middleware.UserOwnerAuth(), contactCtl.FriendSendRequest)
+		contact.POST("/friend/add-from-chat-room", middleware.UserOwnerAuth(), contactCtl.FriendSendRequestFromChatRoom)
+		contact.POST("/friend/remark", middleware.UserOwnerAuth(), contactCtl.FriendSetRemarks)
+		contact.POST("/friend/pass-verify", middleware.UserOwnerAuth(), contactCtl.FriendPassVerify)
+		contact.POST("/sync", middleware.UserOwnerAuth(), contactCtl.SyncContacts)
+		contact.DELETE("/friend", middleware.UserOwnerAuth(), contactCtl.FriendDelete)
+	}
+
+	{
+		chatRoom := api.Group("/chat-room")
+		chatRoom.Use(middleware.UserAuth())
+		chatRoom.GET("/members", middleware.UserOwnerAuth(), chatRoomCtl.GetChatRoomMembers)
+		chatRoom.GET("/member", middleware.UserOwnerAuth(), chatRoomCtl.GetChatRoomMember)
+		chatRoom.POST("/member", middleware.UserOwnerAuth(), chatRoomCtl.UpdateChatRoomMember)
+		chatRoom.GET("/not-left-members", middleware.UserOwnerAuth(), chatRoomCtl.GetNotLeftMembers)
+		chatRoom.POST("/create", middleware.UserOwnerAuth(), chatRoomCtl.CreateChatRoom)
+		chatRoom.POST("/invite", middleware.UserOwnerAuth(), chatRoomCtl.InviteChatRoomMember)
+		chatRoom.POST("/join", middleware.UserOwnerAuth(), chatRoomCtl.GroupConsentToJoin)
+		chatRoom.POST("/members/sync", middleware.UserOwnerAuth(), chatRoomCtl.SyncChatRoomMembers)
+		chatRoom.POST("/name", middleware.UserOwnerAuth(), chatRoomCtl.GroupSetChatRoomName)
+		chatRoom.POST("/remark", middleware.UserOwnerAuth(), chatRoomCtl.GroupSetChatRoomRemarks)
+		chatRoom.POST("/announcement", middleware.UserOwnerAuth(), chatRoomCtl.GroupSetChatRoomAnnouncement)
+		chatRoom.DELETE("/members", middleware.UserOwnerAuth(), chatRoomCtl.GroupDelChatRoomMember)
+		chatRoom.DELETE("/quit", middleware.UserOwnerAuth(), chatRoomCtl.GroupQuit)
+	}
+
+	{
+		chat := api.Group("/chat")
+		chat.Use(middleware.UserAuth())
+		chat.GET("/history", middleware.UserOwnerAuth(), chatHistoryCtl.GetChatHistory)
+		chat.GET("/image/download", middleware.UserOwnerAuth(), chatHistoryCtl.DownloadImage)
+		chat.GET("/voice/download", middleware.UserOwnerAuth(), chatHistoryCtl.DownloadVoice)
+		chat.GET("/file/download", middleware.UserOwnerAuth(), chatHistoryCtl.DownloadFile)
+		chat.GET("/video/download", middleware.UserOwnerAuth(), chatHistoryCtl.DownloadVideo)
+	}
+
+	{
+		message := api.Group("/message")
+		message.Use(middleware.UserAuth())
+		message.POST("/revoke", middleware.UserOwnerAuth(), messageCtl.MessageRevoke)
+		message.POST("/send/text", middleware.UserOwnerAuth(), messageCtl.SendTextMessage)
+		message.POST("/send/longtext", middleware.UserOwnerAuth(), messageCtl.SendLongTextMessage)
+		message.POST("/send/image", middleware.UserOwnerAuth(), messageCtl.SendImageMessage)
+		message.POST("/send/voice", middleware.UserOwnerAuth(), messageCtl.SendVoiceMessage)
+		message.POST("/send/video", middleware.UserOwnerAuth(), messageCtl.SendVideoMessage)
+		message.POST("/send/file", middleware.UserOwnerAuth(), messageCtl.SendFileMessage)
+		message.GET("/timbre", middleware.UserOwnerAuth(), messageCtl.GetTimbre)
+		message.POST("/send/ai/tts", middleware.UserOwnerAuth(), messageCtl.SendAITTSMessage)
+	}
+
+	{
+		systemMessage := api.Group("/system-messages")
+		systemMessage.Use(middleware.UserAuth())
+		systemMessage.GET("", middleware.UserOwnerAuth(), systemMessageCtl.GetRecentMonthMessages)
+		systemMessage.POST("/mark-as-read", middleware.UserOwnerAuth(), systemMessageCtl.MarkAsReadBatch)
+	}
+
+	{
+		systemSettings := api.Group("/system-settings")
+		systemSettings.Use(middleware.UserAuth())
+		systemSettings.GET("", middleware.UserOwnerAuth(), systemSettingsCtl.GetSystemSettings)
+		systemSettings.POST("", middleware.UserOwnerAuth(), systemSettingsCtl.SaveSystemSettings)
+	}
+
+	{
+		ossSettings := api.Group("/oss-settings")
+		ossSettings.Use(middleware.UserAuth())
+		ossSettings.GET("", middleware.UserOwnerAuth(), ossSettingsCtl.GetOSSSettings)
+		ossSettings.POST("", middleware.UserOwnerAuth(), ossSettingsCtl.SaveOSSSettings)
+	}
+
+	{
+		mcpServer := api.Group("/mcp-server")
+		mcpServer.Use(middleware.UserAuth())
+		mcpServer.GET("", middleware.UserOwnerAuth(), mcpServerCtl.GetMCPServer)
+		mcpServer.GET("/list", middleware.UserOwnerAuth(), mcpServerCtl.GetMCPServers)
+		mcpServer.GET("/tools", middleware.UserOwnerAuth(), mcpServerCtl.GetMCPServerTools)
+		mcpServer.POST("", middleware.UserOwnerAuth(), mcpServerCtl.CreateMCPServer)
+		mcpServer.POST("/enable", middleware.UserOwnerAuth(), mcpServerCtl.EnableMCPServer)
+		mcpServer.POST("/disable", middleware.UserOwnerAuth(), mcpServerCtl.DisableMCPServer)
+		mcpServer.PUT("", middleware.UserOwnerAuth(), mcpServerCtl.UpdateMCPServer)
+		mcpServer.DELETE("", middleware.UserOwnerAuth(), mcpServerCtl.DeleteMCPServer)
+	}
+
+	{
+		mcpServer := api.Group("/skills")
+		mcpServer.Use(middleware.UserAuth())
+		mcpServer.GET("", middleware.UserOwnerAuth(), skillsCtl.GetSkills)
+		mcpServer.POST("/install", middleware.UserOwnerAuth(), skillsCtl.InstallSkill)
+		mcpServer.POST("/enable", middleware.UserOwnerAuth(), skillsCtl.EnableSkill)
+		mcpServer.POST("/disable", middleware.UserOwnerAuth(), skillsCtl.DisableSkill)
+		mcpServer.PUT("/update", middleware.UserOwnerAuth(), skillsCtl.UpdateSkill)
+		mcpServer.DELETE("/uninstall", middleware.UserOwnerAuth(), skillsCtl.UninstallSkill)
+		mcpServer.POST("/envs", middleware.UserOwnerAuth(), skillsCtl.SetSkillEnvs)
+	}
+
+	{
+		systemPrompts := api.Group("/system-prompts")
+		systemPrompts.Use(middleware.UserAuth())
+		systemPrompts.GET("", middleware.UserOwnerAuth(), systemPromptCtl.ListSystemPrompts)
+		systemPrompts.GET("/detail", middleware.UserOwnerAuth(), systemPromptCtl.GetSystemPrompt)
+		systemPrompts.POST("", middleware.UserOwnerAuth(), systemPromptCtl.CreateSystemPrompt)
+		systemPrompts.PUT("", middleware.UserOwnerAuth(), systemPromptCtl.UpdateSystemPrompt)
+		systemPrompts.DELETE("", middleware.UserOwnerAuth(), systemPromptCtl.DeleteSystemPrompt)
+	}
+
+	{
+		knowledge := api.Group("/knowledge")
+		knowledge.Use(middleware.UserAuth())
+		knowledge.POST("/document", middleware.UserOwnerAuth(), knowledgeCtl.AddDocument)
+		knowledge.PUT("/document", middleware.UserOwnerAuth(), knowledgeCtl.UpdateDocument)
+		knowledge.DELETE("/document", middleware.UserOwnerAuth(), knowledgeCtl.DeleteDocument)
+		knowledge.POST("/document/enable", middleware.UserOwnerAuth(), knowledgeCtl.EnableDocument)
+		knowledge.POST("/document/disable", middleware.UserOwnerAuth(), knowledgeCtl.DisableDocument)
+		knowledge.GET("/documents", middleware.UserOwnerAuth(), knowledgeCtl.ListDocuments)
+		knowledge.GET("/categories", middleware.UserOwnerAuth(), knowledgeCtl.GetCategories)
+		knowledge.POST("/category", middleware.UserOwnerAuth(), knowledgeCtl.CreateKnowledgeCategory)
+		knowledge.PUT("/category", middleware.UserOwnerAuth(), knowledgeCtl.UpdateKnowledgeCategory)
+		knowledge.DELETE("/category", middleware.UserOwnerAuth(), knowledgeCtl.DeleteKnowledgeCategory)
+		knowledge.POST("/search", middleware.UserOwnerAuth(), knowledgeCtl.SearchKnowledge)
+		knowledge.POST("/reindex", middleware.UserOwnerAuth(), knowledgeCtl.ReindexAll)
+	}
+
+	{
+		memory := api.Group("/memory")
+		memory.Use(middleware.UserAuth())
+		memory.POST("", middleware.UserOwnerAuth(), knowledgeCtl.SaveMemory)
+		memory.POST("/search", middleware.UserOwnerAuth(), knowledgeCtl.SearchMemory)
+		memory.DELETE("", middleware.UserOwnerAuth(), knowledgeCtl.DeleteMemory)
+	}
+
+	{
+		imageKnowledge := api.Group("/image-knowledge")
+		imageKnowledge.Use(middleware.UserAuth())
+		imageKnowledge.POST("/document", middleware.UserOwnerAuth(), knowledgeCtl.AddImageDocument)
+		imageKnowledge.DELETE("/document", middleware.UserOwnerAuth(), knowledgeCtl.DeleteImageDocument)
+		imageKnowledge.GET("/documents", middleware.UserOwnerAuth(), knowledgeCtl.ListImageDocuments)
+		imageKnowledge.GET("/categories", middleware.UserOwnerAuth(), knowledgeCtl.GetImageCategories)
+		imageKnowledge.POST("/search/text", middleware.UserOwnerAuth(), knowledgeCtl.SearchImageByText)
+		imageKnowledge.POST("/search/image", middleware.UserOwnerAuth(), knowledgeCtl.SearchImageByImage)
+		imageKnowledge.POST("/reindex", middleware.UserOwnerAuth(), knowledgeCtl.ReindexAllImages)
+	}
+
+	{
+		vector := api.Group("/vector")
+		vector.Use(middleware.UserAuth())
+		vector.POST("/reindex-all", middleware.UserOwnerAuth(), knowledgeCtl.ReindexAllVectors)
+	}
+
+	{
+		moments := api.Group("/moments")
+		moments.Use(middleware.UserAuth())
+		moments.GET("/plans", middleware.UserOwnerAuth(), controller.MomentPlanProxy)
+		moments.POST("/plans", middleware.UserOwnerAuth(), controller.MomentPlanProxy)
+		moments.POST("/plans/action", middleware.UserOwnerAuth(), controller.MomentPlanProxy)
+		moments.POST("/plan-jobs/action", middleware.UserOwnerAuth(), controller.MomentPlanProxy)
+		moments.POST("/plan-assets", middleware.UserOwnerAuth(), controller.MomentPlanProxy)
+		moments.GET("/list", middleware.UserOwnerAuth(), momentsCtl.FriendCircleGetList)
+		moments.GET("/settings", middleware.UserOwnerAuth(), momentsCtl.GetFriendCircleSettings)
+		moments.GET("/get-detail", middleware.UserOwnerAuth(), momentsCtl.FriendCircleGetDetail)
+		moments.GET("/get-id-detail", middleware.UserOwnerAuth(), momentsCtl.FriendCircleGetIdDetail)
+		moments.GET("/down-media", middleware.UserOwnerAuth(), momentsCtl.FriendCircleDownFriendCircleMedia)
+		moments.POST("/settings", middleware.UserOwnerAuth(), momentsCtl.SaveFriendCircleSettings)
+		moments.POST("/comment", middleware.UserOwnerAuth(), momentsCtl.FriendCircleComment)
+		moments.POST("/upload-media", middleware.UserOwnerAuth(), momentsCtl.FriendCircleUpload)
+		moments.POST("/post", middleware.UserOwnerAuth(), momentsCtl.FriendCirclePost)
+		moments.POST("/operate", middleware.UserOwnerAuth(), momentsCtl.FriendCircleOperation)
+		moments.POST("/privacy-settings", middleware.UserOwnerAuth(), momentsCtl.FriendCirclePrivacySettings)
+	}
+
+	{
+		globalSettings := api.Group("/global-settings")
+		globalSettings.Use(middleware.UserAuth())
+		globalSettings.GET("", middleware.UserOwnerAuth(), globalSettingsCtl.GetGlobalSettings)
+		globalSettings.POST("", middleware.UserOwnerAuth(), globalSettingsCtl.SaveGlobalSettings)
+	}
+
+	{
+		friendSettings := api.Group("/friend-settings")
+		friendSettings.Use(middleware.UserAuth())
+		friendSettings.GET("", middleware.UserOwnerAuth(), friendSettingsCtl.GetFriendSettings)
+		friendSettings.POST("", middleware.UserOwnerAuth(), friendSettingsCtl.SaveFriendSettings)
+	}
+
+	{
+		chatRoomSettings := api.Group("/chat-room-settings")
+		chatRoomSettings.Use(middleware.UserAuth())
+		chatRoomSettings.GET("", middleware.UserOwnerAuth(), chatRoomSettingsCtl.GetChatRoomSettings)
+		chatRoomSettings.POST("", middleware.UserOwnerAuth(), chatRoomSettingsCtl.SaveChatRoomSettings)
+	}
+
+	{
+		aiCallback := api.Group("/ai-callback")
+		aiCallback.POST("/voice/doubao-tts", aiCallbackCtl.DoubaoTTS)
+	}
+
+	{
+		robot := api.Group("/robot")
+		robot.Use(middleware.UserAuth())
+
+		robot.GET("/list", robotManageCtl.RobotList)
+		robot.POST("/create", robotManageCtl.RobotCreate)
+		robot.PUT("/update", middleware.UserOwnerAuth(), robotManageCtl.RobotUpdate)
+		robot.GET("/view", middleware.UserOwnerAuth(), robotManageCtl.RobotView)
+		robot.GET("/export-login-data", middleware.UserOwnerAuth(), robotManageCtl.ExportRobotLoginData)
+		robot.POST("/import-login-data", middleware.UserOwnerAuth(), robotManageCtl.ImportRobotLoginData)
+		robot.POST("/restart-client", middleware.UserOwnerAuth(), robotManageCtl.RobotRestartClient)
+		robot.POST("/restart-server", middleware.UserOwnerAuth(), robotManageCtl.RobotRestartServer)
+		// 拉取最新镜像
+		robot.GET("/docker/image/pull", middleware.UserOwnerAuth(), robotManageCtl.RobotDockerImagePull)
+		// 删除客户端和服务端容器
+		robot.DELETE("/docker/container/client/remove", middleware.UserOwnerAuth(), robotManageCtl.RobotStopAndRemoveClient)
+		robot.DELETE("/docker/container/server/remove", middleware.UserOwnerAuth(), robotManageCtl.RobotStopAndRemoveServer)
+		// 启动客户端和服务端容器
+		robot.POST("/docker/container/client/start", middleware.UserOwnerAuth(), robotManageCtl.RobotStartClient)
+		robot.POST("/docker/container/server/start", middleware.UserOwnerAuth(), robotManageCtl.RobotStartServer)
+		// 删除机器人
+		robot.DELETE("/remove", middleware.UserOwnerAuth(), robotManageCtl.RobotRemove)
+		// 机器人登陆、登出
+		robot.GET("/state", middleware.UserOwnerAuth(), robotLoginCtl.RobotState)
+		robot.POST("/login/slider-auto", robotLoginCtl.LoginSliderAutoVerify)           // 不需要 middleware.UserOwnerAuth() 鉴权
+		robot.GET("/login/slider", robotLoginCtl.LoginSliderVerify)                     // 不需要 middleware.UserOwnerAuth() 鉴权
+		robot.GET("/login/slider-verify-submit", robotLoginCtl.LoginSliderVerifySubmit) // 不需要 middleware.UserOwnerAuth() 鉴权
+		robot.POST("/login", middleware.UserOwnerAuth(), robotLoginCtl.RobotLogin)
+		robot.POST("/login-check", middleware.UserOwnerAuth(), robotLoginCtl.RobotLoginCheck)
+		robot.POST("/login/2fa", middleware.UserOwnerAuth(), robotLoginCtl.RobotLogin2FA)
+		robot.POST("/login/data62", middleware.UserOwnerAuth(), robotLoginCtl.LoginData62Login)
+		robot.POST("/login/data62-sms-again", middleware.UserOwnerAuth(), robotLoginCtl.LoginData62SMSAgain)
+		robot.POST("/login/data62-sms-verify", middleware.UserOwnerAuth(), robotLoginCtl.LoginData62SMSVerify)
+		robot.POST("/login/a16", middleware.UserOwnerAuth(), robotLoginCtl.LoginA16Data1)
+		robot.DELETE("/logout", middleware.UserOwnerAuth(), robotLoginCtl.RobotLogout)
+	}
+
+	{
+		robot := api.Group("/wxapp")
+		robot.Use(middleware.UserAuth())
+
+		robot.POST("/qrcode-auth-login", middleware.UserOwnerAuth(), wxAppCtl.WxappQrcodeAuthLogin)
+	}
+
+	{
+		// pprof代理路由
+		pprof := api.Group("/pprof")
+		pprof.Use(middleware.UserAuth())
+		pprof.GET("/*pprof_path", middleware.UserOwnerAuth(), pprofProxyCtl.ProxyPprof)
+		pprof.POST("/*pprof_path", middleware.UserOwnerAuth(), pprofProxyCtl.ProxyPprof)
+	}
+
+	return nil
+}

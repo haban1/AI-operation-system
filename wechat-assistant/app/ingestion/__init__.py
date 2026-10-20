@@ -1,0 +1,2 @@
+"""Material ingestion pipeline."""
+

@@ -1,0 +1,33 @@
+name: tianhe-wechat
+services:
+  robot-client:
+    image: tianhe-wechat-client:native
+    container_name: client_${ROBOT_CODE:?Prepare .env.robot-native first}
+    restart: unless-stopped
+    env_file:
+      - path: .env.robot-client
+        format: raw
+    volumes:
+      - ${ROBOT_SKILLS_PATH}:/data/skills
+    networks: [wechat-robot]
+    stop_grace_period: 60s
+  robot-admin:
+    image: tianhe-wechat-admin:native
+    container_name: wechat-robot-admin-backend
+    restart: unless-stopped
+    env_file:
+      - path: .env.robot-admin
+        format: raw
+    environment:
+      WECHAT_ROBOT_CLIENT_IMAGE: tianhe-wechat-client:native
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [wechat-robot]
+  robot-ui:
+    image: tianhe-wechat-ui:native
+    container_name: wechat-robot-admin-frontend
+    restart: unless-stopped
+    networks: [wechat-robot]
+networks:
+  wechat-robot:
+    external: true

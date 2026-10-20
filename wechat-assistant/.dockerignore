@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.pytest_cache
+__pycache__
+*.py[cod]
+*.log
+agent.db
+storage
+outputs
+spreadsheet_work
+frontend/node_modules
+frontend/dist
+wechat-robot-client

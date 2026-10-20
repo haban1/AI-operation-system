@@ -1,0 +1,515 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+	"wechat-robot-client/dto"
+	"wechat-robot-client/model"
+	"wechat-robot-client/pkg/appx"
+	"wechat-robot-client/pkg/robot"
+	"wechat-robot-client/repository"
+	"wechat-robot-client/utils"
+	"wechat-robot-client/vars"
+)
+
+// 防抖逻辑：在 5 秒窗口内同一群聊只同步一次
+const syncContactDebounceInterval = 5 * time.Second
+
+var (
+	contactSyncMu     sync.Mutex
+	syncContactMu     sync.Mutex
+	syncContactTimers = make(map[string]*time.Timer)
+)
+
+type ContactService struct {
+	ctx                context.Context
+	ctRepo             *repository.Contact
+	fsRepo             *repository.FriendSettings
+	crmRepo            *repository.ChatRoomMember
+	sysmsgRepo         *repository.SystemMessage
+	systemSettingsRepo *repository.SystemSettings
+}
+
+func NewContactService(ctx context.Context) *ContactService {
+	return &ContactService{
+		ctx:                ctx,
+		ctRepo:             repository.NewContactRepo(ctx, vars.DB),
+		fsRepo:             repository.NewFriendSettingsRepo(ctx, vars.DB),
+		crmRepo:            repository.NewChatRoomMemberRepo(ctx, vars.DB),
+		sysmsgRepo:         repository.NewSystemMessageRepo(ctx, vars.DB),
+		systemSettingsRepo: repository.NewSystemSettingsRepo(ctx, vars.DB),
+	}
+}
+
+func (s *ContactService) FriendSearch(req dto.FriendSearchRequest) (dto.FriendSearchResponse, error) {
+	friend, err := vars.RobotRuntime.FriendSearch(robot.FriendSearchRequest{
+		ToUserName:  req.ToUserName,
+		FromScene:   0,
+		SearchScene: 1,
+	})
+	if err != nil {
+		return dto.FriendSearchResponse{}, err
+	}
+	if friend.UserName == nil || friend.UserName.String == nil || *friend.UserName.String == "" {
+		return dto.FriendSearchResponse{}, fmt.Errorf("用户不存在")
+	}
+	if friend.AntispamTicket == nil || *friend.AntispamTicket == "" {
+		return dto.FriendSearchResponse{}, fmt.Errorf("搜索用户失败，可能你们已经是好友了")
+	}
+	resp := dto.FriendSearchResponse{
+		UserName:       *friend.UserName.String,
+		NickName:       *friend.NickName.String,
+		Avatar:         *friend.BigHeadImgUrl,
+		AntispamTicket: *friend.AntispamTicket,
+	}
+	if friend.BigHeadImgUrl != nil && *friend.BigHeadImgUrl != "" {
+		resp.Avatar = *friend.BigHeadImgUrl
+	} else if friend.SmallHeadImgUrl != nil && *friend.SmallHeadImgUrl != "" {
+		resp.Avatar = *friend.SmallHeadImgUrl
+	}
+	return resp, nil
+}
+
+func (s *ContactService) FriendSendRequest(req dto.FriendSendRequestRequest) error {
+	_, err := vars.RobotRuntime.FriendSendRequest(robot.FriendSendRequestParam{
+		Opcode:        2,
+		V1:            req.V1,
+		V2:            req.V2,
+		VerifyContent: req.VerifyContent,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ContactService) FriendSendRequestFromChatRoom(req dto.FriendSendRequestFromChatRoomRequest) error {
+	chatRoomMember, err := s.crmRepo.GetByID(req.ChatRoomMemberID)
+	if err != nil {
+		return fmt.Errorf("获取群成员信息失败: %v", err)
+	}
+	if chatRoomMember == nil {
+		return fmt.Errorf("群成员不存在: %d", req.ChatRoomMemberID)
+	}
+	contact, err := s.ctRepo.GetContact(chatRoomMember.WechatID)
+	if err != nil {
+		return fmt.Errorf("获取联系人信息失败: %v", err)
+	}
+	if contact != nil && (contact.Status == nil || *contact.Status == 0) {
+		return fmt.Errorf("你们已经是好友了: %s", contact.WechatID)
+	}
+	c, err := vars.RobotRuntime.GetContactDetail("", []string{chatRoomMember.WechatID})
+	if err != nil {
+		return fmt.Errorf("获取联系人详情失败: %v", err)
+	}
+	if len(c.Ticket) == 0 || c.Ticket[0].AntispamTicket == nil || *c.Ticket[0].AntispamTicket == "" {
+		return fmt.Errorf("获取联系人密钥失败: %s", chatRoomMember.WechatID)
+	}
+	_, err = vars.RobotRuntime.FriendSendRequest(robot.FriendSendRequestParam{
+		Opcode:        2,
+		Scene:         14,
+		V1:            *c.Ticket[0].Username,
+		V2:            *c.Ticket[0].AntispamTicket,
+		VerifyContent: req.VerifyContent,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ContactService) FriendSetRemarks(req dto.FriendSetRemarksRequest) error {
+	_, err := vars.RobotRuntime.FriendSetRemarks(req.ToWxid, req.Remarks)
+	if err != nil {
+		return err
+	}
+	return s.ctRepo.UpdateRemarkByContactID(req.ToWxid, req.Remarks)
+}
+
+func (s *ContactService) FriendAutoPassVerify(systemMessageID int64) error {
+	systemSettings, err := s.systemSettingsRepo.GetSystemSettings()
+	if err != nil {
+		return fmt.Errorf("获取系统设置失败: %v", err)
+	}
+	if systemSettings == nil || systemSettings.AutoVerifyUser == nil || !*systemSettings.AutoVerifyUser {
+		return fmt.Errorf("系统设置未开启好友验证")
+	}
+	if systemSettings.VerifyUserDelay != nil && *systemSettings.VerifyUserDelay > 0 {
+		// 延迟处理
+		time.Sleep(time.Duration(*systemSettings.VerifyUserDelay) * time.Second)
+	}
+	return s.FriendPassVerify(systemMessageID)
+}
+
+func (s *ContactService) FriendPassVerify(systemMessageID int64) error {
+	systemMessage, err := s.sysmsgRepo.GetByID(systemMessageID)
+	if err != nil {
+		return err
+	}
+	if systemMessage == nil {
+		return fmt.Errorf("系统消息不存在: %d", systemMessageID)
+	}
+	if systemMessage.Type != model.SystemMessageTypeVerify {
+		return fmt.Errorf("系统消息类型错误: %d", systemMessage.Type)
+	}
+	var xmlMessage robot.NewFriendMessage
+	err = vars.RobotRuntime.XmlDecoder(systemMessage.Content, &xmlMessage)
+	if err != nil {
+		return fmt.Errorf("解析好友添加请求消息失败: %v", err)
+	}
+	scene, err := strconv.Atoi(xmlMessage.Scene)
+	if err != nil {
+		return fmt.Errorf("解析好友添加请求场景失败: %v", err)
+	}
+	userVerify, err := vars.RobotRuntime.FriendPassVerify(robot.FriendPassVerifyRequest{
+		Scene: scene,
+		V1:    xmlMessage.FromUsername,
+		V2:    xmlMessage.Ticket,
+	})
+	if err != nil {
+		return err
+	}
+	if userVerify.Username == nil || *userVerify.Username == "" {
+		return fmt.Errorf("通过好友验证失败: %s，接口返回了空", systemMessage.FromWxid)
+	}
+	s.DebounceSyncContact(*userVerify.Username)
+	err = s.sysmsgRepo.Update(&model.SystemMessage{
+		ID:     systemMessage.ID,
+		IsRead: true,
+		Status: 1,
+	})
+	if err != nil {
+		// 忽略错误
+		log.Println("更新系统消息状态失败:", err)
+	}
+	return nil
+}
+
+func (s *ContactService) FriendDelete(contactID string) error {
+	_, err := vars.RobotRuntime.FriendDelete(contactID)
+	if err != nil {
+		log.Printf("删除好友失败: %v", err)
+		return err
+	}
+	return s.DeleteContactByContactID(contactID)
+}
+
+func (s *ContactService) GetContactType(contact model.Contact) model.ContactType {
+	if strings.HasSuffix(contact.WechatID, "@chatroom") {
+		return model.ContactTypeChatRoom
+	}
+	if _, ok := vars.OfficialAccount[contact.WechatID]; ok {
+		return model.ContactTypeOfficialAccount
+	}
+	if strings.HasPrefix(contact.WechatID, "gh_") && contact.Sex == 0 {
+		return model.ContactTypeOfficialAccount
+	}
+	return model.ContactTypeFriend
+}
+
+func (s *ContactService) SyncContact(syncChatRoomMember bool) error {
+	contactSyncMu.Lock()
+	defer contactSyncMu.Unlock()
+	if vars.RobotRuntime == nil || vars.RobotRuntime.Status == model.RobotStatusOffline {
+		return fmt.Errorf("机器人已离线，请重新登录微信后同步好友")
+	}
+	// 先获取全部好友id，没有保存到通讯录的群聊不会在这里
+	var contactIds []string
+	contactIds, err := vars.RobotRuntime.GetContactList()
+	if err != nil {
+		return err
+	}
+	// 查询没有保存到通讯录的群聊，只同步一天内活跃的群聊
+	recentChatRoomContacts, err := s.ctRepo.FindRecentChatRoomContacts()
+	if err != nil {
+		return err
+	}
+	for _, chatRoomContact := range recentChatRoomContacts {
+		if !slices.Contains(contactIds, chatRoomContact.WechatID) {
+			contactIds = append(contactIds, chatRoomContact.WechatID)
+		}
+	}
+	// 同步群成员
+	cmService := NewChatRoomService(s.ctx)
+	if syncChatRoomMember {
+		for _, chatRoomContact := range recentChatRoomContacts {
+			cmService.SyncChatRoomMember(chatRoomContact.WechatID)
+		}
+	}
+	err = s.syncContactByContactIDs(contactIds)
+	if err != nil {
+		log.Printf("同步联系人失败: %v", err)
+		return err
+	}
+	if err := s.ctRepo.ReconcileFriends(contactIds); err != nil {
+		return fmt.Errorf("更新好友有效状态失败: %w", err)
+	}
+	return nil
+}
+
+func (s *ContactService) DebounceSyncContact(contactID string) {
+	syncContactMu.Lock()
+	defer syncContactMu.Unlock()
+
+	if timer, ok := syncContactTimers[contactID]; ok {
+		timer.Stop()
+	}
+
+	var newTimer *time.Timer
+	newTimer = time.AfterFunc(syncContactDebounceInterval, func() {
+		syncContactMu.Lock()
+		currentTimer, ok := syncContactTimers[contactID]
+		if !ok || currentTimer != newTimer {
+			syncContactMu.Unlock()
+			return
+		}
+		delete(syncContactTimers, contactID)
+		syncContactMu.Unlock()
+
+		// 真正执行同步逻辑（放在锁外避免长时间持锁）
+		s.SyncContactByContactIDs([]string{contactID})
+	})
+
+	syncContactTimers[contactID] = newTimer
+}
+
+func (s *ContactService) SyncContactByContactIDs(contactIDs []string) error {
+	contactSyncMu.Lock()
+	defer contactSyncMu.Unlock()
+	return s.syncContactByContactIDs(contactIDs)
+}
+
+func (s *ContactService) syncContactByContactIDs(contactIDs []string) error {
+	for chunk := range slices.Chunk(contactIDs, 20) {
+		r, err := vars.RobotRuntime.GetContactDetail("", chunk)
+		if err != nil {
+			return fmt.Errorf("获取联系人详情失败: %w", err)
+		}
+		if r.BaseResponse.Ret != 0 || len(r.Ret) != len(chunk) || len(r.ContactList) != len(chunk) {
+			return fmt.Errorf("联系人详情响应失败或不完整，同步未完成")
+		}
+		for i, contact := range r.ContactList {
+			if r.Ret[i] != 0 {
+				if err := s.UpdateContactStatus(chunk[i], r.Ret[i]); err != nil {
+					return fmt.Errorf("更新联系人状态失败: %w", err)
+				}
+				return fmt.Errorf("联系人详情查询失败，状态码 %d，同步未完成", r.Ret[i])
+			}
+			if contact.UserName.String == nil || strings.TrimSpace(*contact.UserName.String) != chunk[i] {
+				return fmt.Errorf("联系人详情 ID 与请求不匹配，同步未完成")
+			}
+			existContact, err := s.ctRepo.GetContact(chunk[i])
+			if err != nil {
+				return fmt.Errorf("读取联系人失败: %w", err)
+			}
+			if existContact != nil {
+				err = s.UpdateContact(existContact, contact)
+			} else {
+				err = s.CreateContact(contact)
+			}
+			if err != nil {
+				return fmt.Errorf("保存联系人失败: %w", err)
+			}
+		}
+	}
+	return nil
+}
+
+func (s *ContactService) UpdateContactStatus(contactID string, contactStatus int) (err error) {
+	if contactID == "" {
+		return
+	}
+
+	var contact *model.Contact
+	contact, err = s.ctRepo.GetContact(contactID)
+	if err != nil {
+		return
+	}
+	if contact != nil {
+		if contact.Status != nil && *contact.Status == model.ContactStatusMissing {
+			return nil
+		}
+		err = s.ctRepo.Update(&model.Contact{
+			ID:     contact.ID,
+			Status: utils.IntPtr(contactStatus),
+		})
+	}
+
+	return
+}
+
+func (s *ContactService) UpdateContact(originalContact *model.Contact, contact robot.Contact) (err error) {
+	contactPerson := model.Contact{
+		ID:            originalContact.ID,
+		WechatID:      *contact.UserName.String,
+		Alias:         contact.Alias,
+		Nickname:      contact.NickName.String,
+		Status:        utils.IntPtr(0),
+		Avatar:        contact.BigHeadImgUrl,
+		Pyinitial:     contact.Pyinitial.String,
+		QuanPin:       contact.QuanPin.String,
+		Sex:           contact.Sex,
+		Country:       contact.Country,
+		Province:      contact.Province,
+		City:          contact.City,
+		Signature:     contact.Signature,
+		SnsBackground: contact.SnsUserInfo.SnsBgimgId,
+	}
+	// A detail lookup can still succeed for a deleted friend. Only a full
+	// address book snapshot may restore membership.
+	if originalContact.Status != nil && *originalContact.Status == model.ContactStatusMissing {
+		contactPerson.Status = utils.IntPtr(model.ContactStatusMissing)
+	}
+	if contact.Remark.String != nil && *contact.Remark.String != "" {
+		contactPerson.Remark = *contact.Remark.String
+	} else {
+		contactPerson.Remark = ""
+	}
+	contactPerson.Type = s.GetContactType(contactPerson)
+	if contact.BigHeadImgUrl == "" {
+		contactPerson.Avatar = contact.SmallHeadImgUrl
+	}
+	if contactPerson.Type == model.ContactTypeChatRoom {
+		if contact.ChatRoomOwner != nil && *contact.ChatRoomOwner != "" {
+			contactPerson.ChatRoomOwner = *contact.ChatRoomOwner
+		}
+	}
+	err = s.ctRepo.Update(&contactPerson)
+	if err != nil {
+		log.Printf("更新联系人失败: %v", err)
+	}
+	return
+}
+
+func (s *ContactService) CreateContact(contact robot.Contact) (err error) {
+	now := time.Now().Unix()
+
+	contactPerson := model.Contact{
+		WechatID:      *contact.UserName.String,
+		Alias:         contact.Alias,
+		Nickname:      contact.NickName.String,
+		Status:        utils.IntPtr(0),
+		Avatar:        contact.BigHeadImgUrl,
+		Pyinitial:     contact.Pyinitial.String,
+		QuanPin:       contact.QuanPin.String,
+		Sex:           contact.Sex,
+		Country:       contact.Country,
+		Province:      contact.Province,
+		City:          contact.City,
+		Signature:     contact.Signature,
+		SnsBackground: contact.SnsUserInfo.SnsBgimgId,
+		CreatedAt:     now,
+		LastActiveAt:  now,
+		UpdatedAt:     now,
+	}
+	if contact.BigHeadImgUrl == "" {
+		contactPerson.Avatar = contact.SmallHeadImgUrl
+	}
+	if contact.Remark.String != nil && *contact.Remark.String != "" {
+		contactPerson.Remark = *contact.Remark.String
+	}
+	contactPerson.Type = s.GetContactType(contactPerson)
+	if contactPerson.Type == model.ContactTypeChatRoom {
+		if contact.ChatRoomOwner != nil && *contact.ChatRoomOwner != "" {
+			contactPerson.ChatRoomOwner = *contact.ChatRoomOwner
+		}
+	}
+	err = s.ctRepo.Create(&contactPerson)
+	if err != nil {
+		log.Printf("创建联系人失败: %v", err)
+	}
+	return
+}
+
+func (s *ContactService) GetContacts(req dto.ContactListRequest, pager appx.Pager) ([]*model.Contact, int64, error) {
+	return s.ctRepo.GetContacts(req, pager)
+}
+
+func (s *ContactService) DeleteContactByContactID(contactID string) error {
+	contactSyncMu.Lock()
+	defer contactSyncMu.Unlock()
+	contact, err := s.ctRepo.GetContact(contactID)
+	if err != nil {
+		return err
+	}
+	if contact != nil && contact.Type == model.ContactTypeFriend {
+		return s.ctRepo.Update(&model.Contact{
+			ID: contact.ID, Status: utils.IntPtr(model.ContactStatusMissing),
+		})
+	}
+	err = s.ctRepo.DeleteByContactID(contactID)
+	if err != nil {
+		return err
+	}
+	return s.fsRepo.DeleteByWeChatID(contactID)
+}
+
+func (s *ContactService) InsertOrUpdateContactActiveTime(contactID string) {
+	now := time.Now().Unix()
+	existContact, err := s.ctRepo.GetContact(contactID)
+	if err != nil {
+		log.Printf("获取联系人失败: %v", err)
+		return
+	}
+	// 群聊类型的联系人
+	if strings.HasSuffix(contactID, "@chatroom") {
+		if existContact == nil {
+			contactChatRoom := model.Contact{
+				WechatID:     contactID,
+				Type:         model.ContactTypeChatRoom,
+				CreatedAt:    now,
+				LastActiveAt: now,
+				UpdatedAt:    now,
+			}
+			err = s.ctRepo.Create(&contactChatRoom)
+			if err != nil {
+				log.Printf("创建群聊联系人失败: %v", err)
+				return
+			}
+		} else {
+			// 存在，更新一下活跃时间
+			contactChatRoom := model.Contact{
+				ID:           existContact.ID,
+				LastActiveAt: now,
+			}
+			err = s.ctRepo.Update(&contactChatRoom)
+			if err != nil {
+				log.Printf("更新群聊联系人失败: %v", err)
+				return
+			}
+		}
+		return
+	}
+	// 好友类型的联系人
+	if existContact == nil {
+		contact := model.Contact{
+			WechatID:     contactID,
+			Type:         model.ContactTypeFriend,
+			CreatedAt:    now,
+			LastActiveAt: now,
+			UpdatedAt:    now,
+		}
+		contact.Type = s.GetContactType(contact)
+		err = s.ctRepo.Create(&contact)
+		if err != nil {
+			log.Printf("创建好友失败: %v", err)
+			return
+		}
+	} else {
+		contact := model.Contact{
+			ID:           existContact.ID,
+			LastActiveAt: now,
+		}
+		err = s.ctRepo.Update(&contact)
+		if err != nil {
+			log.Printf("更新好友失败: %v", err)
+			return
+		}
+	}
+}
