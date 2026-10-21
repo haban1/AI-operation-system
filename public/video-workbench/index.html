@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#172622">
+  <title>视频创作工作台</title>
+  <meta name="description" content="自动化成片、素材智剪与 AIGC 创作的本地统一工作台。">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./library.css">
+  <script src="./app.js" defer></script>
+  <script src="./library.js" defer></script>
+</head>
+<body>
+  <a class="skipLink" href="#main">跳到工作区</a>
+  <aside class="sidebar">
+    <a class="brand" href="#overview" aria-label="视频创作工作台首页"><img src="./icon.svg" alt="" width="36" height="36"><span>视频创作<span class="brandSub">VIDEO WORKSPACE</span></span></a>
+    <div class="navLabel">工作空间</div>
+    <nav aria-label="工作台导航">
+      <a class="navItem selected" href="#overview" data-route="overview" aria-label="工作台总览"><span class="navIcon">▦</span><span>工作台总览</span></a>
+      <div class="navDivider"></div>
+      <a class="navItem routeNav" href="#automatic" data-route="automatic" aria-label="线路一：自动化成片"><span class="routeNumber">01</span><span>自动化成片<small>AI Signal Studio</small></span><i class="navDot" data-dot="automatic" aria-hidden="true"></i></a>
+      <a class="navItem routeNav" href="#editing" data-route="editing" aria-label="线路二：素材智剪 OpenChatCut"><span class="routeNumber">02</span><span>素材智剪<small>OpenChatCut</small></span><i class="navDot" data-dot="editing" aria-hidden="true"></i></a>
+      <a class="navItem routeNav" href="#creation" data-route="creation" aria-label="线路三：AIGC 创作 Toonflow"><span class="routeNumber">03</span><span>AIGC 创作<small>Toonflow</small></span><i class="navDot" data-dot="creation" aria-hidden="true"></i></a>
+      <div class="navDivider"></div>
+      <a class="navItem" href="#library" data-route="library" aria-label="统一成片库"><span class="navIcon">▤</span><span>成片库</span></a>
+    </nav>
+    <div class="sidebarBottom"><span class="localDot"></span><div>本机工作空间<small>项目与素材保留在原工作台</small></div></div>
+  </aside>
+  <div class="shell">
+    <header class="topbar">
+      <div class="breadcrumb">工作空间<span>/</span><strong id="pageName">总览</strong></div>
+      <div class="topActions"><span class="serviceSummary" id="serviceSummary">正在连接服务</span><button class="iconButton" id="refreshStatus" title="刷新服务状态" aria-label="刷新服务状态">↻</button><span class="workspaceAvatar" title="本地工作空间">本地</span></div>
+    </header>
+    <main id="main" tabindex="-1">
+      <section id="overview" class="overview view">
+        <div class="welcome"><div><div class="eyebrow">YOUR VIDEO WORKSPACE</div><h1>让创意，各有路径。</h1><p>从自动化成片到 AI 画布，在一个工作台继续创作。</p></div><div class="workspaceTag"><span class="workspaceGlyph">↗</span><div><strong>三条创作线路</strong><span>一个工作入口</span></div></div></div>
+        <div class="sectionHeading"><h2>选择创作方式</h2><span>03 条创作线路</span></div>
+        <div class="routeGrid">
+          <article class="routeCard automaticCard">
+            <div class="cardTop"><span class="numberLabel">ROUTE / 01</span><span class="statusBadge" data-status="automatic">检查中</span></div>
+            <div class="routeArt autoArt" aria-hidden="true"><div class="artDocument"><i></i><i></i><i></i></div><span class="artLink"></span><div class="artStack"><span>▶</span><i></i><i></i></div><span class="artSpark">✦</span></div>
+            <h3>自动化成片</h3><p class="cardDescription">给一个选题，让 AI 完成研究、文案与视频制作，你来挑选结果。</p>
+            <div class="steps"><span>选题研究</span><b>→</b><span>自动制作</span><b>→</b><span>挑选成片</span></div>
+            <div class="cardFoot"><span>AI Signal Studio</span><a class="routeButton" href="#automatic">进入工作区 <span>↗</span></a></div>
+          </article>
+          <article class="routeCard editingCard">
+            <div class="cardTop"><span class="numberLabel">ROUTE / 02</span><span class="statusBadge" data-status="editing">检查中</span></div>
+            <div class="routeArt editArt" aria-hidden="true"><div class="timeline"><span></span><span></span><span></span><i></i></div></div>
+            <h3>素材智剪</h3><p class="cardDescription">上传视频、照片与音乐，用自然语言组织镜头、调整节奏并导出成片。</p>
+            <div class="steps"><span>拍摄素材</span><b>→</b><span>智能剪辑</span><b>→</b><span>成片</span></div>
+            <div class="cardFoot"><span>OpenChatCut</span><a class="routeButton" href="#editing">进入工作区 <span>↗</span></a></div>
+          </article>
+          <article class="routeCard creationCard">
+            <div class="cardTop"><span class="numberLabel">ROUTE / 03</span><span class="statusBadge" data-status="creation">检查中</span></div>
+            <div class="routeArt creationArt" aria-hidden="true"><div class="artNode nodeOne">✦</div><span class="nodeWire"></span><div class="artNode nodeTwo"><span>◒</span></div><div class="artNode nodeThree">▶</div></div>
+            <h3>AIGC 创作</h3><p class="cardDescription">从想法和参考素材出发，在画布中编排角色、分镜与视频。</p>
+            <div class="steps"><span>创意与资产</span><b>→</b><span>分镜画布</span><b>→</b><span>视频</span></div>
+            <div class="cardFoot"><span>Toonflow</span><a class="routeButton darkButton" href="#creation">进入工作区 <span>↗</span></a></div>
+          </article>
+        </div>
+        <div class="bottomGrid">
+          <section class="connectionPanel"><div class="sectionHeading"><h2>工作台连接</h2><span id="checkedAt">正在检查</span></div><div class="connectionRow"><div class="productIcon signalIcon">S</div><div class="connectionInfo"><strong>AI Signal Studio</strong><span>线路一 · 自动化视频制作</span></div><span class="connectionState" data-connection="automatic">检查中</span><a aria-disabled="true" tabindex="-1" target="_blank" rel="noopener noreferrer" aria-label="独立打开 AI Signal Studio">↗</a></div><div class="connectionRow"><div class="productIcon editIcon">O</div><div class="connectionInfo"><strong>OpenChatCut</strong><span>线路二 · 实拍素材智能剪辑</span></div><span class="connectionState" data-connection="editing">检查中</span><a aria-disabled="true" tabindex="-1" target="_blank" rel="noopener noreferrer" aria-label="独立打开 OpenChatCut">↗</a></div><div class="connectionRow"><div class="productIcon toonIcon">T</div><div class="connectionInfo"><strong>Toonflow</strong><span>线路三 · AI 创作画布</span></div><span class="connectionState" data-connection="creation">检查中</span><a aria-disabled="true" tabindex="-1" target="_blank" rel="noopener noreferrer" aria-label="独立打开 Toonflow">↗</a></div></section>
+          <section class="readinessPanel"><div class="sectionHeading"><h2>开始前看一眼</h2><span class="noteLabel">配置提示</span></div><div class="readinessItem"><span>01</span><p id="automaticReadiness">新一轮生成需要在线模型；可在工作区查看历史成片与配置。</p></div><div class="readinessItem"><span>02</span><p>上传已有素材后，在 OpenChatCut 内描述剪辑目标；导出的作品会汇入成片库。</p></div><div class="readinessItem"><span>03</span><p>Astra 文本与公司 GPT Image 2 文生图已接入。图片尺寸与比例使用自动；参考图编辑、视频生成尚待接入。</p></div><div class="noteFoot">服务在线仅表示入口可连接；模型能力与生成结果在各工作区核验。</div></section>
+        </div>
+        <footer class="overviewFooter"><span>继续使用原工作区创作，在成片库统一挑选与发布。</span><span>LOCAL WORKSPACE <i>●</i></span></footer>
+      </section>
+      <section id="library" class="libraryView view" hidden aria-labelledby="libraryTitle">
+        <div class="welcome libraryWelcome"><div><div class="eyebrow">YOUR CONTENT LIBRARY</div><h1 id="libraryTitle">把好内容，留下来。</h1><p>三条线路的作品汇集于此，选好内容再进入发布编辑。</p></div><button id="syncLibrary" class="routeButton" type="button">同步作品 <span aria-hidden="true">↻</span></button></div>
+        <div class="libraryControls"><div class="libraryFilters" role="group" aria-label="按创作路径筛选"><button type="button" data-library-source="all" aria-pressed="true">全部</button><button type="button" data-library-source="automatic" aria-pressed="false">自动化成片</button><button type="button" data-library-source="editing" aria-pressed="false">素材智剪</button><button type="button" data-library-source="creation" aria-pressed="false">AIGC 创作</button></div><span id="libraryCount" class="libraryCount">正在读取作品</span></div>
+        <p id="librarySyncState" class="librarySyncState" role="status" aria-live="polite">进入成片库后自动同步。</p>
+        <div id="librarySources" class="librarySources" hidden></div>
+        <div id="libraryGrid" class="libraryGrid" aria-busy="false"></div>
+        <div id="libraryEmpty" class="libraryEmpty" hidden><span class="emptySymbol" aria-hidden="true">▤</span><h2 id="libraryEmptyTitle">还没有可展示的作品</h2><p id="libraryEmptyText">先在任一路径生成或导出作品，再同步到这里。</p><a href="#overview" class="backLink">← 选择创作方式</a></div>
+      </section>
+      <section id="embedded" class="embedded view" hidden>
+        <div class="workspaceToolbar"><div class="workspaceIdentity"><span id="activeRouteNumber" class="miniRoute">01</span><div><h1 id="activeTitle">自动化成片</h1><span id="activeProduct">AI Signal Studio</span></div><span class="statusBadge" id="activeStatus">检查中</span></div><div class="workspaceTools"><button id="focusMode" class="textButton" aria-pressed="false">展开工作区</button><a id="standaloneLink" class="standaloneLink" target="_blank" rel="noopener noreferrer">独立打开 ↗</a></div></div>
+        <div id="workspaceNotice" class="workspaceNotice"></div>
+        <div class="frameArea" id="frameArea"><div class="connectionPlaceholder" id="connectionPlaceholder"><span class="placeholderSymbol">◌</span><h2 id="placeholderTitle">正在连接工作区</h2><p id="placeholderText">请稍候，正在检查本地服务。</p><button id="retryConnection" class="routeButton">重新检查</button></div></div>
+      </section>
+    </main>
+  </div>
+  <div id="notification" class="toast" role="status" hidden></div>
+</body>
+</html>

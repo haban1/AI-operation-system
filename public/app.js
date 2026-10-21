@@ -1,8 +1,9 @@
 import { renderWechatAdmin, cleanupWechatAdmin } from './wechat-admin.js';
+import { renderHotTopicStudio, hideHotTopicStudio } from './hot-topic-studio.js';
+import { openContentLibraryPicker, closeContentLibraryPicker } from './content-library-picker.js';
 const navItems = [
   ['dashboard','dashboard','运营总览','推广、内容、活动转化与 AI 运营建议'],
-  ['create','create','内容创作','热点选题、文稿生成与作品库，连接内容发布'],
-  ['editing','create','素材自动剪辑','本地素材预检、AI 文案生成与流量潜力预测'],
+  ['create','create','内容工作台','三路径工作台：自动化成片、素材智剪与 AIGC 创作'],
   ['platforms','accounts','平台启停','五个平台独立启停；未开启平台绝不唤醒；账号与智能回复统一管理，设备和登录状态集中展示在运行总览'],
   ['publish','publish','内容发布','本地选材、格式预检、合规审核和一键发布'],
   ['tasks','tasks','任务中心','区分已提交、审核中、已发布和审核失败'],
@@ -346,17 +347,15 @@ async function downloadReplyExport(platformCodes,button){
 /* ==========================================================================
    分组工作区导航（智慧驱动版）
    - 侧边栏按运营任务分组；组内页面通过顶部子导航切换。
-   - 所有既有页面路由全部保留；hiddenNavPages 仅控制是否出现在导航里，
-     不影响页面本身可访问（contextual 链接照常工作）。
+   - 内容创作统一使用三路径工作台；旧创作入口兼容跳转到 #studio。
+   - 发布管理独立保留；hiddenNavPages 仅隐藏导航，不影响对应页面访问。
    ========================================================================== */
 const workspaceGroups=[
   {id:'overview',label:'运营总览',icon:'dashboard',section:'work',description:'推广、内容、活动转化与 AI 运营建议。',items:[
     {key:'overview',label:'运营总览',page:'dashboard'}]},
-  {id:'content',label:'内容工作台',icon:'create',section:'work',description:'从热点生成，或从你的素材开始剪辑；作品统一管理，再进入发布与复盘。',items:[
-    {key:'topics',label:'热点自动生成',page:'create',view:'topics'},
-    {key:'script',label:'文稿与分镜',page:'create',view:'script'},
-    {key:'material-editing',label:'素材自动剪辑',page:'editing'},
-    {key:'library',label:'作品库',page:'create',view:'library'},
+  {id:'content',label:'内容工作台',icon:'create',section:'work',description:'自动化成片、素材智剪与 AIGC 创作，生成结果统一进入成片库。',items:[
+    {key:'studio',label:'视频创作工作台',page:'create'}]},
+  {id:'publishing',label:'发布管理',icon:'publish',section:'work',description:'素材预检、审核、发布排期与任务状态，继续使用运营系统的发布流程。',items:[
     {key:'publishing',label:'发布与排期',page:'publish'},
     {key:'publish-tasks',label:'发布任务',page:'tasks'}]},
   {id:'inbox',label:'用户互动',icon:'messages',section:'work',description:'统一处理平台评论、私信、小程序会话与需要人工接手的记录。',items:[
@@ -381,7 +380,7 @@ const workspaceGroups=[
 const workspaceLastRoute={};
 let workspaceNavigationSequence=0;
 function currentWorkspaceRoute(){
-  const view=state.page==='create'?contentStudio.tab:state.page==='messages'?state.messageView:state.page==='knowledge'?state.knowledgeView:null;
+  const view=state.page==='messages'?state.messageView:state.page==='knowledge'?state.knowledgeView:null;
   for(const group of workspaceGroups){const item=group.items.find(i=>i.page===state.page&&(!i.view||i.view===view));if(item)return {group,item}}
   for(const group of workspaceGroups){const item=group.items.find(i=>i.page===state.page);if(item)return {group,item}}
   return {group:workspaceGroups[0],item:workspaceGroups[0].items[0]};
@@ -542,11 +541,11 @@ function navigate(p,view=null){
   /* 每次进入页面都重新拉取运营看板数据，保证切换/刷新后看到的是最新口径。 */
   operationsDashboardKey=null;
   if(publishSchedulePollTimer){clearInterval(publishSchedulePollTimer);publishSchedulePollTimer=null;}
+  if(['studio','topics','script','material-editing','library','editing'].includes(p))p='create';
   if(p==='accounts')p='platforms';
   if(p==='gaps'){state.knowledgeView='rag';p='knowledge'}
   else if(p==='knowledge'){state.knowledgeView=view||'rag'}
   else if(p==='messages'&&['COMMENT','PRIVATE_MESSAGE'].includes(view)){state.messageView=view}
-  else if(p==='create'&&['topics','script','library'].includes(view)){contentStudio.tab=view}
   state.page=p;
   if(p!=='publish'){state.precheck=null;state.compliance=null;state.trafficPrediction=createTrafficPredictionState();state.retryDraft=null;state.retrySourceTaskId=null}
   if(p!=='knowledge'){state.knowledgeCategory=null;state.knowledgeSubcategory=null}
@@ -573,12 +572,16 @@ function syncNavigationHash(){
   }catch{}
 }
 /* 地址栏 hash 与工作区导航双向同步：
-   1) 启动时按 #key 直接打开对应页面（#topics / #material-editing / #library ...）；
+   1) 启动时按 #key 打开页面（#studio / #publishing / #publish-tasks 等）；
+      旧创作页面深链统一跳转到 #studio。
    2) 手动改地址栏或用浏览器前进后退时同步切换工作区。
    注意：navigate() 内部用 replaceState 写 hash，不会触发 hashchange，故此处不会自激循环。 */
 function resolveWorkspaceHash(rawHash){
   const raw=String(rawHash||'').replace(/^#/,'').trim().toLowerCase();
   if(!raw)return null;
+  if(['topics','script','material-editing','library','create','editing'].includes(raw)){
+    return workspaceGroups.find(group=>group.id==='content').items[0];
+  }
   /* 刻意不出现在侧边栏的页面（浏览器控制 / 相似问法 / 问题汇总）同样允许用深链直达，
      隐藏的是导航入口而不是页面本身。 */
   for(const group of workspaceGroups){
@@ -598,13 +601,14 @@ function applyWorkspaceHash(rawHash){
   const target=resolveWorkspaceHash(rawHash);
   if(!target)return false;
   const {item:current}=currentWorkspaceRoute();
-  if(current&&current.key===target.key&&state.page===target.page)return false;
+  if(current&&current.key===target.key&&state.page===target.page){syncNavigationHash();return false}
   navigate(target.page,target.view||null);
   return true;
 }
 window.addEventListener('hashchange',()=>{if(!state.appStarted)return;applyWorkspaceHash(location.hash)});
 async function render(){
   cleanupWechatAdmin();
+  hideHotTopicStudio();
   $('#content').onclick=null;$('#content').oninput=null;$('#content').onchange=null;
   const page=state.page;
   const generation=++pageRenderGeneration;
@@ -869,6 +873,17 @@ function publishPlatformAvailability(account){
   if(runtime.blocked_reason==='NO_ENABLED_ACCOUNT')return {runnable:false,label:'无启用账号',detail:'平台开关已开启，但没有可执行账号。',cls:'warning'};
   return {runnable:false,label:'暂不可执行',detail:'请检查账号登录、Local Agent、平台开关，或到“问题汇总”查看关联异常。',cls:'warning'};
 }
+let contentLibraryRequestSequence=0;
+async function publishContentLibraryItem(id){
+  const requestSequence=++contentLibraryRequestSequence;
+  const sourcePageGeneration=pageRenderGeneration;
+  try{
+    const draft=await api(`/api/content-library/${encodeURIComponent(id)}/publish-draft`);
+    if(state.auth?.authenticated===false||requestSequence!==contentLibraryRequestSequence||sourcePageGeneration!==pageRenderGeneration)return;
+    state.retryDraft={...draft,origin:'content-library',sourceTaskId:null,targets:[]};
+    await navigate('publish');
+  }catch(error){if(requestSequence===contentLibraryRequestSequence&&sourcePageGeneration===pageRenderGeneration)toast(error.message,true)}
+}
 async function renderPublish({pageGeneration=pageRenderGeneration}={}){
   const ownsPage=()=>state.page==='publish'&&pageGeneration===pageRenderGeneration;
   if(!ownsPage())return;
@@ -882,6 +897,7 @@ async function renderPublish({pageGeneration=pageRenderGeneration}={}){
       <div class="publish-column publish-main-column">
         <div class="panel" style="margin-top:0">
         <div class="panel-head"><div><h2>1. 选择本地素材与文案</h2><p>素材留在RPA电脑，选择后自动识别视频格式，并按所选平台分别预检。</p></div></div>
+        <div class="section-actions library-publish-actions"><button type="button" class="btn secondary" id="pickFromContentLibrary">从成片库选择</button></div>
         <label>本地素材</label>
         <label class="field full local-material-path-field"><span>本机素材路径（文件选择器不可用时可直接粘贴）</span><input id="materialPath" name="materialPath" type="text" placeholder="例如 D:\素材\video.mp4" autocomplete="off" required></label>
         <div id="materialPreview" class="material-preview material-preview-empty material-picker" role="button" tabindex="0" aria-label="选择本地素材">
@@ -963,6 +979,7 @@ async function renderPublish({pageGeneration=pageRenderGeneration}={}){
   resetAudioContentGeneration();
   const materialInput=$('#materialPath');
   const materialPicker=$('#materialPreview');
+  $('#pickFromContentLibrary').onclick=()=>openContentLibraryPicker({onSelect:publishContentLibraryItem,onUnauthorized:()=>showLoginScreen('登录已过期，请重新登录')});
   let materialPickerBusy=false;
   const openMaterialPicker=async()=>{
     if(materialPickerBusy)return;
@@ -1040,12 +1057,15 @@ async function renderPublish({pageGeneration=pageRenderGeneration}={}){
   };
   const retryDraft=state.retryDraft;
   if(retryDraft){
-    const fromStudio=retryDraft.origin==='studio';
+    const fromLibrary=retryDraft.origin==='content-library';
+    const fromStudio=retryDraft.origin==='studio'||fromLibrary;
     state.retrySourceTaskId=fromStudio?null:retryDraft.sourceTaskId;
     const retryNotice=$('#retryPublishNotice');
     if(retryNotice){
       retryNotice.hidden=false;
-      retryNotice.innerHTML=fromStudio
+      retryNotice.innerHTML=fromLibrary
+        ?`<b>已从共享成片库带入作品</b><span>素材、标题和正文已填入。请核对内容来源、选择平台，并完成原有素材预检与发布审核。</span>`
+        :fromStudio
         ?`<b>已从内容创作带入文稿</b><span>标题、正文与素材路径已填充到发布工作区。请核对平台账号与合规信息后创建任务；最终发布授权不会自动勾选。</span>`
         :`<b>正在再次发送任务 #${retryDraft.sourceTaskId}</b><span>已自动填充失败任务的文案、素材和失败平台。请重新检查素材与合规内容，再确认创建任务；最终发布授权不会自动勾选。</span>`;
       const submitButton=$('#publishSubmitButton');if(submitButton)submitButton.textContent=fromStudio?'创建发布任务':'创建再次发送任务';
@@ -1057,7 +1077,14 @@ async function renderPublish({pageGeneration=pageRenderGeneration}={}){
     const retryTargetKeys=new Set((retryDraft.targets||[]).map(item=>`${item.platformCode}:${Number(item.accountId)}`));
     platformChecks().forEach(check=>{check.checked=retryTargetKeys.has(`${check.dataset.platform}:${Number(check.dataset.account)}`)});
     syncPlatformSelection();
-    if(!materialInput.value.trim()){
+    if(fromLibrary){
+      state.materialPreviewUrl=retryDraft.mediaUrl;
+      materialPicker.className='material-preview material-picker';
+      materialPicker.innerHTML=materialPreviewHtml(retryDraft.mediaUrl,{...retryDraft.meta,type:retryDraft.mediaType,name:retryDraft.meta?.name||retryDraft.title,size:retryDraft.sizeBytes});
+      $('#precheckBox').className='notice material-check info';
+      $('#precheckBox').innerHTML='<b>素材已从成片库读取 · 待发布预检</b><br>选择目标平台后检测素材格式，再核对内容来源和发布审核。';
+      toast('成片已带入发布，等待你选择平台和审核');
+    }else if(!materialInput.value.trim()){
       showMaterialCheckError('原任务没有可用的素材路径，请重新选择本地素材');
       toast(fromStudio?'创作文稿已填充，请重新选择本地素材':'失败任务内容已填充，请重新选择本地素材',true);
     }else if(!selectedTargets().length){
@@ -3601,6 +3628,8 @@ function clearWorkspaceSession(){
 }
 function showLoginScreen(message=''){
   cleanupWechatAdmin();
+  hideHotTopicStudio({reset:true});
+  closeContentLibraryPicker();
   if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null}
   if(taskRefreshTimer){clearInterval(taskRefreshTimer);taskRefreshTimer=null}
   if(messageRefreshTimer){clearInterval(messageRefreshTimer);messageRefreshTimer=null}
@@ -3637,11 +3666,9 @@ async function logoutAdmin(){
   showLoginScreen('\u5df2\u5b89\u5168\u9000\u51fa\u7ba1\u7406\u7aef');
 }
 /* ==========================================================================
-   内容创作 / 素材自动剪辑（框架对齐设计稿，功能只接真实能力）
-   真实可用：本地素材选择、素材预检、AI 标题与正文生成、内容适配潜力预测、
-             带入内容发布、作品库读取发布历史。
-   暂无后端支撑：热点选题库、视频剪辑与编码、分镜配音与动效 —— 一律标注「待接入」，
-   不生成任何示例选题或占位作品。
+   内容工作台移植三路径统一 WebUI，三路产物由共享成片库交接给发布管理。
+   保留既有素材与发布辅助函数供其他流程复用；旧创作路由统一进入 Studio。
+   发布管理继续负责素材预检、审核、排期与任务记录，不自动同步或发布成片。
    ========================================================================== */
 const contentStudio={
   tab:'topics',
@@ -3686,22 +3713,6 @@ function contentStudioTabs(){
     ['library','▦','作品库','已发布作品与发布结果']
   ];
   return `<div class="knowledge-section-tabs" role="tablist" aria-label="内容创作步骤">${tabs.map(([key,icon,label,desc])=>`<button class="knowledge-section-tab ${contentStudio.tab===key?'active':''}" type="button" data-studio-tab="${key}" role="tab" aria-selected="${contentStudio.tab===key}"><span class="knowledge-tab-icon">${icon}</span><span><b>${label}</b><small>${desc}</small></span></button>`).join('')}</div>`;
-}
-function studioPendingCard(index,title,detail,state){return `<article class="studio-pending-card"><span>${index}</span><b>${esc(title)}</b><small>${esc(detail)}</small><em class="${state==='可用'?'is-ready':''}">${esc(state)}</em></article>`}
-function contentStudioTopicsView(){
-  return `<section class="panel">
-    <div class="panel-head"><div><span class="panel-kicker">HOT TOPIC SOURCE</span><h2>热点自动生成</h2><p>设计稿在此按选题库列出热点并一键生成文稿。</p></div></div>
-    <div class="notice warn"><span class="notice-icon">!</span><div><b>该模块待接入数据源</b><p>当前系统没有热点选题库，也不会填入示例选题或示例热度。接入热点抓取与选题模型后，这里会显示可选题列表。</p></div></div>
-    <div class="studio-pending-grid">
-      ${studioPendingCard('01','热点数据源','需要接入 GitHub、X、Reddit 等趋势抓取或第三方热点接口','待接入')}
-      ${studioPendingCard('02','选题评分与角度推荐','需要接入 AI 选题评估模型，输出切入角度与推荐理由','待接入')}
-      ${studioPendingCard('03','文稿生成','已具备：可在「文稿与分镜」中用本地素材生成标题与正文','可用')}
-    </div>
-    <div class="section-actions">
-      <button class="btn" type="button" data-studio-tab="script">去「文稿与分镜」用本地素材生成 →</button>
-      <button class="btn secondary" type="button" data-go="publish">直接进入内容发布</button>
-    </div>
-  </section>`;
 }
 function studioPrecheckNotices(){
   const precheck=contentStudio.precheck;
@@ -3787,11 +3798,8 @@ function contentStudioLibraryView(){
   </section>`;
 }
 async function renderContentStudio(){
-  if(contentStudio.tab==='library'&&contentStudio.library.status==='IDLE')await studioLoadLibrary();
   if(state.page!=='create')return;
-  const host=$('#content');
-  host.innerHTML=`<div class="content-studio-page">${contentStudioTabs()}<div id="studioBody">${contentStudio.tab==='topics'?contentStudioTopicsView():contentStudio.tab==='script'?contentStudioScriptView():contentStudioLibraryView()}</div></div>`;
-  bindContentStudio();
+  return renderHotTopicStudio($('#content'),{onUnauthorized:()=>showLoginScreen('登录已过期，请重新登录'),onPublish:publishContentLibraryItem});
 }
 function renderMaterialEditor(){
   const precheck=contentStudio.precheck;

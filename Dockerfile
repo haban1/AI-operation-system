@@ -1,5 +1,11 @@
 FROM node:24.15.0-bookworm-slim
 
+# ffprobe-static does not ship a Linux ARM64 executable. Use the distribution
+# build to validate shared-library media on Apple Silicon Docker as well.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 ENV NODE_ENV=development
 COPY package.json package-lock.json ./

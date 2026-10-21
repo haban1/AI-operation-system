@@ -105,17 +105,17 @@ export async function jsonRequest(base, pathname, options = {}) {
 
 /* ==========================================================================
    分组工作区导航（智慧驱动版主界面）
-   主界面已从「扁平导航 data-page」改为「侧边栏六分组 + 分组子栏目」：
+   主界面已从「扁平导航 data-page」改为「侧边栏分组 + 分组子栏目」：
      侧边栏  -> #nav button[data-workspace="<group>"]
      子栏目  -> #workspaceSubnav button[data-workspace-item="<key>"]
    浏览器测试统一通过 openWorkspacePage() 打开页面，避免各测试文件重复拼选择器。
    ========================================================================== */
 export const WORKSPACE_NAV = {
   dashboard: { group: 'overview', key: 'overview' },
-  create: { group: 'content', key: 'topics' },
-  editing: { group: 'content', key: 'material-editing' },
-  publish: { group: 'content', key: 'publishing' },
-  tasks: { group: 'content', key: 'publish-tasks' },
+  create: { group: 'content', key: 'studio' },
+  editing: { group: 'content', key: 'studio' },
+  publish: { group: 'publishing', key: 'publishing' },
+  tasks: { group: 'publishing', key: 'publish-tasks' },
   messages: { group: 'inbox', key: 'comments' },
   miniProgram: { group: 'inbox', key: 'mini-program' },
   handoffs: { group: 'inbox', key: 'human-handoffs' },

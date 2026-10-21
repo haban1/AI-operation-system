@@ -7,7 +7,9 @@ import sharp from 'sharp';
 import ffprobeStatic from 'ffprobe-static';
 
 const execFileAsync = promisify(execFile);
-const ffprobePath = typeof ffprobeStatic === 'string' ? ffprobeStatic : ffprobeStatic?.path;
+const bundledFfprobePath = typeof ffprobeStatic === 'string' ? ffprobeStatic : ffprobeStatic?.path;
+// Linux ARM64 uses the distribution binary installed by the Docker image.
+const ffprobePath = bundledFfprobePath && fs.existsSync(bundledFfprobePath) ? bundledFfprobePath : 'ffprobe';
 const imageExt = new Set(['.jpg', '.jpeg', '.png', '.webp']);
 const videoExt = new Set(['.mp4', '.mov']);
 const rules = {
@@ -93,7 +95,6 @@ async function analyzeImage(file) {
 }
 
 async function analyzeVideo(file, ext) {
-  if (!ffprobePath || !fs.existsSync(ffprobePath)) throw new Error('ffprobe 可执行文件不存在');
   const { stdout } = await execFileAsync(ffprobePath, [
     '-v', 'error', '-show_streams', '-show_format', '-of', 'json', '--', file
   ], { timeout: 20000, maxBuffer: 4 * 1024 * 1024, windowsHide: true });

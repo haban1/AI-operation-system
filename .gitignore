@@ -89,3 +89,6 @@ WORKTREE_DIFF*.patch
 GIT_LOG_*.txt
 GIT_STATUS_*.txt
 UNTRACKED_FILES_*.txt
+
+# Machine-specific workbench source mounts
+compose.local.yaml

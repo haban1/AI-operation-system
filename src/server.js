@@ -20,6 +20,9 @@ import { buildManualNotification, resolveRelatedNote } from './services/manual-n
 import { MINI_PROGRAM_PLATFORM_CODE, requestMiniProgramHandoff } from './services/mini-program-channel.js';
 import { proxyWechatAdmin } from './services/wechat-admin-proxy.js';
 import { handleModelGateway } from './services/model-gateway.js';
+import { getAiSignalIntegration } from './services/ai-signal-integration.js';
+import { getCreativeWorkbenchStatus } from './services/creative-workbench.js';
+import { createContentLibrary, ContentLibraryError } from './services/content-library.js';
 import { enqueueMiniProgramReply, startMiniProgramCallbackWorker, stopMiniProgramCallbackWorker } from './services/mini-program-callback.js';
 import { MINI_PROGRAM_MESSAGE_PATH, cleanupExpiredMiniProgramNonces, startMiniProgramNonceCleanupWorker, stopMiniProgramNonceCleanupWorker } from './services/mini-program-auth.js';
 import { startMiniProgramProcessingWorker, stopMiniProgramProcessingWorker } from './services/mini-program-processing.js';
@@ -3618,6 +3621,8 @@ function stopConversationRecoverySchedule() {
   conversationRecoveryTimer = null;
 }
 
+const contentLibrary = createContentLibrary(config);
+
 async function api(req, res, url) {
   const { pathname } = url;
   if (pathname.startsWith('/api/model/v1/')) return handleModelGateway(req, res, {
@@ -3643,6 +3648,29 @@ async function api(req, res, url) {
   if (pathname.startsWith('/api/agent/')) {
     if (!requireAgentToken(req, res)) return;
   } else if (!requireAdminSession(req, res)) return;
+  if (req.method === 'GET' && pathname === '/api/integrations/ai-signal') {
+    return ok(res, { data: await getAiSignalIntegration({ url: config.aiSignalStudioUrl, healthUrl: config.aiSignalStudioHealthUrl }) });
+  }
+  if (req.method === 'GET' && pathname === '/api/creative-workbench/status') return ok(res, await getCreativeWorkbenchStatus(config));
+  if (pathname === '/api/content-library' || pathname.startsWith('/api/content-library/')) {
+    try {
+      if (req.method === 'GET' && pathname === '/api/content-library') return ok(res, await contentLibrary.list());
+      if (req.method === 'POST' && pathname === '/api/content-library/sync') {
+        const input = await body(req);
+        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) return fail(res, 400, '同步请求不接受来源地址或文件路径', null, 'CONTENT_SYNC_INVALID');
+        return ok(res, await contentLibrary.sync({ force: true }));
+      }
+      const media = pathname.match(/^\/api\/content-library\/([a-f0-9]{32})\/media$/);
+      if (['GET', 'HEAD'].includes(req.method) && media) return await contentLibrary.streamMedia(req, res, media[1]);
+      const draft = pathname.match(/^\/api\/content-library\/([a-f0-9]{32})\/publish-draft$/);
+      if (req.method === 'GET' && draft) return ok(res, await contentLibrary.publishDraft(draft[1]));
+      return fail(res, 404, '成片库接口不存在', null, 'CONTENT_LIBRARY_NOT_FOUND');
+    } catch (error) {
+      if (res.headersSent) { if (!res.destroyed) res.destroy(); return; }
+      if (error instanceof ContentLibraryError) return fail(res, error.statusCode, error.message, null, error.code);
+      return fail(res, 503, '成片库暂时不可用，请稍后重试', null, 'CONTENT_LIBRARY_UNAVAILABLE');
+    }
+  }
   if (pathname.startsWith('/api/wechat/')) return proxyWechatAdmin(req, res, url);
   if (pathname.startsWith('/api/mini-program/')) {
     try {
