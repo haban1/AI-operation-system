@@ -2,9 +2,57 @@ name: Signal deployment
 
 on:
   push:
-    paths: ["engines/ai-signal-studio/**", "src/**", "test/*signal*", "test/creative-workbench-status.test.js", "compose.signal.yaml", ".github/workflows/signal-deployment.yml"]
+    paths:
+      - "engines/ai-signal-studio/**"
+      - "rag-service/**"
+      - "src/**"
+      - "agent/**"
+      - "public/**"
+      - "platform-workflows/**"
+      - "sample-material/**"
+      - "scripts/**"
+      - "test/*signal*"
+      - "test/creative-workbench-status.test.js"
+      - "test/content-library*.test.js"
+      - "test/workbench-launcher.test.js"
+      - "compose.yaml"
+      - "compose.signal.yaml"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "package.json"
+      - "package-lock.json"
+      - ".env.docker.example"
+      - "*-workbench.cmd"
+      - "docs/Windows本机部署.md"
+      - "docs/Signal-Studio部署.md"
+      - "README.md"
+      - ".github/workflows/signal-deployment.yml"
   pull_request:
-    paths: ["engines/ai-signal-studio/**", "src/**", "test/*signal*", "test/creative-workbench-status.test.js", "compose.signal.yaml", ".github/workflows/signal-deployment.yml"]
+    paths:
+      - "engines/ai-signal-studio/**"
+      - "rag-service/**"
+      - "src/**"
+      - "agent/**"
+      - "public/**"
+      - "platform-workflows/**"
+      - "sample-material/**"
+      - "scripts/**"
+      - "test/*signal*"
+      - "test/creative-workbench-status.test.js"
+      - "test/content-library*.test.js"
+      - "test/workbench-launcher.test.js"
+      - "compose.yaml"
+      - "compose.signal.yaml"
+      - "Dockerfile"
+      - ".dockerignore"
+      - "package.json"
+      - "package-lock.json"
+      - ".env.docker.example"
+      - "*-workbench.cmd"
+      - "docs/Windows本机部署.md"
+      - "docs/Signal-Studio部署.md"
+      - "README.md"
+      - ".github/workflows/signal-deployment.yml"
 
 permissions:
   contents: read
@@ -12,6 +60,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,9 +71,29 @@ jobs:
           python-version: '3.11'
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: npm ci --no-audit --no-fund
-      - run: node scripts/run-tests.mjs --test --test-concurrency=1 test/ai-signal-integration.test.js test/creative-workbench-status.test.js test/ai-signal-proxy.test.js test/signal-bundled-engine.test.js test/content-library-sources.test.js test/content-library.test.js
+      - run: node scripts/run-tests.mjs --test --test-concurrency=1 test/ai-signal-integration.test.js test/creative-workbench-status.test.js test/ai-signal-proxy.test.js test/signal-bundled-engine.test.js test/content-library-sources.test.js test/content-library.test.js test/workbench-launcher.test.js
       - run: python -m unittest discover -s tests -v
         working-directory: engines/ai-signal-studio
-      - run: docker build -t signal-deployment-check engines/ai-signal-studio
-      - name: Render without external AI services
-        run: docker run --rm --entrypoint python3 signal-deployment-check scripts/smoke_render.py
+      - name: Initialize isolated CI configuration
+        run: node scripts/init-docker-dev.mjs
+      - name: Build and start Web, RAG, and Signal
+        run: node scripts/workbench.mjs start --no-browser
+      - name: Verify login, authenticated proxy, and rendering without AI services
+        run: node scripts/workbench.mjs verify
+      - name: Remove CI containers and volumes
+        if: always()
+        run: |
+          if [ -f .env.docker ]; then
+            docker compose -p ai-operation-signal -f compose.yaml -f compose.signal.yaml down --volumes --remove-orphans
+          fi
+
+  windows-launcher:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Test Windows launcher with injected command runners
+        run: node --test test/workbench-launcher.test.js

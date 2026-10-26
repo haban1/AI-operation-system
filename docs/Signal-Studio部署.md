@@ -34,12 +34,12 @@ notepad .env.docker
 验证 Compose 配置并启动独立实例：
 
 ```powershell
-docker compose -p ai-operation-signal -f compose.yaml -f compose.signal.yaml config --quiet
-docker compose -p ai-operation-signal -f compose.yaml -f compose.signal.yaml up -d --build --wait --wait-timeout 300
-docker compose -p ai-operation-signal -f compose.yaml -f compose.signal.yaml ps
+node scripts/workbench.mjs start
 ```
 
-macOS 若 `docker` 不在 PATH，可将命令中的 `docker` 替换为 `/Applications/Docker.app/Contents/Resources/bin/docker`。这组命令不要叠加旧的 `compose.local.yaml` 或 `compose.workbench.example.yaml`，它们会引入另一台电脑的来源挂载和浏览器地址。
+Windows 可直接双击 `start-workbench.cmd`，停止用 `stop-workbench.cmd`，检查用 `check-workbench.cmd`。这组入口统一使用 `compose.yaml`、`compose.signal.yaml` 和 project name `ai-operation-signal`，会检查 Docker 模式与 Compose 版本，并等待整套服务健康。旧的 `start-mvp.cmd` 与 `启动本地服务.cmd` 只用于原生安装模式，不会启动 Signal。
+
+启动器要求 `docker` 在 PATH。macOS 若未启用 Docker Desktop 的命令行工具，可用下方日常操作中的手动 Compose 命令，将 `docker` 替换为 `/Applications/Docker.app/Contents/Resources/bin/docker`。不要叠加旧的 `compose.local.yaml` 或 `compose.workbench.example.yaml`，它们会引入另一台电脑的来源挂载和浏览器地址。
 
 打开 `http://localhost:3100/#studio`，使用刚设置的管理员凭据登录，再进入“自动化成片”。首次启动没有历史作品，成片库为空是正常状态。基础 RAG 配置仍需单独准备知识模型与正式知识版本；没有可用知识库不代表 Signal 安装失败。
 
@@ -93,17 +93,17 @@ Linux 镜像支持 `edge` 和 OpenAI-compatible 语音服务。MLX / Qwen 本地
 启动后先执行无模型调用的渲染检查。脚本生成 1 秒合成音频，使用仓库样例验证 FFmpeg、Chromium 和 Remotion，检查完整解码结果后清理测试产物：
 
 ```powershell
-docker compose -p ai-operation-signal -f compose.yaml -f compose.signal.yaml exec -T signal python3 scripts/smoke_render.py
+node scripts/workbench.mjs verify
 ```
 
-这项检查不调用外部文本、配音或视频生成服务，也不替代真实选题生成验收。
+检查器先验证未登录请求被拒绝，再使用本机 `.env.docker` 的管理员凭据检查登录、Signal 页面/脚本/API 和成片库访问，最后调用容器内 `scripts/smoke_render.py`。不会打印密码，不调用外部文本、配音或视频生成服务，也不替代真实选题生成、成片入库和知识检索验收。
 
 - **干净启动**：从新 clone 和空卷启动，`web`、`rag`、`signal` 达到各自的健康状态；不依赖旧机器目录。没有本地 RAG 模型时，单独处理知识检索配置，不以未执行的知识检索作为通过证据。
 - **入口与认证**：未登录不能访问 Signal 页面/API；登录后从内容工作台打开 Signal，页面、静态资源与 API 均通过 Web 同源入口加载。
 - **缺省来源**：未安装 OpenChatCut / Toonflow 时，Web 和 Signal 仍能启动，另外两条路线显示未接入或离线；空的 Signal 来源不会让 Web 启动失败。
 - **成片交接与重启**：一件完成作品入库后可以预览并带入发布草稿；重启 Signal 和 Web 后仍可读取，重复同步不产生重复副本。验证到草稿为止，不自动发布。
 
-上述是本部署需要执行的验收步骤，不代表每一项已在当前机器上完成。当前开发检查环境是 macOS 上的 Linux ARM64 容器环境；其构建、渲染和代理检查不能替代 Windows / WSL2 实机验收，目前没有 Windows 实机通过记录。验证记录应分别写明容器构建、页面加载、生成、入库与发布草稿结果。
+上述是本部署需要执行的验收步骤，不代表每一项已在当前机器上完成。仓库 CI 分别检查 Windows 启动器逻辑和 Linux x64 的整套容器构建、启动、代理与渲染；Windows 启动器测试使用命令替身，不运行 Windows Docker。目标 Windows / WSL2 机器仍需执行检查并验证真实生成。验证记录应分别写明容器构建、页面加载、生成、入库与发布草稿结果。
 
 ## 日常操作
 

@@ -49,12 +49,19 @@ notepad .env.docker
 在仓库根目录执行：
 
 ```powershell
-docker compose -p ai-operation-signal -f compose.yaml -f compose.signal.yaml config --quiet
-docker compose -p ai-operation-signal -f compose.yaml -f compose.signal.yaml up -d --build --wait --wait-timeout 300
-docker compose -p ai-operation-signal -f compose.yaml -f compose.signal.yaml ps
+.\start-workbench.cmd
 ```
 
-只使用这两个 Compose 文件，不叠加旧电脑的 `compose.local.yaml` 或 `compose.workbench.example.yaml`。所有日常命令保持同一个 project name：`ai-operation-signal`。首次镜像构建完成前不要关闭 PowerShell。
+也可以在文件夹里双击 `start-workbench.cmd`。它会检查 Docker 是否使用 Linux containers、Compose 版本是否支持当前配置，然后一起构建并启动 Web、RAG 和 Signal，等待健康检查通过后打开工作台。若没有 `.env.docker`，首次运行会生成配置并停止，按提示设置管理员账号密码后再运行。首次构建可能需要几分钟到十几分钟，完成前不要关闭窗口。
+
+这个入口始终使用 `compose.yaml` 加 `compose.signal.yaml`，project name 固定为 `ai-operation-signal`，各次启动共用同一套数据。不要叠加旧电脑的 `compose.local.yaml` 或 `compose.workbench.example.yaml`。仓库里的 `启动本地服务.cmd`、`start-mvp.cmd` 属于旧的原生安装模式，不会启动这个完整工作台；本说明使用 `*-workbench.cmd`，避免混用后出现缺少引擎或另一套空数据库。
+
+在终端中查看状态，或不自动打开浏览器：
+
+```powershell
+node scripts/workbench.mjs status
+.\start-workbench.cmd --no-browser
+```
 
 浏览器打开 [http://localhost:3100/#studio](http://localhost:3100/#studio)，用刚设置的管理员凭据登录，选择“自动化成片”。Signal 通过主系统登录代理访问，不需要打开或映射 `8892` 端口。OpenChatCut、Toonflow 未配置时显示未接入或离线，不影响 Signal。
 
@@ -86,8 +93,10 @@ Linux 容器支持 `edge` 和 OpenAI-compatible 语音服务。MLX / Qwen 本地
 以下命令使用合成音频和仓库样例检查 FFmpeg、Chromium、Remotion 及完整解码，不调用收费模型，也不会发布作品：
 
 ```powershell
-docker compose -p ai-operation-signal -f compose.yaml -f compose.signal.yaml exec -T signal python3 scripts/smoke_render.py
+.\check-workbench.cmd
 ```
+
+这个检查会使用 `.env.docker` 中的管理员登录，确认登录保护、Signal 页面和接口、共享成片库可访问，再做一次合成视频渲染和完整解码。检查中不会打印密码，也不会生成业务作品或提交发布任务。双击运行时窗口会保留结果；终端自动检查可用 `node scripts/workbench.mjs verify`。
 
 检查通过后，再按业务需要运行一次真实生成。完成视频后打开“共享成片库”并点击“同步作品”，确认可预览，再点击“用于发布”或在发布管理选择“从成片库选择”。带入发布草稿不等于发布成功，仍需原流程的预检、审核和最终授权。
 
@@ -96,12 +105,12 @@ docker compose -p ai-operation-signal -f compose.yaml -f compose.signal.yaml exe
 ## 6. 关闭、再启动与故障检查
 
 ```powershell
-docker compose -p ai-operation-signal -f compose.yaml -f compose.signal.yaml down
-docker compose -p ai-operation-signal -f compose.yaml -f compose.signal.yaml up -d --wait --wait-timeout 300
+.\stop-workbench.cmd
+.\start-workbench.cmd
 docker compose -p ai-operation-signal -f compose.yaml -f compose.signal.yaml logs --tail 100 web signal
 ```
 
-第一条停止服务，第二条再次启动，第三条查看最近日志。停止时不要加 `-v`，否则会删除命名卷中的成片和配置。下次使用前也要先启动 Docker Desktop。
+第一条停止服务并保留容器及数据，第二条再次启动，第三条查看最近日志。也可以双击对应的 `.cmd` 文件。不要执行带 `-v` 的 `docker compose down`，否则会删除命名卷中的成片和配置。下次使用前也要先启动 Docker Desktop。
 
 | 情况 | 先检查 |
 | --- | --- |
@@ -112,4 +121,4 @@ docker compose -p ai-operation-signal -f compose.yaml -f compose.signal.yaml log
 | 重启后提示缺 Key | 重新在界面输入，或检查 `.env.signal` 后重新创建 Signal 容器 |
 | 生成完成但库里没有作品 | 是否完成完整解码验证、是否被拒绝、是否点击同步；查看同步拒收提示 |
 
-当前开发检查环境是 macOS 上的 Linux ARM64 容器环境，相关构建和渲染检查不等于 Windows / WSL2 实机测试；目前没有 Windows 实机通过记录。完整配置和持久化说明见 [AI Signal Studio 部署](Signal-Studio部署.md)。
+仓库的自动检查分别覆盖 Windows 上的启动脚本逻辑，以及 Linux x64 上从源码构建、整套容器启动、登录代理、成片库访问和合成视频渲染。Windows 脚本测试不使用真实 Docker，因此仍需在目标 Windows / WSL2 电脑上执行一次 `check-workbench.cmd` 并做一次真实生成，才能确认该机器的网络、模型服务和额度也可用。完整配置和持久化说明见 [AI Signal Studio 部署](Signal-Studio部署.md)。
