@@ -1,0 +1,30 @@
+name: Signal deployment
+
+on:
+  push:
+    paths: ["engines/ai-signal-studio/**", "src/**", "test/*signal*", "test/creative-workbench-status.test.js", "compose.signal.yaml", ".github/workflows/signal-deployment.yml"]
+  pull_request:
+    paths: ["engines/ai-signal-studio/**", "src/**", "test/*signal*", "test/creative-workbench-status.test.js", "compose.signal.yaml", ".github/workflows/signal-deployment.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: npm ci --no-audit --no-fund
+      - run: node scripts/run-tests.mjs --test --test-concurrency=1 test/ai-signal-integration.test.js test/creative-workbench-status.test.js test/ai-signal-proxy.test.js test/signal-bundled-engine.test.js test/content-library-sources.test.js test/content-library.test.js
+      - run: python -m unittest discover -s tests -v
+        working-directory: engines/ai-signal-studio
+      - run: docker build -t signal-deployment-check engines/ai-signal-studio
+      - name: Render without external AI services
+        run: docker run --rm --entrypoint python3 signal-deployment-check scripts/smoke_render.py

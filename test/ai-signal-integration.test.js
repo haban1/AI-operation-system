@@ -146,3 +146,14 @@ test('健康检查只接受 /api/health，拒绝生成发布及其他路径', as
     assert.equal(result.online, false);
   }
 });
+
+test('同源 Signal 入口使用独立内部健康地址，兼容旧接入状态接口', async () => {
+  const result = await getAiSignalIntegration({ url: '/integrations/ai-signal/', healthUrl: 'http://signal:8892/api/health' }, {
+    fetchImpl: async target => { assert.equal(target, 'http://signal:8892/api/health'); return healthy(); },
+  });
+  assert.equal(result.url, '/integrations/ai-signal/');
+  assert.equal(result.online, true);
+  assert.doesNotMatch(JSON.stringify(result), /signal:8892/);
+  const missing = await getAiSignalIntegration({ url: '/integrations/ai-signal/' }, { fetchImpl: () => assert.fail('no internal health configured') });
+  assert.equal(missing.enabled, false);
+});

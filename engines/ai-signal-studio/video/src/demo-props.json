@@ -1,0 +1,31 @@
+{
+  "title": "热点视频生成工作台",
+  "repo": "demo/ai-tool",
+  "created_at": "",
+  "durationFrames": 150,
+  "scenes": [
+    {
+      "type": "cover",
+      "eyebrow": "AI TOOL",
+      "title": "热点视频",
+      "highlight": "从好话题开始",
+      "body": "选择话题后生成文稿与视频",
+      "items": [
+        "公开资料",
+        "中文文稿",
+        "动态视频"
+      ],
+      "narration": [
+        "从一个值得关注的话题开始。"
+      ],
+      "sourceIds": [
+        "readme"
+      ],
+      "from": 0,
+      "durationFrames": 150,
+      "audio": "",
+      "captions": []
+    }
+  ],
+  "sources": []
+}

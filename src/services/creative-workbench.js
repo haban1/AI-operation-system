@@ -1,18 +1,12 @@
+import { resolveWorkbenchUrls } from './workbench-urls.js';
+
 const definitions = [
   { id: 'automatic', title: '自动化成片', product: 'AI Signal Studio', urlKey: 'aiSignalStudioUrl', healthKey: 'aiSignalStudioHealthUrl', healthPath: '/api/health' },
   { id: 'editing', title: '素材剪辑', product: 'OpenChatCut', urlKey: 'videoEditingUrl', healthKey: 'videoEditingHealthUrl', healthPath: '/' },
   { id: 'creation', title: 'AIGC 创作', product: 'Toonflow', urlKey: 'aigcCreationUrl', healthKey: 'aigcCreationHealthUrl', healthPath: '/' },
 ];
 
-function safeUrl(value) {
-  const text = String(value || '').trim();
-  if (!text || /[\s?#]/.test(text)) throw new Error('Invalid URL');
-  const url = new URL(text);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid URL');
-  return url;
-}
-
-function checkHealth(health, browser, verifyIdentity) {
+function checkHealth(health, healthHost, verifyIdentity) {
   return new Promise(resolve => {
     let settled = false;
     let request;
@@ -28,7 +22,7 @@ function checkHealth(health, browser, verifyIdentity) {
       const send = health.protocol === 'https:' ? httpsRequest : httpRequest;
       request = send(health, {
         method: 'GET',
-        headers: { Host: browser.host, Accept: verifyIdentity ? 'application/json' : 'text/html', 'Cache-Control': 'no-cache' },
+        headers: { Host: healthHost, Accept: verifyIdentity ? 'application/json' : 'text/html', 'Cache-Control': 'no-cache' },
         signal: AbortSignal.timeout(3000),
       }, response => {
         const successful = response.statusCode >= 200 && response.statusCode < 300;
@@ -70,15 +64,15 @@ export async function getCreativeWorkbenchStatus(config = {}) {
     const service = { id: definition.id, title: definition.title, product: definition.product, url: '', online: false };
     if (!String(config[definition.urlKey] || '').trim()) return service;
     let health;
-    let browser;
+    let healthHost;
     try {
-      browser = safeUrl(config[definition.urlKey]);
-      health = safeUrl(config[definition.healthKey] || new URL(definition.healthPath, browser).href);
-      if (health.pathname !== definition.healthPath) throw new Error('Invalid health endpoint');
-      service.url = browser.href;
+      const urls = resolveWorkbenchUrls(config[definition.urlKey], config[definition.healthKey], definition.healthPath, { allowSignalPath: definition.id === 'automatic' });
+      health = urls.health;
+      healthHost = urls.healthHost;
+      service.url = urls.browserUrl;
     } catch { return service; }
     try {
-      service.online = await checkHealth(health, browser, definition.id === 'automatic');
+      service.online = await checkHealth(health, healthHost, definition.id === 'automatic');
     } catch { service.online = false; }
     return service;
   }));

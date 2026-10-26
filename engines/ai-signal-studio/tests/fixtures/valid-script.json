@@ -1,0 +1,171 @@
+{
+  "title": "这个 AI Skill，让架构图动起来",
+  "repo": "tt-a1i/archify",
+  "created_at": "2026-09-08T07:42:14.956862+00:00",
+  "sources": [
+    {
+      "id": "readme",
+      "url": "https://github.com/tt-a1i/archify/tree/daced37a66ab21f1f8bb096daedd2c5337204020"
+    },
+    {
+      "id": "trending",
+      "url": "https://github.com/trending?since=weekly"
+    }
+  ],
+  "scenes": [
+    {
+      "type": "cover",
+      "eyebrow": "01 / 一个具体问题",
+      "title": "项目讲不清？",
+      "highlight": "让架构图动起来",
+      "body": "把系统描述，变成可交互的系统地图。",
+      "items": [
+        "Archify",
+        "AI Skill",
+        "开源项目"
+      ],
+      "narration": [
+        "接手一个项目，看了半天还是讲不清？",
+        "这个叫阿奇法的 AI 技能，值得看看。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    },
+    {
+      "type": "stats",
+      "eyebrow": "02 / 为什么关注",
+      "title": "本周受到关注",
+      "highlight": "14,946",
+      "body": "热度是发现线索，能力还要看证据。",
+      "items": [
+        "采集：2026-09-08",
+        "GitHub 本周趋势"
+      ],
+      "narration": [
+        "九月八日，GitHub 本周趋势页显示，",
+        "它一周新增接近一万五千个星标。"
+      ],
+      "sourceIds": [
+        "trending"
+      ],
+      "metric": 14946
+    },
+    {
+      "type": "map",
+      "eyebrow": "03 / 它能做什么",
+      "title": "文字描述",
+      "highlight": "变成系统地图",
+      "body": "自制图表示意；功能说明据官方文档。",
+      "items": [
+        "浏览器",
+        "接口服务",
+        "缓存",
+        "数据库"
+      ],
+      "narration": [
+        "官方文档介绍，输入系统描述，",
+        "它可以生成架构图、工作流和数据流图。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    },
+    {
+      "type": "pipeline",
+      "eyebrow": "04 / 自制示意",
+      "title": "拿视频流程举例",
+      "highlight": "把关系讲清楚",
+      "body": "自制流程示意，用于解释用途。",
+      "items": [
+        "寻找热点",
+        "核实并写稿",
+        "配音与动效",
+        "输出短视频"
+      ],
+      "narration": [
+        "比如，把我们的视频制作流程，",
+        "拆成找热点、写稿、配音和出片。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    },
+    {
+      "type": "pipeline",
+      "eyebrow": "05 / 怎么实现",
+      "title": "先生成结构",
+      "highlight": "再校验和渲染",
+      "body": "据官方文档：使用结构化 JSON 作为中间表示。",
+      "items": [
+        "AI 整理节点和关系",
+        "检查结构与布局",
+        "渲染交互图表"
+      ],
+      "narration": [
+        "它会先让 AI 整理节点和关系，",
+        "再检查结构与布局，生成交互图表。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    },
+    {
+      "type": "compare",
+      "eyebrow": "06 / 怎么用起来",
+      "title": "讲方案与做交接",
+      "highlight": "少一点口头猜测",
+      "body": "据官方文档：可导出 HTML、PNG、SVG 和 WebM。",
+      "items": [
+        "讲清模块关系",
+        "对比前后变化",
+        "分享图表文件"
+      ],
+      "narration": [
+        "写方案、做项目交接时，",
+        "可以用它讲清模块关系和前后变化。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    },
+    {
+      "type": "concept",
+      "eyebrow": "07 / 需要分清",
+      "title": "图画得漂亮",
+      "highlight": "仍然要核实",
+      "body": "图中的关系，取决于提供的描述或代码证据。",
+      "items": [
+        "来源内容要准确",
+        "关系连线要检查",
+        "不等于线上监控"
+      ],
+      "narration": [
+        "但图画得漂亮，不代表关系一定正确。",
+        "它也不能代替真实系统的运行监控。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    },
+    {
+      "type": "hook",
+      "eyebrow": "08 / 从小处试用",
+      "title": "先选一个",
+      "highlight": "熟悉的小系统",
+      "body": "看它能否让一个没参与项目的人，听懂你的设计。",
+      "items": [
+        "从 5 个模块开始",
+        "对照来源",
+        "检查连线"
+      ],
+      "narration": [
+        "先拿一个你熟悉的小系统试试，",
+        "对照来源检查连线，再用它做分享。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    }
+  ]
+}

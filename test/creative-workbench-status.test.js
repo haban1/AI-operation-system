@@ -111,3 +111,28 @@ test('a stalled automatic body times out after three seconds and falls back to o
   assert.equal(result.services[0].online, false);
   assert.ok(elapsed >= 2500 && elapsed < 6000, `unexpected timeout duration: ${elapsed} ms`);
 });
+
+test('same-origin Signal entry probes its internal health URL without exposing it', async t => {
+  let seen;
+  const target = await server(t, (request, response) => {
+    seen = { host: request.headers.host, path: request.url };
+    response.end(JSON.stringify({ ok: true, service: 'AI Signal Studio' }));
+  });
+  const result = await getCreativeWorkbenchStatus({ aiSignalStudioUrl: '/integrations/ai-signal/', aiSignalStudioHealthUrl: `${target}/api/health` });
+  assert.equal(result.services[0].url, '/integrations/ai-signal/');
+  assert.equal(result.services[0].online, true);
+  assert.deepEqual(seen, { host: new URL(target).host, path: '/api/health' });
+  assert.ok(!JSON.stringify(result).includes(target));
+});
+
+test('relative browser entries require the fixed Signal mount and a separate health URL', async () => {
+  for (const config of [
+    { aiSignalStudioUrl: '/integrations/ai-signal/' },
+    { aiSignalStudioUrl: '/other/', aiSignalStudioHealthUrl: 'http://127.0.0.1:1/api/health' },
+    { aiSignalStudioUrl: '//internal.example/', aiSignalStudioHealthUrl: 'http://127.0.0.1:1/api/health' },
+    { videoEditingUrl: '/integrations/ai-signal/', videoEditingHealthUrl: 'http://127.0.0.1:1/' },
+  ]) {
+    const result = await getCreativeWorkbenchStatus(config);
+    assert.ok(result.services.every(service => service.url === '' && !service.online));
+  }
+});

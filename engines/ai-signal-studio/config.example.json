@@ -1,0 +1,23 @@
+{
+  "llm": {
+    "provider": "responses",
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-6-astra"
+  },
+  "tts": {
+    "provider": "edge",
+    "edge_python": "",
+    "edge_voice": "zh-CN-YunxiNeural",
+    "rate": "+5%",
+    "pitch": "+0Hz",
+    "openai_base_url": "https://api.openai.com/v1",
+    "openai_model": "gpt-4o-mini-tts",
+    "openai_voice": "coral",
+    "openai_instructions": "用自然、克制、像真人科技视频讲解的普通话口吻。句子之间留出呼吸，重点词稍微强调，不要像新闻播报，也不要过度兴奋。",
+    "python": "",
+    "model": "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-6bit",
+    "voice": "Vivian",
+    "instruction": "用清晰自然的普通话讲解科技话题。",
+    "use_style_presets": true
+  }
+}

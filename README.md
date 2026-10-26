@@ -4,6 +4,8 @@
 
 GitHub 源码仓库：[AI-operation-system](https://github.com/haban1/AI-operation-system)。当前源码快照包含天河、RAG、8080 微信机器人，以及朋友圈定时发布和 AI 内容计划，详见 [GitHub 源码仓库说明](docs/GitHub源码仓库说明.md)。运行数据、真实配置和模型文件需在本机准备。
 
+Windows 本机部署自动化成片：先看 [Windows 本机部署](docs/Windows本机部署.md)，使用 Docker Desktop 的 WSL2 / Linux containers 启动主系统与 Signal 引擎。配置、持久化和验收细节见 [AI Signal Studio 部署](docs/Signal-Studio部署.md)。OpenChatCut 与 Toonflow 仍是可选外部服务。
+
 此前的 Codeup 仓库：[zhihuiqudong-AI](https://codeup.aliyun.com/68a53af7a72fbe627240d5b0/zhihuiqudong-AI)，首次上传记录见 [Codeup 源码仓库说明](docs/Codeup源码仓库说明.md)。
 
 在线模型统一在天河「企微及 AI → AI 服务配置」维护，供主程序、Local Agent、知识库生成和微信客服使用。容器升级与机器人接入步骤见 [统一模型配置](docs/统一模型配置.md)。

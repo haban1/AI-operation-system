@@ -1,0 +1,50 @@
+# Bundled AI Signal Studio. Requires Docker Compose 2.24.4+ for !override.
+# Run with compose.yaml. OpenChatCut and Toonflow remain optional external services.
+services:
+  web:
+    ports: !override
+      - "127.0.0.1:3100:3100"
+    environment:
+      AI_SIGNAL_STUDIO_URL: /integrations/ai-signal/
+      AI_SIGNAL_STUDIO_INTERNAL_URL: http://signal:8892
+      AI_SIGNAL_STUDIO_HEALTH_URL: http://signal:8892/api/health
+      CONTENT_LIBRARY_DIR: /app/data/content-library
+      CONTENT_LIBRARY_SIGNAL_ROOT: /sources/ai-signal
+    volumes:
+      - signal_runs:/sources/ai-signal/runs:ro
+      - signal_data:/sources/ai-signal/data:ro
+
+  signal:
+    build:
+      context: ./engines/ai-signal-studio
+    init: true
+    env_file:
+      - path: .env.signal
+        required: false
+    environment:
+      SIGNAL_HOST: 0.0.0.0
+      SIGNAL_PORT: "8892"
+      SIGNAL_BASE_PATH: /integrations/ai-signal
+      SIGNAL_CONFIG_DIR: /app/runtime-config
+    # Only the authenticated Web proxy can expose this service to the browser.
+    # No host port or main-system environment file is passed to Signal.
+    volumes:
+      - signal_runs:/app/runs
+      - signal_data:/app/data
+      - signal_config:/app/runtime-config
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import json,urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8892/api/health',timeout=3); d=json.load(r); assert d.get('ok') is True and d.get('service') == 'AI Signal Studio'"
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+    stop_grace_period: 30s
+
+volumes:
+  signal_runs:
+  signal_data:
+  signal_config:

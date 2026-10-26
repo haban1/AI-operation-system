@@ -21,6 +21,7 @@ import { MINI_PROGRAM_PLATFORM_CODE, requestMiniProgramHandoff } from './service
 import { proxyWechatAdmin } from './services/wechat-admin-proxy.js';
 import { handleModelGateway } from './services/model-gateway.js';
 import { getAiSignalIntegration } from './services/ai-signal-integration.js';
+import { createAiSignalProxy, isAiSignalProxyPath } from './services/ai-signal-proxy.js';
 import { getCreativeWorkbenchStatus } from './services/creative-workbench.js';
 import { createContentLibrary, ContentLibraryError } from './services/content-library.js';
 import { enqueueMiniProgramReply, startMiniProgramCallbackWorker, stopMiniProgramCallbackWorker } from './services/mini-program-callback.js';
@@ -3622,6 +3623,12 @@ function stopConversationRecoverySchedule() {
 }
 
 const contentLibrary = createContentLibrary(config);
+const proxyAiSignal = createAiSignalProxy({
+  upstreamUrl: config.aiSignalStudioInternalUrl,
+  authorize: requireAdminSession,
+  allowedOrigins: config.allowedOrigins,
+  maxBodyBytes: config.requestBodyMaxBytes,
+});
 
 async function api(req, res, url) {
   const { pathname } = url;
@@ -5793,6 +5800,7 @@ const server = http.createServer(async (req, res) => {
       }
     }
     if (req.method === 'OPTIONS') return send(res, 204, '');
+    if (isAiSignalProxyPath(url.pathname)) return await proxyAiSignal(req, res, url);
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     return staticFile(req, res, url.pathname);
   } catch (error) {

@@ -1,4 +1,6 @@
 # Local three-route workbench. Docker Compose 2.24.4+ is required for !override.
+# Existing host engines only. For a fresh install use compose.signal.yaml;
+# see docs/Windows本机部署.md. Do not combine the two overlays.
 services:
   web:
     ports: !override

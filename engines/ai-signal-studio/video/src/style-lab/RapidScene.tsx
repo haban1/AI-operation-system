@@ -1,0 +1,23 @@
+import React from 'react';
+import {AbsoluteFill,interpolate,useCurrentFrame} from 'remotion';
+import {CaptionLine,Footer,Flow,clamp,enter,font,type ShotProps} from './shared';
+
+const lime='#d9fe5a', red='#ff6652', ink='#0b0d12';
+export const RapidScene:React.FC<ShotProps>=({scene:s,index,count,repo,source_kind})=>{
+ const f=useCurrentFrame();const isStats=s.type==='stats';const hook=index===0;
+ const frameIn=enter(f);const labels=s.items.length?s.items:['记录','压缩','取回'];
+ return <AbsoluteFill style={{background:ink,color:'#f4f4ee',fontFamily:font,overflow:'hidden'}}>
+  <div style={{position:'absolute',inset:0,backgroundImage:'linear-gradient(#ffffff06 1px,transparent 1px),linear-gradient(90deg,#ffffff06 1px,transparent 1px)',backgroundSize:'72px 72px',translate:`0 ${f%72}px`}}/>
+  <div style={{position:'absolute',top:140,left:82,display:'flex',alignItems:'center',gap:20,fontSize:28,fontWeight:800,letterSpacing:3}}><span style={{width:16,height:16,background:red,borderRadius:9}}/>THE QUICK SIGNAL <span style={{background:lime,color:ink,padding:'9px 14px',fontSize:25}}>AI / 01</span></div>
+  <div style={{position:'absolute',top:260,left:78,right:110,translate:`${(1-frameIn)*100}px 0`,opacity:frameIn}}><div style={{fontSize:96,fontWeight:850,lineHeight:1.16,letterSpacing:-4}}>{s.title}</div><div style={{color:hook?red:lime,fontSize:110,fontWeight:900,letterSpacing:-5,lineHeight:1.25,marginTop:12}}>{s.highlight}</div></div>
+  {isStats?<div style={{position:'absolute',top:650,left:0,width:1080,height:590,background:lime,color:ink,rotate:'-4deg',translate:`${(1-enter(f,9))*1100}px 0`,padding:'65px 90px'}}><div style={{fontSize:37,fontWeight:750}}>GITHUB / 本周新增</div><div style={{fontSize:215,fontWeight:900,letterSpacing:-12,lineHeight:1.25}}>+{Math.round((s.metric||0)*interpolate(f,[9,36],[0,1],clamp)).toLocaleString()}</div><div style={{fontSize:34}}>2026.10.15 页面快照 · 关注度 ≠ 效果</div></div>:
+   s.visual==='amnesia'?<div style={{position:'absolute',left:85,right:105,top:650}}>{['昨天：项目用 TypeScript','今天：再说一次需求？','把 AI 的记忆，接上。'].map((t,i)=><div key={t} style={{marginBottom:28,padding:'38px 34px',fontSize:42,fontWeight:700,borderRadius:12,background:i===2?lime:'#1a202b',color:i===2?ink:'#ecf0f7',border:`2px solid ${i===1?red:'#ffffff20'}`,translate:`${(1-enter(f,s.cueFrames?.[i]??i*13))*180}px 0`,opacity:enter(f,s.cueFrames?.[i]??i*13),rotate:i===1?'2deg':'0deg'}}><span style={{color:i===2?ink:red,marginRight:20}}>{i===2?'↳':'>'}</span>{t}</div>)}</div>:
+   s.visual==='memory'?<div style={{position:'absolute',top:680,left:82,right:110,height:630}}><div style={{position:'absolute',left:0,top:0,width:360}}>{['修改了登录逻辑','发现了缓存问题','确认了技术选择'].map((t,i)=><div key={t} style={{background:'#202633',padding:25,marginBottom:18,fontSize:32,borderLeft:`4px solid ${red}`,translate:`${Math.sin(f/20+i)*8}px 0`}}>{t}</div>)}</div><svg width="900" height="650" style={{position:'absolute',inset:0}}><path d="M380 160 Q500 160 500 330 L500 395" fill="none" stroke={lime} strokeWidth="5" strokeDasharray="12 12" strokeDashoffset={-f*2}/></svg><div style={{position:'absolute',top:400,left:160,width:620,padding:38,border:`3px solid ${lime}`,background:'#182025',borderRadius:18,fontSize:44,fontWeight:800}}>相关摘要 → 下次会话</div></div>:
+   s.type==='compare'?<div style={{position:'absolute',top:670,left:82,right:110}}>{labels.map((t,i)=><div key={t} style={{display:'flex',alignItems:'center',gap:26,padding:36,marginBottom:26,background:i===0?'#ff665217':'#d9fe5a11',border:`2px solid ${i===0?red:lime}`,fontSize:45,fontWeight:700,opacity:enter(f,s.cueFrames?.[i]??i*15)}}><span style={{fontSize:55,color:i===0?red:lime}}>{i===0?'!':'✓'}</span>{t}</div>)}</div>:
+   s.type==='hook'?<div style={{position:'absolute',top:680,left:82,right:110,padding:'60px 42px',border:`2px solid ${lime}`,background:'#181d22',rotate:'-2deg'}}><div style={{fontSize:30,color:'#919ca9',marginBottom:35}}>{source_kind==='topic'?'YOUR NEXT STEP':'GITHUB / SEARCH'}</div><div style={{fontSize:77,fontWeight:850,color:lime}}>{source_kind==='topic'?'下一步，试试看':repo.split('/')[1]}</div><div style={{fontSize:45,marginTop:35}}>{s.items[0]||'先试一个小项目'} <span style={{display:'inline-block',translate:`${Math.sin(f/9)*8}px 0`}}>→</span></div></div>:
+   <div style={{position:'absolute',top:650,left:82,right:110,height:700}}><Flow cues={s.cueFrames} labels={labels} accent={lime} vertical/></div>}
+  <div style={{position:'absolute',top:1400,left:85,right:110,fontSize:31,color:'#8d9aa8'}}>{s.body}</div>
+  <CaptionLine scene={s} accent={lime}/><Footer scene={s} index={index} count={count} repo={repo} accent={lime}/>
+  <div style={{position:'absolute',top:0,bottom:0,left:0,width:interpolate(f,[0,6],[1080,0],clamp),background:red}}/>
+ </AbsoluteFill>;
+};

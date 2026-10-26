@@ -1,15 +1,7 @@
+import { resolveWorkbenchUrls } from './workbench-urls.js';
+
 const SERVICE = 'AI Signal Studio';
 const HEALTH_TIMEOUT_MS = 3000;
-
-function safeHttpUrl(value) {
-  const raw = String(value || '').trim();
-  if (!raw || /[\s?#]/.test(raw)) throw new Error('Invalid integration URL');
-  const url = new URL(raw);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
-    throw new Error('Invalid integration URL');
-  }
-  return url;
-}
 
 // Only server configuration selects the target. This integration reads health;
 // it never forwards browser input, credentials, generation or publishing calls.
@@ -20,15 +12,15 @@ export async function getAiSignalIntegration({ url = '', healthUrl = '' } = {}, 
   let browserUrl;
   let health;
   try {
-    browserUrl = safeHttpUrl(url);
-    health = safeHttpUrl(healthUrl || new URL('/api/health', browserUrl).href);
-    if (health.pathname !== '/api/health') throw new Error('Invalid health URL');
+    const urls = resolveWorkbenchUrls(url, healthUrl, '/api/health', { allowSignalPath: true });
+    browserUrl = urls.browserUrl;
+    health = urls.health;
   } catch {
     return { ...result, message: '热点工作台地址配置无效' };
   }
 
   result.enabled = true;
-  result.url = browserUrl.href;
+  result.url = browserUrl;
   try {
     const response = await fetchImpl(health.href, {
       method: 'GET',

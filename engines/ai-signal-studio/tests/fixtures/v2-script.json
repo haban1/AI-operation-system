@@ -1,0 +1,152 @@
+{
+  "title": "这张架构图，会讲故事了",
+  "repo": "tt-a1i/archify",
+  "created_at": "2026-09-08",
+  "sources": [
+    {
+      "id": "readme",
+      "url": "https://github.com/tt-a1i/archify"
+    },
+    {
+      "id": "trending",
+      "url": "https://github.com/trending?since=weekly"
+    }
+  ],
+  "scenes": [
+    {
+      "type": "cover",
+      "eyebrow": "ARCHIFY / AI TOOL",
+      "title": "架构图",
+      "highlight": "会讲故事了",
+      "body": "",
+      "items": [],
+      "narration": [
+        "这张架构图，居然能自己讲故事。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    },
+    {
+      "type": "map",
+      "eyebrow": "ARCHIFY / AI TOOL",
+      "title": "点一下",
+      "highlight": "关系自己亮出来",
+      "body": "",
+      "items": [],
+      "narration": [
+        "点一下节点，谁和谁相连，直接高亮。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    },
+    {
+      "type": "map",
+      "eyebrow": "ARCHIFY / AI TOOL",
+      "title": "再按播放",
+      "highlight": "路径一步步演",
+      "body": "",
+      "items": [],
+      "narration": [
+        "再按播放，一次调用怎么走，一步步演给你看。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    },
+    {
+      "type": "stats",
+      "eyebrow": "ARCHIFY / AI TOOL",
+      "title": "Archify",
+      "highlight": "14,946",
+      "body": "GitHub Trending 周榜 · 2026.09.08 抓取",
+      "items": [],
+      "narration": [
+        "它叫 Archify。周榜里，一周新增一万四千多个星标。"
+      ],
+      "sourceIds": [
+        "trending"
+      ],
+      "metric": 14946
+    },
+    {
+      "type": "pipeline",
+      "eyebrow": "ARCHIFY / AI TOOL",
+      "title": "给它描述",
+      "highlight": "生成交互图",
+      "body": "",
+      "items": [
+        "系统描述",
+        "结构化关系",
+        "交互图"
+      ],
+      "narration": [
+        "给它系统描述，就能生成这种交互图。官方还提供流程图和时序图。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    },
+    {
+      "type": "compare",
+      "eyebrow": "ARCHIFY / AI TOOL",
+      "title": "一张图",
+      "highlight": "换一种讲法",
+      "body": "",
+      "items": [],
+      "narration": [
+        "汇报时放大关键链路，写文档时切换样式。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    },
+    {
+      "type": "concept",
+      "eyebrow": "ARCHIFY / AI TOOL",
+      "title": "还能导出",
+      "highlight": "6 秒演示视频",
+      "body": "",
+      "items": [],
+      "narration": [
+        "做演示，还能导出六秒视频。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    },
+    {
+      "type": "compare",
+      "eyebrow": "ARCHIFY / AI TOOL",
+      "title": "画得清楚",
+      "highlight": "也要核对关系",
+      "body": "",
+      "items": [
+        "图中的关系",
+        "代码与文档",
+        "人工核对"
+      ],
+      "narration": [
+        "但画得清楚，不等于系统真这样跑。关键关系，仍要回到代码核对。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    },
+    {
+      "type": "hook",
+      "eyebrow": "ARCHIFY / AI TOOL",
+      "title": "下次讲系统",
+      "highlight": "让图先动起来",
+      "body": "",
+      "items": [],
+      "narration": [
+        "下次讲系统，试试让图先动起来。"
+      ],
+      "sourceIds": [
+        "readme"
+      ]
+    }
+  ]
+}

@@ -42,6 +42,7 @@ export const config = {
   modelGatewayToken: process.env.TIANHE_MODEL_TOKEN || '',
   aiSignalStudioUrl: String(process.env.AI_SIGNAL_STUDIO_URL || '').trim(),
   aiSignalStudioHealthUrl: String(process.env.AI_SIGNAL_STUDIO_HEALTH_URL || '').trim(),
+  aiSignalStudioInternalUrl: String(process.env.AI_SIGNAL_STUDIO_INTERNAL_URL || '').trim(),
   videoEditingUrl: String(process.env.VIDEO_EDITING_URL || '').trim(),
   videoEditingHealthUrl: String(process.env.VIDEO_EDITING_HEALTH_URL || '').trim(),
   aigcCreationUrl: String(process.env.AIGC_CREATION_URL || '').trim(),
