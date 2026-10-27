@@ -6,6 +6,8 @@ GitHub 源码仓库：[AI-operation-system](https://github.com/haban1/AI-operati
 
 Windows 本机部署完整内容工作台：先看 [Windows 本机部署](docs/Windows本机部署.md)，准备 Node.js 24+ 和 Docker Desktop 的 WSL2 / Linux containers 后，运行 `start-workbench.cmd`，检查用 `check-workbench.cmd`，关闭用 `stop-workbench.cmd`。这组入口包含主系统、RAG 与仓库自带的 Signal 引擎，不依赖开发者电脑上的其他源码。配置、持久化和验收细节见 [AI Signal Studio 部署](docs/Signal-Studio部署.md)。OpenChatCut 与 Toonflow 仍是可选外部服务。
 
+三条创作路径的输出统一进入“待确认”，人工确认后才进入素材库并供发布选择。支持目录自动发现和浏览器“接收产物”上传；Windows 或跨机交接无需提供容器文件路径。操作与可选目录配置见 [产物确认入库](docs/产物确认入库.md)。
+
 此前的 Codeup 仓库：[zhihuiqudong-AI](https://codeup.aliyun.com/68a53af7a72fbe627240d5b0/zhihuiqudong-AI)，首次上传记录见 [Codeup 源码仓库说明](docs/Codeup源码仓库说明.md)。
 
 在线模型统一在天河「企微及 AI → AI 服务配置」维护，供主程序、Local Agent、知识库生成和微信客服使用。容器升级与机器人接入步骤见 [统一模型配置](docs/统一模型配置.md)。

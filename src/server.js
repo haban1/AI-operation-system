@@ -1272,6 +1272,7 @@ function preparePublishRequest(data, { complianceMaxAgeMs = config.aiReviewMaxAg
   let materialSha;
   try { materialSha = sha256LocalFile(materialPath); }
   catch { throw publishRequestError(400, '本地素材不存在或不可读取，请重新检测素材'); }
+  contentLibrary.assertPublishMaterial(materialPath, materialSha);
   const precheckSha = String(data.precheck?.meta?.sha256 || '').toLowerCase();
   if (!precheckSha || precheckSha !== materialSha) throw publishRequestError(409, '素材文件已发生变化，请重新检测素材并执行 AI 审核');
   let compliance = data.aiReview;
@@ -3662,6 +3663,22 @@ async function api(req, res, url) {
   if (pathname === '/api/content-library' || pathname.startsWith('/api/content-library/')) {
     try {
       if (req.method === 'GET' && pathname === '/api/content-library') return ok(res, await contentLibrary.list());
+      if (req.method === 'POST' && pathname === '/api/content-library/receive') {
+        try {
+          const allowed = ['source', 'filename', 'title', 'artifactType'];
+          if ([...url.searchParams.keys()].some(key => !allowed.includes(key) || url.searchParams.getAll(key).length !== 1)) {
+            return fail(res, 400, '接收请求只接受 source、filename、title 和 artifactType，且不可重复', null, 'CONTENT_RECEIVE_INVALID');
+          }
+          if (String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase() !== 'application/octet-stream') {
+            return fail(res, 415, '请以 application/octet-stream 上传媒体文件', null, 'CONTENT_RECEIVE_TYPE_REQUIRED');
+          }
+          const session = requireAdminSession(req, res);
+          if (!session) return;
+          return ok(res, await contentLibrary.receive(req, Object.fromEntries(url.searchParams), session.sub, { contentLength: req.headers['content-length'] }));
+        } finally {
+          if (!req.readableEnded && !req.destroyed) req.resume();
+        }
+      }
       if (req.method === 'POST' && pathname === '/api/content-library/sync') {
         const input = await body(req);
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) return fail(res, 400, '同步请求不接受来源地址或文件路径', null, 'CONTENT_SYNC_INVALID');
@@ -3671,6 +3688,14 @@ async function api(req, res, url) {
       if (['GET', 'HEAD'].includes(req.method) && media) return await contentLibrary.streamMedia(req, res, media[1]);
       const draft = pathname.match(/^\/api\/content-library\/([a-f0-9]{32})\/publish-draft$/);
       if (req.method === 'GET' && draft) return ok(res, await contentLibrary.publishDraft(draft[1]));
+      const admission = pathname.match(/^\/api\/content-library\/([a-f0-9]{32})\/admission$/);
+      if (req.method === 'POST' && admission) {
+        const input = await body(req);
+        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => key !== 'decision')) return fail(res, 400, '审核请求只接受 decision', null, 'CONTENT_ADMISSION_INVALID');
+        const session = requireAdminSession(req, res);
+        if (!session) return;
+        return ok(res, await contentLibrary.setAdmission(admission[1], input.decision, session.sub));
+      }
       return fail(res, 404, '成片库接口不存在', null, 'CONTENT_LIBRARY_NOT_FOUND');
     } catch (error) {
       if (res.headersSent) { if (!res.destroyed) res.destroy(); return; }

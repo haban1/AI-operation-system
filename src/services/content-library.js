@@ -22,6 +22,32 @@ const libraryError = (code, message, status = 409) => new ContentLibraryError(st
 const boundedText = (value, length) => String(value || '').slice(0, length);
 function inside(root, target) { const relative = path.relative(root, target); return Boolean(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative); }
 function sourceRef(item) { return { source: item.source, sourceId: item.sourceId }; }
+function admissionFields(item = {}) {
+  const actor = value => typeof value === 'string' && value.trim() && value.length <= 200 ? value : null;
+  const timestamp = value => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : null;
+  const reviewedAt = timestamp(item.reviewedAt), reviewedBy = actor(item.reviewedBy);
+  const admittedAt = timestamp(item.admittedAt), admittedBy = actor(item.admittedBy);
+  // A source's selected flag, or a legacy item without an explicit review,
+  // never establishes permission to use that item in the material library.
+  const admissionStatus = reviewedAt && reviewedBy && (
+    item.admissionStatus === 'rejected' || (item.admissionStatus === 'approved' && admittedAt && admittedBy)
+  ) ? item.admissionStatus : 'pending';
+  return { admissionStatus, reviewedAt, reviewedBy,
+    admittedAt: admissionStatus === 'approved' ? admittedAt : null,
+    admittedBy: admissionStatus === 'approved' ? admittedBy : null };
+}
+function decodeCatalog(buffer) {
+  if (buffer.length > MAX_CATALOG_BYTES) throw new Error('Invalid catalog');
+  const parsed = JSON.parse(buffer.toString('utf8'));
+  if (parsed.version !== 1 || !Array.isArray(parsed.items) || parsed.items.length > 1000) throw new Error('Invalid catalog');
+  for (const item of parsed.items) {
+    if (!idPattern.test(item.id) || !Object.hasOwn(sourceKeys, item.source) || !filePattern.test(item.filename)
+      || !/^[a-f0-9]{64}$/.test(item.sha256) || !item.filename.startsWith(item.sha256 + '.')
+      || !Number.isSafeInteger(item.sizeBytes) || item.sizeBytes <= 0 || !['video', 'image'].includes(item.mediaType)) throw new Error('Invalid item');
+  }
+  return { version: 1, items: parsed.items.map(item => ({ ...item, ...admissionFields(item) })),
+    sources: Array.isArray(parsed.sources) ? parsed.sources : [], lastSyncedAt: typeof parsed.lastSyncedAt === 'string' ? parsed.lastSyncedAt : null };
+}
 
 export async function inspectContentMedia(filePath, { ffprobePath, timeoutMs = 10000 } = {}) {
   const extension = path.extname(filePath).toLowerCase();
@@ -81,7 +107,14 @@ export function createContentLibrary(config, {
   const catalogPath = path.join(directory, 'catalog.json');
   let catalog = { version: 1, items: [], sources: [], lastSyncedAt: null };
   let loading, inFlight, lastCheck = 0, scanCursor = 0;
+  let mutationTail = Promise.resolve();
   let libraryRoot;
+
+  function serialize(operation) {
+    const result = mutationTail.then(operation);
+    mutationTail = result.catch(() => {});
+    return result;
+  }
 
   async function initialize() {
     if (loading) return loading;
@@ -98,15 +131,7 @@ export function createContentLibrary(config, {
         if (!stat.isFile() || stat.size > MAX_CATALOG_BYTES) throw new Error('Invalid catalog');
         const buffer = Buffer.alloc(MAX_CATALOG_BYTES + 1);
         const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-        if (bytesRead > MAX_CATALOG_BYTES) throw new Error('Invalid catalog');
-        const parsed = JSON.parse(buffer.subarray(0, bytesRead).toString('utf8'));
-        if (parsed.version !== 1 || !Array.isArray(parsed.items) || parsed.items.length > 1000) throw new Error('Invalid catalog');
-        for (const item of parsed.items) {
-          if (!idPattern.test(item.id) || !Object.hasOwn(sourceKeys, item.source) || !filePattern.test(item.filename)
-            || !/^[a-f0-9]{64}$/.test(item.sha256) || !item.filename.startsWith(item.sha256 + '.')
-            || !Number.isSafeInteger(item.sizeBytes) || item.sizeBytes <= 0 || !['video', 'image'].includes(item.mediaType)) throw new Error('Invalid item');
-        }
-        catalog = { version: 1, items: parsed.items, sources: Array.isArray(parsed.sources) ? parsed.sources : [], lastSyncedAt: typeof parsed.lastSyncedAt === 'string' ? parsed.lastSyncedAt : null };
+        catalog = decodeCatalog(buffer.subarray(0, bytesRead));
       } catch (error) {
         if (error.code !== 'ENOENT') throw libraryError('CONTENT_LIBRARY_INVALID', '成片库索引无法读取，原文件已保留', 500);
       } finally { await handle?.close(); }
@@ -117,10 +142,18 @@ export function createContentLibrary(config, {
   function publicItem(item) {
     return { id: item.id, source: item.source, sourceId: item.sourceId, title: item.title, body: item.body, createdAt: item.createdAt,
       mediaType: item.mediaType, mimeType: item.mimeType, sizeBytes: item.sizeBytes, sha256: item.sha256,
-      reviewStatus: item.reviewStatus, sourceStatus: boundedText(item.sourceStatus, 200), artifactType: item.artifactType, mediaUrl: `/api/content-library/${item.id}/media` };
+      reviewStatus: item.reviewStatus, sourceStatus: boundedText(item.sourceStatus, 200), artifactType: item.artifactType,
+      receivedAt: item.receivedAt || null, receivedBy: item.receivedBy || null,
+      ...admissionFields(item), mediaUrl: `/api/content-library/${item.id}/media` };
   }
   function snapshot() {
-    return { items: catalog.items.map(publicItem).sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt))), sources: catalog.sources, lastSyncedAt: catalog.lastSyncedAt };
+    const all = catalog.items.map(publicItem).sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
+    const items = all.filter(item => item.admissionStatus === 'approved');
+    const pendingItems = all.filter(item => item.admissionStatus === 'pending');
+    const rejectedItems = all.filter(item => item.admissionStatus === 'rejected');
+    return { items, pendingItems, rejectedItems,
+      counts: { total: all.length, approved: items.length, pending: pendingItems.length, rejected: rejectedItems.length },
+      sources: catalog.sources, lastSyncedAt: catalog.lastSyncedAt };
   }
   async function save(next) {
     const encoded = JSON.stringify(next);
@@ -150,9 +183,9 @@ export function createContentLibrary(config, {
       throw libraryError('CONTENT_FILE_UNAVAILABLE', '成片文件不可用，请重新同步', 409);
     }
   }
-  async function importEntry(entry, items, deadline) {
+  async function importEntry(entry, items, deadline, allowedRoot) {
     if (!Object.hasOwn(sourceKeys, entry.source) || !String(entry.sourceId || '').trim() || String(entry.sourceId).length > 512) throw new Error('Invalid source');
-    const configuredRoot = config[sourceKeys[entry.source]];
+    const configuredRoot = allowedRoot || config[sourceKeys[entry.source]];
     if (!configuredRoot || !path.isAbsolute(entry.filePath || '') || !path.isAbsolute(entry.rootPath || '')) throw new Error('Invalid root');
     const root = await fsp.realpath(configuredRoot);
     if (await fsp.realpath(entry.rootPath) !== root) throw new Error('Wrong root');
@@ -190,6 +223,7 @@ export function createContentLibrary(config, {
       const filename = `${sha256}${extension}`;
       const destination = path.join(libraryRoot, 'media', filename);
       const id = crypto.createHash('sha256').update(`${entry.source}\0${entry.sourceId}\0${sha256}`).digest('hex').slice(0, 32);
+      const admission = admissionFields(items.find(item => item.id === id));
       if (items.length >= 1000 && !items.some(item => item.id === id)) throw libraryError('CONTENT_LIBRARY_FULL', '成片库索引已达到容量上限');
       // Content-addressed copies are immutable to callers; a later source edit creates a new item.
       await fsp.rename(temporary, destination); temporary = null;
@@ -197,7 +231,7 @@ export function createContentLibrary(config, {
       return { id, source: entry.source, sourceId: String(entry.sourceId), title: boundedText(entry.title, 500) || '未命名作品', body: boundedText(entry.body, 20000), createdAt,
         mediaType: metadata.type, mimeType: formats[extension][1], sizeBytes: copied, sha256, filename, sourceFingerprint: fingerprint,
         reviewStatus: entry.reviewStatus === 'selected' ? 'selected' : 'unreviewed', sourceStatus: boundedText(entry.sourceStatus, 200),
-        artifactType: ['final_video', 'video_clip', 'image'].includes(entry.artifactType) ? entry.artifactType : metadata.type === 'image' ? 'image' : 'final_video',
+        artifactType: ['final_video', 'video_clip', 'image'].includes(entry.artifactType) ? entry.artifactType : metadata.type === 'image' ? 'image' : 'final_video', ...admission,
         meta: { ...metadata, name: path.basename(sourcePath), size: copied, sha256 } };
     } finally { await input.close(); if (temporary) await fsp.rm(temporary, { force: true }); }
   }
@@ -239,9 +273,83 @@ export function createContentLibrary(config, {
   async function sync({ force = false } = {}) {
     await initialize();
     if (inFlight) return inFlight;
-    if (!force && lastCheck && Date.now() - lastCheck < cacheMs) return snapshot();
-    inFlight = synchronize().finally(() => { inFlight = null; });
+    inFlight = serialize(() => !force && lastCheck && Date.now() - lastCheck < cacheMs ? snapshot() : synchronize()).finally(() => { inFlight = null; });
     return inFlight;
+  }
+  async function receive(stream, params, actor, { contentLength } = {}) {
+    const invalid = () => libraryError('CONTENT_RECEIVE_INVALID', '接收参数无效，请选择来源并上传有效的媒体文件名', 400);
+    if (!params || typeof params !== 'object' || Array.isArray(params)
+      || Object.keys(params).some(key => !['source', 'filename', 'title', 'artifactType'].includes(key))) throw invalid();
+    const { source, filename } = params;
+    if (!Object.hasOwn(sourceKeys, source) || typeof filename !== 'string' || !filename.trim() || filename.length > 255
+      || /[\\/:\x00-\x1f\x7f]/.test(filename) || filename === '.' || filename === '..'
+      || path.basename(filename) !== filename) throw invalid();
+    const extension = path.extname(filename).toLowerCase();
+    if (!Object.hasOwn(formats, extension)) throw invalid();
+    if (params.title !== undefined && (typeof params.title !== 'string' || params.title.length > 500)) throw invalid();
+    const artifactType = params.artifactType ?? (formats[extension][0] === 'image' ? 'image' : 'video_clip');
+    if (!['final_video', 'video_clip', 'image'].includes(artifactType)
+      || (artifactType === 'image') !== (formats[extension][0] === 'image')) throw invalid();
+    if (typeof actor !== 'string' || !actor.trim() || actor.length > 200) throw libraryError('CONTENT_RECEIVE_ACTOR_REQUIRED', '接收产物需要有效的管理员身份', 401);
+    let expected;
+    if (contentLength !== undefined) {
+      if (!/^\d+$/.test(String(contentLength)) || !Number.isSafeInteger(Number(contentLength))) throw invalid();
+      expected = Number(contentLength);
+      if (expected > maxFileBytes) throw libraryError('CONTENT_MEDIA_TOO_LARGE', '媒体文件超过大小限制', 413);
+    }
+    await initialize();
+    const incoming = path.join(libraryRoot, 'incoming');
+    await fsp.mkdir(incoming, { recursive: true, mode: 0o700 });
+    const incomingRoot = await fsp.realpath(incoming);
+    if (!inside(libraryRoot, incomingRoot)) throw libraryError('CONTENT_LIBRARY_INVALID', '接收目录配置无效', 500);
+    const stagingRoot = await fsp.mkdtemp(path.join(incomingRoot, 'receive-'));
+    const filePath = path.join(stagingRoot, `media${extension}`);
+    let output;
+    try {
+      output = await fsp.open(filePath, 'wx', 0o600);
+      let received = 0;
+      // Keep the HTTP request alive on validation failure so the caller receives
+      // a useful 4xx response, while writing chunks without buffering the body.
+      for await (const chunk of stream.iterator({ destroyOnReturn: false })) {
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        received += bytes.length;
+        if (received > maxFileBytes) throw libraryError('CONTENT_MEDIA_TOO_LARGE', '媒体文件超过大小限制', 413);
+        let offset = 0;
+        while (offset < bytes.length) {
+          const written = await output.write(bytes, offset, bytes.length - offset);
+          if (!written.bytesWritten) throw new Error('Incomplete media write');
+          offset += written.bytesWritten;
+        }
+      }
+      if (!received || (expected !== undefined && received !== expected)) throw libraryError('CONTENT_MEDIA_INVALID', '媒体文件为空或传输不完整', 400);
+      await output.sync(); await output.close(); output = null;
+      // Uploads do not hold the mutation queue while waiting for network bytes.
+      return await serialize(async () => {
+        const receivedAt = new Date().toISOString();
+        let imported;
+        try {
+          try {
+            imported = await importEntry({ source, sourceId: `received-${crypto.randomUUID()}`, rootPath: stagingRoot, filePath,
+              title: params.title?.trim() || filename, createdAt: receivedAt, sourceStatus: '接收产物 · 待确认', artifactType },
+            catalog.items, Date.now() + Math.max(maxSyncMs, 60_000), stagingRoot);
+          } catch (error) {
+            if (error instanceof ContentLibraryError) throw error;
+            throw libraryError('CONTENT_MEDIA_INVALID', '文件不是有效的图片或视频，或媒体检测未完成', 400);
+          }
+          imported = { ...imported, receivedAt, receivedBy: actor, meta: { ...imported.meta, name: filename } };
+          await save({ ...catalog, items: [...catalog.items, imported] });
+          return { item: publicItem(imported), counts: snapshot().counts };
+        } catch (error) {
+          if (imported && !catalog.items.some(item => item.filename === imported.filename)) {
+            await fsp.rm(path.join(libraryRoot, 'media', imported.filename), { force: true });
+          }
+          throw error;
+        }
+      });
+    } finally {
+      await output?.close();
+      await fsp.rm(stagingRoot, { recursive: true, force: true });
+    }
   }
   async function find(id) {
     await initialize();
@@ -251,17 +359,82 @@ export function createContentLibrary(config, {
     return item;
   }
   async function publishDraft(id) {
-    const item = await find(id);
-    if (['.webm', '.m4v'].includes(path.extname(item.filename))) throw libraryError('CONTENT_PUBLISH_FORMAT_UNSUPPORTED', '此格式可以预览；发布前请从创作工具导出 MP4 或 MOV');
+    await initialize();
+    return serialize(async () => {
+      const item = await find(id);
+      if (admissionFields(item).admissionStatus !== 'approved') throw libraryError('CONTENT_ADMISSION_REQUIRED', '请先人工确认入库，再带入发布草稿');
+      if (['.webm', '.m4v'].includes(path.extname(item.filename))) throw libraryError('CONTENT_PUBLISH_FORMAT_UNSUPPORTED', '此格式可以预览；发布前请从创作工具导出 MP4 或 MOV');
+      const stored = await verifiedStored(item);
+      try {
+        return { id: item.id, source: item.source, title: item.title, body: item.body, materialPath: stored.filePath, sha256: item.sha256,
+          sourceRef: sourceRef(item), requiresPrecheck: true, mediaUrl: `/api/content-library/${item.id}/media`, mediaType: item.mediaType,
+          sizeBytes: item.sizeBytes, meta: { ...item.meta, type: item.mediaType, size: item.sizeBytes, sha256: item.sha256 } };
+      } finally { await stored.handle.close(); }
+    });
+  }
+  function assertPublishMaterial(materialPath, materialSha) {
+    const requested = path.resolve(materialPath);
+    const unavailable = () => libraryError('CONTENT_FILE_UNAVAILABLE', '内容库素材不可用，请重新选择已确认入库的作品');
+    let root;
+    try { root = fs.realpathSync(directory); }
+    catch {
+      if (inside(directory, requested) || (libraryRoot && inside(libraryRoot, requested))) throw unavailable();
+      return null;
+    }
+    let resolved;
+    try { resolved = fs.realpathSync(requested); }
+    catch { throw unavailable(); }
+    const requestedInLibrary = inside(directory, requested) || inside(root, requested);
+    if (!requestedInLibrary && !inside(root, resolved)) return null;
+    const mediaRoot = path.join(root, 'media');
+    const filename = path.basename(resolved);
+    if (path.dirname(resolved) !== mediaRoot || !filePattern.test(filename)) throw unavailable();
+    let durable, fd;
+    try {
+      fd = fs.openSync(path.join(root, 'catalog.json'), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      const stat = fs.fstatSync(fd);
+      if (!stat.isFile() || stat.size > MAX_CATALOG_BYTES) throw new Error('Invalid catalog');
+      const bytes = Buffer.alloc(MAX_CATALOG_BYTES + 1);
+      let length = 0, count;
+      while (length < bytes.length && (count = fs.readSync(fd, bytes, length, bytes.length - length, length)) > 0) length += count;
+      durable = decodeCatalog(bytes.subarray(0, length));
+    } catch { throw libraryError('CONTENT_LIBRARY_INVALID', '内容库审核记录无法读取，已停止创建发布任务', 409); }
+    finally { if (fd !== undefined) fs.closeSync(fd); }
+    // Publication authorizes the actual file, never a caller-supplied sourceRef.
+    // Identical bytes share one path: any surviving audited approval authorizes
+    // those bytes, even if another source's record was rejected or resubmitted.
+    const approved = durable.items.find(item => item.filename === filename && admissionFields(item).admissionStatus === 'approved');
+    if (!approved) throw libraryError('CONTENT_ADMISSION_REQUIRED', '作品尚未确认入库或已撤回，请重新选择已确认的作品');
+    const stat = fs.statSync(resolved);
+    if (!stat.isFile() || stat.size !== approved.sizeBytes || materialSha !== approved.sha256) {
+      throw libraryError('CONTENT_FILE_CHANGED', '内容库素材已改变，请重新接收并确认入库');
+    }
+    // This read and the caller's publish-task transaction are synchronous, so
+    // an admission mutation cannot interleave between this check and creation.
+    return { id: approved.id, ...sourceRef(approved), sha256: approved.sha256 };
+  }
+  async function verifiedStored(item) {
     const stored = await openStored(item);
     try {
       const hash = crypto.createHash('sha256');
       for await (const chunk of stored.handle.createReadStream({ autoClose: false })) hash.update(chunk);
       if (hash.digest('hex') !== item.sha256) throw libraryError('CONTENT_FILE_CHANGED', '成片文件已改变，请重新同步');
-      return { id: item.id, source: item.source, title: item.title, body: item.body, materialPath: stored.filePath, sha256: item.sha256,
-        sourceRef: sourceRef(item), requiresPrecheck: true, mediaUrl: `/api/content-library/${item.id}/media`, mediaType: item.mediaType,
-        sizeBytes: item.sizeBytes, meta: { ...item.meta, type: item.mediaType, size: item.sizeBytes, sha256: item.sha256 } };
-    } finally { await stored.handle.close(); }
+      return stored;
+    } catch (error) { await stored.handle.close(); throw error; }
+  }
+  async function setAdmission(id, decision, actor) {
+    if (!['approved', 'rejected', 'pending'].includes(decision)) throw libraryError('CONTENT_ADMISSION_INVALID', '请选择确认入库、拒绝或重新提交审核', 400);
+    if (typeof actor !== 'string' || !actor.trim() || actor.length > 200) throw libraryError('CONTENT_ADMISSION_ACTOR_REQUIRED', '审核操作需要有效的管理员身份', 401);
+    await initialize();
+    return serialize(async () => {
+      const item = await find(id);
+      if (decision === 'approved') { const stored = await verifiedStored(item); await stored.handle.close(); }
+      const stamp = new Date().toISOString();
+      const reviewed = { ...item, admissionStatus: decision, reviewedAt: stamp, reviewedBy: actor,
+        admittedAt: decision === 'approved' ? stamp : null, admittedBy: decision === 'approved' ? actor : null };
+      await save({ ...catalog, items: catalog.items.map(existing => existing.id === id ? reviewed : existing) });
+      return { item: publicItem(reviewed), counts: snapshot().counts };
+    });
   }
   async function streamMedia(req, res, id) {
     const item = await find(id);
@@ -276,5 +449,5 @@ export function createContentLibrary(config, {
     catch { if (!res.destroyed) res.destroy(); }
     finally { await stored.handle.close(); }
   }
-  return { list: () => sync(), sync, publishDraft, streamMedia };
+  return { list: () => sync(), sync, receive, setAdmission, publishDraft, assertPublishMaterial, streamMedia };
 }

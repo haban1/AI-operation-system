@@ -11,11 +11,13 @@ const sourceRoot = fileURLToPath(new URL('../', import.meta.url));
 const mount = '/integrations/ai-signal/';
 const fixtureEnv = 'ADMIN_USERNAME=launcher-test\nADMIN_PASSWORD=test-only-launcher-password\n';
 
-async function fixture(t, { configured = true, dockerType = 'linux', composeVersion = '2.24.4', fail = '', overrides = {} } = {}) {
+async function fixture(t, { configured = true, outputs = false, dockerType = 'linux', composeVersion = '2.24.4', fail = '', overrides = {} } = {}) {
   // Spaces and non-ASCII are intentional: Windows checkout paths must stay intact.
   const root = await mkdtemp(path.join(tmpdir(), 'workbench 路径 '));
   t.after(() => rm(root, { recursive: true, force: true }));
   if (configured) await writeFile(path.join(root, '.env.docker'), fixtureEnv);
+  if (outputs) await writeFile(path.join(root, 'compose.outputs.local.yaml'), '# local paths are private\nservices: {}\n');
+  const prefix = outputs ? composeArgs('-f', 'compose.outputs.local.yaml') : composeArgs();
   const calls = [];
   const requests = [];
   const logs = [];
@@ -34,8 +36,8 @@ async function fixture(t, { configured = true, dockerType = 'linux', composeVers
       assert.equal(command, 'docker');
       if (args[0] === 'info') return dockerType;
       if (args.join(' ') === 'compose version --short') return composeVersion;
-      assert.deepEqual(args.slice(0, 7), composeArgs());
-      if (args[7] === fail) throw new Error(`simulated ${fail} failure`);
+      assert.deepEqual(args.slice(0, prefix.length), prefix);
+      if (args[prefix.length] === fail) throw new Error(`simulated ${fail} failure`);
       return '';
     },
     async request(url, options = {}) {
@@ -85,6 +87,44 @@ test('the CLI entry point works from outside the checkout', () => {
 
 test('all commands reuse one project and include the bundled engine overlay', () => {
   assert.deepEqual(composeArgs('ps', '--all'), ['compose', '-p', project, '-f', 'compose.yaml', '-f', 'compose.signal.yaml', 'ps', '--all']);
+});
+
+test('the shipped outputs template alone never enables external sources', async t => {
+  const f = await fixture(t);
+  await cp(path.join(sourceRoot, 'compose.outputs.yaml'), path.join(f.root, 'compose.outputs.yaml'));
+  await runWorkbench({ action: 'start', noBrowser: true }, f.options);
+  const calls = f.calls.filter(call => call.args[1] === '-p');
+  assert.equal(calls.length, 3);
+  assert.ok(calls.every(call => !call.args.includes('compose.outputs.yaml') && !call.args.includes('compose.outputs.local.yaml')));
+  assert.ok(f.logs.some(line => line.includes('not configured')));
+});
+
+test('start, stop, status and verify consistently load the optional local outputs file', async t => {
+  for (const action of ['start', 'stop', 'status', 'verify']) {
+    const f = await fixture(t, { outputs: true });
+    const before = await readFile(path.join(f.root, 'compose.outputs.local.yaml'), 'utf8');
+    await runWorkbench({ action, noBrowser: true }, f.options);
+    const calls = f.calls.filter(call => call.args[1] === '-p');
+    const prefix = composeArgs('-f', 'compose.outputs.local.yaml');
+    assert.ok(calls.length >= 2, action);
+    for (const call of calls) assert.deepEqual(call.args.slice(0, prefix.length), prefix, action);
+    assert.ok(f.logs.some(line => line === 'Using optional outputs configuration: compose.outputs.local.yaml'));
+    assert.ok(f.logs.every(line => !line.includes('test-only-launcher-password') && !line.includes('local paths are private')));
+    assert.equal(await readFile(path.join(f.root, 'compose.outputs.local.yaml'), 'utf8'), before);
+    if (action === 'stop') assert.deepEqual(calls.at(-1).args.slice(prefix.length), ['stop']);
+    if (action === 'verify') assert.deepEqual(calls.at(-1).args.slice(prefix.length), ['exec', '-T', 'signal', 'python3', 'scripts/smoke_render.py']);
+  }
+});
+
+test('invalid local outputs configuration stops before starting any containers', async t => {
+  const invalid = await fixture(t);
+  await mkdir(path.join(invalid.root, 'compose.outputs.local.yaml'));
+  await assert.rejects(runWorkbench({ action: 'start' }, invalid.options), /compose.outputs.local.yaml must be a file/);
+  assert.equal(invalid.calls.some(call => call.args[1] === '-p'), false);
+  const broken = await fixture(t, { outputs: true, fail: 'config' });
+  await assert.rejects(runWorkbench({ action: 'start' }, broken.options), /simulated config failure/);
+  assert.equal(broken.calls.some(call => call.args.includes('up')), false);
+  assert.deepEqual(broken.opened, []);
 });
 
 test('fresh checkout initializes config and stops before launching containers', async t => {

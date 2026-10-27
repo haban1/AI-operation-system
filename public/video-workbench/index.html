@@ -24,7 +24,7 @@
       <a class="navItem routeNav" href="#editing" data-route="editing" aria-label="线路二：素材智剪 OpenChatCut"><span class="routeNumber">02</span><span>素材智剪<small>OpenChatCut</small></span><i class="navDot" data-dot="editing" aria-hidden="true"></i></a>
       <a class="navItem routeNav" href="#creation" data-route="creation" aria-label="线路三：AIGC 创作 Toonflow"><span class="routeNumber">03</span><span>AIGC 创作<small>Toonflow</small></span><i class="navDot" data-dot="creation" aria-hidden="true"></i></a>
       <div class="navDivider"></div>
-      <a class="navItem" href="#library" data-route="library" aria-label="统一成片库"><span class="navIcon">▤</span><span>成片库</span></a>
+      <a class="navItem" href="#library" data-route="library" aria-label="统一素材库"><span class="navIcon">▤</span><span>素材库</span></a>
     </nav>
     <div class="sidebarBottom"><span class="localDot"></span><div>本机工作空间<small>项目与素材保留在原工作台</small></div></div>
   </aside>
@@ -62,17 +62,18 @@
         </div>
         <div class="bottomGrid">
           <section class="connectionPanel"><div class="sectionHeading"><h2>工作台连接</h2><span id="checkedAt">正在检查</span></div><div class="connectionRow"><div class="productIcon signalIcon">S</div><div class="connectionInfo"><strong>AI Signal Studio</strong><span>线路一 · 自动化视频制作</span></div><span class="connectionState" data-connection="automatic">检查中</span><a aria-disabled="true" tabindex="-1" target="_blank" rel="noopener noreferrer" aria-label="独立打开 AI Signal Studio">↗</a></div><div class="connectionRow"><div class="productIcon editIcon">O</div><div class="connectionInfo"><strong>OpenChatCut</strong><span>线路二 · 实拍素材智能剪辑</span></div><span class="connectionState" data-connection="editing">检查中</span><a aria-disabled="true" tabindex="-1" target="_blank" rel="noopener noreferrer" aria-label="独立打开 OpenChatCut">↗</a></div><div class="connectionRow"><div class="productIcon toonIcon">T</div><div class="connectionInfo"><strong>Toonflow</strong><span>线路三 · AI 创作画布</span></div><span class="connectionState" data-connection="creation">检查中</span><a aria-disabled="true" tabindex="-1" target="_blank" rel="noopener noreferrer" aria-label="独立打开 Toonflow">↗</a></div></section>
-          <section class="readinessPanel"><div class="sectionHeading"><h2>开始前看一眼</h2><span class="noteLabel">配置提示</span></div><div class="readinessItem"><span>01</span><p id="automaticReadiness">新一轮生成需要在线模型；可在工作区查看历史成片与配置。</p></div><div class="readinessItem"><span>02</span><p>上传已有素材后，在 OpenChatCut 内描述剪辑目标；导出的作品会汇入成片库。</p></div><div class="readinessItem"><span>03</span><p>Astra 文本与公司 GPT Image 2 文生图已接入。图片尺寸与比例使用自动；参考图编辑、视频生成尚待接入。</p></div><div class="noteFoot">服务在线仅表示入口可连接；模型能力与生成结果在各工作区核验。</div></section>
+          <section class="readinessPanel"><div class="sectionHeading"><h2>开始前看一眼</h2><span class="noteLabel">配置提示</span></div><div class="readinessItem"><span>01</span><p id="automaticReadiness">新一轮生成需要在线模型；可在工作区查看历史成片与配置。</p></div><div class="readinessItem"><span>02</span><p>上传已有素材后，在 OpenChatCut 内描述剪辑目标；导出后接收产物，确认入库再用于发布。</p></div><div class="readinessItem"><span>03</span><p>Astra 文本与公司 GPT Image 2 文生图已接入。图片尺寸与比例使用自动；参考图编辑、视频生成尚待接入。</p></div><div class="noteFoot">服务在线仅表示入口可连接；模型能力与生成结果在各工作区核验。</div></section>
         </div>
-        <footer class="overviewFooter"><span>继续使用原工作区创作，在成片库统一挑选与发布。</span><span>LOCAL WORKSPACE <i>●</i></span></footer>
+        <footer class="overviewFooter"><span>三路产物统一待确认，确认入库后继续发布。</span><span>LOCAL WORKSPACE <i>●</i></span></footer>
       </section>
       <section id="library" class="libraryView view" hidden aria-labelledby="libraryTitle">
-        <div class="welcome libraryWelcome"><div><div class="eyebrow">YOUR CONTENT LIBRARY</div><h1 id="libraryTitle">把好内容，留下来。</h1><p>三条线路的作品汇集于此，选好内容再进入发布编辑。</p></div><button id="syncLibrary" class="routeButton" type="button">同步作品 <span aria-hidden="true">↻</span></button></div>
+        <div class="welcome libraryWelcome"><div><h1 id="libraryTitle">素材库</h1></div><div class="libraryToolbar"><button id="receiveOutput" class="librarySecondaryAction" type="button">接收产物 <span aria-hidden="true">↑</span></button><button id="syncLibrary" class="routeButton" type="button">同步产物 <span aria-hidden="true">↻</span></button></div></div>
+        <div class="libraryAdmissionTabs" role="tablist" aria-label="素材入库状态"><button id="libraryTabPending" type="button" role="tab" data-library-view="pending" aria-selected="true" aria-controls="libraryGrid">待确认 <span data-view-count="pending">0</span></button><button id="libraryTabApproved" type="button" role="tab" data-library-view="approved" aria-selected="false" aria-controls="libraryGrid" tabindex="-1">已入库 <span data-view-count="approved">0</span></button><button id="libraryTabRejected" type="button" role="tab" data-library-view="rejected" aria-selected="false" aria-controls="libraryGrid" tabindex="-1">已排除 <span data-view-count="rejected">0</span></button></div>
         <div class="libraryControls"><div class="libraryFilters" role="group" aria-label="按创作路径筛选"><button type="button" data-library-source="all" aria-pressed="true">全部</button><button type="button" data-library-source="automatic" aria-pressed="false">自动化成片</button><button type="button" data-library-source="editing" aria-pressed="false">素材智剪</button><button type="button" data-library-source="creation" aria-pressed="false">AIGC 创作</button></div><span id="libraryCount" class="libraryCount">正在读取作品</span></div>
-        <p id="librarySyncState" class="librarySyncState" role="status" aria-live="polite">进入成片库后自动同步。</p>
+        <p id="librarySyncState" class="librarySyncState" role="status" aria-live="polite">正在读取素材</p>
         <div id="librarySources" class="librarySources" hidden></div>
-        <div id="libraryGrid" class="libraryGrid" aria-busy="false"></div>
-        <div id="libraryEmpty" class="libraryEmpty" hidden><span class="emptySymbol" aria-hidden="true">▤</span><h2 id="libraryEmptyTitle">还没有可展示的作品</h2><p id="libraryEmptyText">先在任一路径生成或导出作品，再同步到这里。</p><a href="#overview" class="backLink">← 选择创作方式</a></div>
+        <div id="libraryGrid" class="libraryGrid" role="tabpanel" aria-labelledby="libraryTabPending" aria-busy="false"></div>
+        <div id="libraryEmpty" class="libraryEmpty" hidden><span class="emptySymbol" aria-hidden="true">▤</span><h2 id="libraryEmptyTitle">暂无待确认产物</h2><p id="libraryEmptyText"></p><a href="#overview" class="backLink">← 创作工作区</a></div>
       </section>
       <section id="embedded" class="embedded view" hidden>
         <div class="workspaceToolbar"><div class="workspaceIdentity"><span id="activeRouteNumber" class="miniRoute">01</span><div><h1 id="activeTitle">自动化成片</h1><span id="activeProduct">AI Signal Studio</span></div><span class="statusBadge" id="activeStatus">检查中</span></div><div class="workspaceTools"><button id="focusMode" class="textButton" aria-pressed="false">展开工作区</button><a id="standaloneLink" class="standaloneLink" target="_blank" rel="noopener noreferrer">独立打开 ↗</a></div></div>
@@ -81,6 +82,7 @@
       </section>
     </main>
   </div>
+  <dialog id="receiveOutputDialog" class="receiveOutputDialog" aria-labelledby="receiveOutputTitle"><form id="receiveOutputForm"><h2 id="receiveOutputTitle">接收产物</h2><label>创作来源<select id="receiveSource" name="source"><option value="editing">素材智剪 · OpenChatCut</option><option value="creation">AIGC 创作 · Toonflow</option><option value="automatic">自动化成片 · Signal</option></select></label><label>产物文件<input id="receiveFile" name="file" type="file" accept=".mp4,.mov,.webm,.m4v,.png,.jpg,.jpeg,.webp" required></label><label>标题<input id="receiveTitle" name="title" type="text" maxlength="500" required></label><label>产物类型<select id="receiveKind" name="artifactType"><option value="final_video">最终视频</option><option value="video_clip">视频片段</option><option value="image">图片</option></select></label><p id="receiveOutputStatus" role="status" aria-live="polite"></p><div class="receiveOutputActions"><button id="receiveOutputCancel" type="button" class="librarySecondaryAction">取消</button><button id="receiveOutputSubmit" type="submit" class="routeButton">接收为待确认</button></div></form></dialog>
   <div id="notification" class="toast" role="status" hidden></div>
 </body>
 </html>

@@ -45,17 +45,21 @@ async function media(library, id, range, method = 'GET') {
   return response;
 }
 
-test('real media import creates an immutable shared copy and unapproved publish draft', async t => {
+test('real media import waits for admission before creating a publish draft', async t => {
   const ctx = await setup(t);
   const result = await ctx.library.list();
-  assert.equal(result.items.length, 1);
-  const item = result.items[0];
+  assert.deepEqual(result.items, []);
+  assert.equal(result.pendingItems.length, 1);
+  const item = result.pendingItems[0];
   assert.equal(item.mediaType, 'image');
   assert.equal(item.reviewStatus, 'selected');
   assert.equal(item.sourceStatus, '制作完成');
   assert.equal(item.artifactType, 'image');
+  assert.equal(item.admissionStatus, 'pending');
+  await assert.rejects(ctx.library.publishDraft(item.id), { code: 'CONTENT_ADMISSION_REQUIRED', statusCode: 409 });
   assert.equal(item.sha256, digest(await fs.readFile(ctx.original)));
   assert.doesNotMatch(JSON.stringify(result), /sourceFingerprint|filename|private\/secret-root|rootPath|filePath/);
+  await ctx.library.setAdmission(item.id, 'approved', 'library-test-admin');
   const draft = await ctx.library.publishDraft(item.id);
   assert.equal(draft.title, item.title);
   assert.equal(draft.requiresPrecheck, true);
@@ -73,29 +77,33 @@ test('refresh and restart preserve ids and refresh source metadata without dupli
   const first = await ctx.library.list();
   ctx.entry.sourceStatus = '已人工挑选'; ctx.entry.body = '更新文案'; ctx.entry.reviewStatus = 'unreviewed';
   const second = await ctx.library.sync({ force: true });
-  assert.equal(second.items[0].id, first.items[0].id);
-  assert.equal(second.items[0].sourceStatus, '已人工挑选');
-  assert.equal(second.items[0].body, '更新文案');
-  assert.equal(second.items[0].reviewStatus, 'unreviewed');
+  assert.equal(second.pendingItems[0].id, first.pendingItems[0].id);
+  assert.equal(second.pendingItems[0].sourceStatus, '已人工挑选');
+  assert.equal(second.pendingItems[0].body, '更新文案');
+  assert.equal(second.pendingItems[0].reviewStatus, 'unreviewed');
   const restarted = await ctx.make().list();
-  assert.equal(restarted.items[0].id, first.items[0].id);
+  assert.equal(restarted.pendingItems[0].id, first.pendingItems[0].id);
   assert.equal((await fs.readdir(path.join(ctx.config.contentLibraryDir, 'media'))).length, 1);
 });
 
 test('changed source creates a new version while previous media survives source disappearance', async t => {
   const ctx = await setup(t);
-  const first = (await ctx.library.list()).items[0];
+  const first = (await ctx.library.list()).pendingItems[0];
+  await ctx.library.setAdmission(first.id, 'approved', 'library-test-admin');
   const firstDraft = await ctx.library.publishDraft(first.id);
   const originalBytes = await fs.readFile(firstDraft.materialPath);
   await fs.appendFile(ctx.original, Buffer.from('version-2'));
   const second = await ctx.library.sync({ force: true });
-  assert.equal(second.items.length, 2);
-  assert.equal(new Set(second.items.map(item => item.id)).size, 2);
+  assert.equal(second.items.length, 1);
+  assert.equal(second.pendingItems.length, 1);
+  assert.equal(new Set([...second.items, ...second.pendingItems].map(item => item.id)).size, 2);
+  assert.notEqual(second.pendingItems[0].id, first.id);
   assert.deepEqual(await fs.readFile(firstDraft.materialPath), originalBytes);
   ctx.state.error = true;
   await fs.rm(ctx.root, { recursive: true });
   const offline = await ctx.make().list();
-  assert.equal(offline.items.length, 2);
+  assert.equal(offline.items.length, 1);
+  assert.equal(offline.pendingItems.length, 1);
   assert.equal(offline.sources[0].online, false);
   assert.doesNotMatch(JSON.stringify(offline), /secret upstream/);
   assert.equal((await ctx.library.publishDraft(first.id)).sha256, first.sha256);
@@ -113,13 +121,13 @@ test('concurrent list requests share synchronization and force bypasses cached s
 test('bounded synchronization progresses past forty entries and revisits cached source state', async t => {
   const ctx = await setup(t);
   ctx.state.entries = Array.from({ length: 83 }, (_, index) => ({ ...ctx.entry, sourceId: `item-${index}` }));
-  assert.equal((await ctx.library.list()).items.length, 40);
-  assert.equal((await ctx.library.sync({ force: true })).items.length, 80);
-  assert.equal((await ctx.library.sync({ force: true })).items.length, 83);
+  assert.equal((await ctx.library.list()).pendingItems.length, 40);
+  assert.equal((await ctx.library.sync({ force: true })).pendingItems.length, 80);
+  assert.equal((await ctx.library.sync({ force: true })).pendingItems.length, 83);
   ctx.state.entries[80].sourceStatus = '后来选中';
   await ctx.library.sync({ force: true });
   const refreshed = await ctx.library.sync({ force: true });
-  assert.equal(refreshed.items.find(item => item.sourceId === 'item-80').sourceStatus, '后来选中');
+  assert.equal(refreshed.pendingItems.find(item => item.sourceId === 'item-80').sourceStatus, '后来选中');
   assert.equal((await fs.readdir(path.join(ctx.config.contentLibraryDir, 'media'))).length, 1);
 });
 
@@ -134,8 +142,8 @@ test('a full catalog still refreshes existing metadata and reports pending new e
   ctx.entry.sourceStatus = '已更新';
   ctx.state.entries.push({ ...ctx.entry, sourceId: 'new-item' });
   const result = await ctx.make().list();
-  assert.equal(result.items.length, 1000);
-  assert.equal(result.items.find(item => item.id === original.id).sourceStatus, '已更新');
+  assert.equal(result.pendingItems.length, 1000);
+  assert.equal(result.pendingItems.find(item => item.id === original.id).sourceStatus, '已更新');
   assert.equal(result.sources[0].pendingCount, 1);
 });
 
@@ -151,7 +159,7 @@ test('bad files, wrong roots and escaping symlinks are isolated from valid sibli
     { rootPath: ctx.base }, { filePath: 'https://example.com/image.png' },
   ].map((fields, index) => ({ ...ctx.entry, sourceId: `bad-${index}`, ...fields })));
   const result = await ctx.library.list();
-  assert.equal(result.items.length, 1);
+  assert.equal(result.pendingItems.length, 1);
   assert.equal(result.sources[0].rejectedCount, 7);
   assert.equal((await fs.readdir(path.join(ctx.config.contentLibraryDir, 'media'))).length, 1);
 });
@@ -159,7 +167,7 @@ test('bad files, wrong roots and escaping symlinks are isolated from valid sibli
 test('failed probe removes temporary files and never creates an item', async t => {
   const ctx = await setup(t, { inspectMedia: async () => { throw new Error('probe failed /secret'); } });
   const result = await ctx.library.list();
-  assert.deepEqual(result.items, []);
+  assert.deepEqual(result.pendingItems, []);
   assert.equal(result.sources[0].rejectedCount, 1);
   assert.deepEqual(await fs.readdir(path.join(ctx.config.contentLibraryDir, 'media')), []);
   assert.doesNotMatch(JSON.stringify(result), /secret|probe failed/);
@@ -167,7 +175,7 @@ test('failed probe removes temporary files and never creates an item', async t =
 
 test('media supports exact GET, HEAD, open-ended and suffix ranges, and rejects invalid ranges', async t => {
   const ctx = await setup(t);
-  const item = (await ctx.library.list()).items[0];
+  const item = (await ctx.library.list()).pendingItems[0];
   const bytes = await fs.readFile(ctx.original);
   const full = await media(ctx.library, item.id);
   assert.equal(full.statusCode, 200); assert.deepEqual(full.body, bytes);
@@ -188,7 +196,8 @@ test('media supports exact GET, HEAD, open-ended and suffix ranges, and rejects 
 
 test('publish draft detects same-size tampering and refuses stored symlinks', async t => {
   const ctx = await setup(t);
-  const item = (await ctx.library.list()).items[0];
+  const item = (await ctx.library.list()).pendingItems[0];
+  await ctx.library.setAdmission(item.id, 'approved', 'library-test-admin');
   const draft = await ctx.library.publishDraft(item.id);
   const bytes = await fs.readFile(draft.materialPath); bytes[bytes.length - 1] ^= 1;
   await fs.writeFile(draft.materialPath, bytes);
@@ -218,9 +227,10 @@ test('video detection verifies actual container and track, supporting library-on
   ctx.state.entries = [{ ...ctx.entry, filePath: video, artifactType: 'video_clip' }];
   const library = ctx.make();
   const result = await library.list();
-  assert.equal(result.items.length, 1);
-  assert.equal(result.items[0].mimeType, 'video/x-m4v');
-  await assert.rejects(library.publishDraft(result.items[0].id), { code: 'CONTENT_PUBLISH_FORMAT_UNSUPPORTED' });
+  assert.equal(result.pendingItems.length, 1);
+  assert.equal(result.pendingItems[0].mimeType, 'video/x-m4v');
+  await library.setAdmission(result.pendingItems[0].id, 'approved', 'library-test-admin');
+  await assert.rejects(library.publishDraft(result.pendingItems[0].id), { code: 'CONTENT_PUBLISH_FORMAT_UNSUPPORTED' });
   const fake = path.join(ctx.root, 'fake.mp4'); await fs.writeFile(fake, fixture);
   await assert.rejects(inspectContentMedia(fake, { ffprobePath: probe }), { code: 'CONTENT_MEDIA_INVALID' });
 });

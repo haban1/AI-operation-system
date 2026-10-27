@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
@@ -8,6 +8,7 @@ export const project = 'ai-operation-signal';
 export const baseUrl = 'http://127.0.0.1:3100';
 const mount = '/integrations/ai-signal/';
 const defaultRoot = fileURLToPath(new URL('../', import.meta.url));
+const outputsConfig = 'compose.outputs.local.yaml';
 const usage = 'Usage: node scripts/workbench.mjs <start|stop|status|verify> [--no-browser]';
 
 export function parseArguments(args) {
@@ -114,7 +115,6 @@ export async function runWorkbench({ action, noBrowser = false }, {
   if (!supportsCompose(execute('docker', ['compose', 'version', '--short'], true))) {
     throw new Error('Docker Compose 2.24.4 or newer is required. Update Docker Desktop.');
   }
-  const compose = (...args) => execute('docker', composeArgs(...args));
   if (!existsSync(path.join(root, '.env.docker'))) {
     if (action === 'start') {
       execute(process.execPath, ['scripts/init-docker-dev.mjs']);
@@ -122,6 +122,15 @@ export async function runWorkbench({ action, noBrowser = false }, {
     }
     throw new Error('.env.docker is missing. Run start to initialize this checkout first.');
   }
+  const hasOutputs = existsSync(path.join(root, outputsConfig));
+  if (hasOutputs && !statSync(path.join(root, outputsConfig)).isFile()) {
+    throw new Error(`${outputsConfig} must be a file. See docs/产物确认入库.md.`);
+  }
+  const overlays = hasOutputs ? ['-f', outputsConfig] : [];
+  log(hasOutputs
+    ? `Using optional outputs configuration: ${outputsConfig}`
+    : `Optional external outputs are not configured (${outputsConfig} not found).`);
+  const compose = (...args) => execute('docker', composeArgs(...overlays, ...args));
   compose('config', '--quiet');
   if (action === 'stop') {
     compose('stop');

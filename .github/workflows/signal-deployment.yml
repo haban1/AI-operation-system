@@ -17,6 +17,7 @@ on:
       - "test/workbench-launcher.test.js"
       - "compose.yaml"
       - "compose.signal.yaml"
+      - "compose.outputs.yaml"
       - "Dockerfile"
       - ".dockerignore"
       - "package.json"
@@ -25,6 +26,7 @@ on:
       - "*-workbench.cmd"
       - "docs/Windows本机部署.md"
       - "docs/Signal-Studio部署.md"
+      - "docs/产物确认入库.md"
       - "README.md"
       - ".github/workflows/signal-deployment.yml"
   pull_request:
@@ -43,6 +45,7 @@ on:
       - "test/workbench-launcher.test.js"
       - "compose.yaml"
       - "compose.signal.yaml"
+      - "compose.outputs.yaml"
       - "Dockerfile"
       - ".dockerignore"
       - "package.json"
@@ -51,6 +54,7 @@ on:
       - "*-workbench.cmd"
       - "docs/Windows本机部署.md"
       - "docs/Signal-Studio部署.md"
+      - "docs/产物确认入库.md"
       - "README.md"
       - ".github/workflows/signal-deployment.yml"
 
@@ -71,7 +75,7 @@ jobs:
           python-version: '3.11'
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: npm ci --no-audit --no-fund
-      - run: node scripts/run-tests.mjs --test --test-concurrency=1 test/ai-signal-integration.test.js test/creative-workbench-status.test.js test/ai-signal-proxy.test.js test/signal-bundled-engine.test.js test/content-library-sources.test.js test/content-library.test.js test/workbench-launcher.test.js
+      - run: node scripts/run-tests.mjs --test --test-concurrency=1 test/ai-signal-integration.test.js test/creative-workbench-status.test.js test/ai-signal-proxy.test.js test/signal-bundled-engine.test.js test/content-library-sources.test.js test/content-library.test.js test/content-library-admission.test.js test/workbench-launcher.test.js
       - run: python -m unittest discover -s tests -v
         working-directory: engines/ai-signal-studio
       - name: Initialize isolated CI configuration

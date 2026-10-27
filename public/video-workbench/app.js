@@ -23,7 +23,7 @@ function navigate() {
   byId("overview").hidden = currentRoute !== "overview";
   byId("library").hidden = currentRoute !== "library";
   byId("embedded").hidden = !routes[currentRoute];
-  byId("pageName").textContent = routes[currentRoute]?.title || (currentRoute === "library" ? "成片库" : "总览");
+  byId("pageName").textContent = routes[currentRoute]?.title || (currentRoute === "library" ? "素材库" : "总览");
   document.title = `${byId("pageName").textContent} · 视频创作工作台`;
   if (routes[currentRoute]) {
     const route = routes[currentRoute];

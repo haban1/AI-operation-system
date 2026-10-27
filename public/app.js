@@ -897,7 +897,7 @@ async function renderPublish({pageGeneration=pageRenderGeneration}={}){
       <div class="publish-column publish-main-column">
         <div class="panel" style="margin-top:0">
         <div class="panel-head"><div><h2>1. 选择本地素材与文案</h2><p>素材留在RPA电脑，选择后自动识别视频格式，并按所选平台分别预检。</p></div></div>
-        <div class="section-actions library-publish-actions"><button type="button" class="btn secondary" id="pickFromContentLibrary">从成片库选择</button></div>
+        <div class="section-actions library-publish-actions"><button type="button" class="btn secondary" id="pickFromContentLibrary">从素材库选择</button></div>
         <label>本地素材</label>
         <label class="field full local-material-path-field"><span>本机素材路径（文件选择器不可用时可直接粘贴）</span><input id="materialPath" name="materialPath" type="text" placeholder="例如 D:\素材\video.mp4" autocomplete="off" required></label>
         <div id="materialPreview" class="material-preview material-preview-empty material-picker" role="button" tabindex="0" aria-label="选择本地素材">

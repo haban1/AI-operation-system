@@ -92,3 +92,4 @@ UNTRACKED_FILES_*.txt
 
 # Machine-specific workbench source mounts
 compose.local.yaml
+compose.outputs.local.yaml

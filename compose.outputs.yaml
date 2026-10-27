@@ -1,0 +1,32 @@
+# Optional external output sources for the bundled Signal workbench.
+# Copy to compose.outputs.local.yaml, then edit paths or set the required variables.
+# The launcher loads only that local copy, after compose.yaml + compose.signal.yaml.
+# This template does not install or start OpenChatCut or Toonflow.
+# For only one external source, remove the other source's environment entries
+# and its complete volume entry. See docs/产物确认入库.md.
+services:
+  web:
+    environment:
+      CONTENT_LIBRARY_EDITING_ROOT: /sources/openchatcut
+      CONTENT_LIBRARY_CREATION_ROOT: /sources/toonflow
+      # Browser URLs must be reachable from the operator's browser.
+      # Health URLs must be reachable from the Web container.
+      VIDEO_EDITING_URL: "${OPENCHATCUT_BROWSER_URL:-http://127.0.0.1:5199/}"
+      VIDEO_EDITING_HEALTH_URL: "${OPENCHATCUT_HEALTH_URL:-http://host.docker.internal:5199/}"
+      AIGC_CREATION_URL: "${TOONFLOW_BROWSER_URL:-http://127.0.0.1:13000/}"
+      AIGC_CREATION_HEALTH_URL: "${TOONFLOW_HEALTH_URL:-http://host.docker.internal:13000/}"
+    volumes:
+      # Mount the full profile so SQLite, WAL, SHM and uploads share one directory.
+      # WAL/SHM are optional and must not be declared as separate bind mounts.
+      - type: bind
+        source: "${OPENCHATCUT_PROFILE_DIR:?Set OPENCHATCUT_PROFILE_DIR or replace this source with the absolute profile directory}"
+        target: /sources/openchatcut
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${TOONFLOW_WORKSPACE_DIR:?Set TOONFLOW_WORKSPACE_DIR or replace this source with the absolute workspaces directory}"
+        target: /sources/toonflow
+        read_only: true
+        bind:
+          create_host_path: false
