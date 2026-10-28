@@ -29,6 +29,8 @@ COPY public ./public
 COPY scripts ./scripts
 COPY platform-workflows ./platform-workflows
 COPY engines/video-studio ./engines/video-studio
+COPY bundled/content-library ./bundled/content-library
+RUN node scripts/verify-bundled-media.mjs
 RUN mkdir -p data/video-studio logs \
     && chmod 700 data/video-studio
 EXPOSE 3100

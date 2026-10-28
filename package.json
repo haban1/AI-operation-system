@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
+    "media:verify": "node scripts/verify-bundled-media.mjs",
     "video:install": "npm ci --prefix engines/video-studio",
     "video:start": "npm start --prefix engines/video-studio",
     "test:video": "npm test --prefix engines/video-studio && node --test test/video-studio-integration.test.js test/video-studio-proxy.test.js test/content-library-studio.test.js test/content-library-picker.test.js",

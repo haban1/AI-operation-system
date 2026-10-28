@@ -24,6 +24,7 @@ import { getAiSignalIntegration } from './services/ai-signal-integration.js';
 import { createAiSignalProxy, isAiSignalProxyPath } from './services/ai-signal-proxy.js';
 import { getCreativeWorkbenchStatus } from './services/creative-workbench.js';
 import { createContentLibrary, ContentLibraryError } from './services/content-library.js';
+import { createContentLibrarySeedLoader } from './services/content-library-seeds.js';
 import { createStudioOutputLibrary, createStudioOutputSource } from './services/content-library-studio.js';
 import { createVideoStudioProxy } from './services/video-studio-proxy.js';
 import { enqueueMiniProgramReply, startMiniProgramCallbackWorker, stopMiniProgramCallbackWorker } from './services/mini-program-callback.js';
@@ -3626,6 +3627,11 @@ function stopConversationRecoverySchedule() {
 }
 
 const contentLibrary = createContentLibrary(config);
+const contentLibrarySeedReady = createContentLibrarySeedLoader({ library: contentLibrary, root: config.contentLibrarySeedRoot, enabled: config.contentLibrarySeedEnabled }).load().then(result => {
+  if (result.items.length) console.log(`[content-library seeds] imported=${result.imported} approved=${result.approved} retained=${result.retained} failed=${result.failed}`);
+  for (const warning of result.warnings) console.warn(`[content-library seeds] ${warning}`);
+  return result;
+}).catch(() => { console.warn('[content-library seeds] 预置素材初始化失败，已保留原素材与审核记录'); return { failed: true }; });
 let embeddedVideoStudio;
 const videoStudioUpstreamUrl = process.env.VIDEO_STUDIO_UPSTREAM_URL || '';
 const videoStudioSource = videoStudioUpstreamUrl ? createStudioOutputSource({ upstreamUrl: videoStudioUpstreamUrl }) : {
@@ -3654,6 +3660,7 @@ const proxyVideoStudio = createVideoStudioProxy({ upstreamUrl: videoStudioUpstre
 async function studioOutputsRequest(req, res, pathname, session) {
   if (!['/api/studio/outputs', '/api/studio/materials', '/api/studio/outputs/confirm'].includes(pathname)) return false;
   try {
+    await contentLibrarySeedReady;
     if (req.method === 'GET' && pathname === '/api/studio/outputs') { ok(res, await studioOutputLibrary.list({ actor: session.sub })); return true; }
     if (req.method === 'GET' && pathname === '/api/studio/materials') { ok(res, await studioOutputLibrary.materials({ actor: session.sub })); return true; }
     if (req.method === 'POST' && pathname === '/api/studio/outputs/confirm') {
@@ -3672,6 +3679,7 @@ async function studioOutputsRequest(req, res, pathname, session) {
 async function videoStudioRequest(req, res) {
   const session = requireAdminSession(req, res);
   if (!session) return;
+  await contentLibrarySeedReady;
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const localPath = url.pathname.slice('/video-workbench'.length);
   if (await studioOutputsRequest(req, res, localPath, session)) return;
@@ -3721,6 +3729,7 @@ async function api(req, res, url) {
   if (req.method === 'GET' && pathname === '/api/creative-workbench/status') return ok(res, await getCreativeWorkbenchStatus(config));
   if (pathname === '/api/content-library' || pathname.startsWith('/api/content-library/')) {
     try {
+      await contentLibrarySeedReady;
       if (req.method === 'GET' && pathname === '/api/content-library') {
         const session = requireAdminSession(req, res);
         if (!session) return;

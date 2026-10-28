@@ -39,6 +39,7 @@ async function startIsolatedServer(t) {
       AGENT_PORT: String(agentPort),
       DATABASE_PATH: path.join(dir, 'isolated.sqlite3'),
       CONTENT_LIBRARY_DIR: path.join(dir, 'content-library'),
+      CONTENT_LIBRARY_SEED_ENABLED: 'false',
       CONTENT_LIBRARY_SIGNAL_ROOT: '', CONTENT_LIBRARY_EDITING_ROOT: '', CONTENT_LIBRARY_CREATION_ROOT: '',
       VIDEO_STUDIO_DATA_DIR: path.join(dir, 'video-studio'),
       VIDEO_STUDIO_UPSTREAM_URL: '',

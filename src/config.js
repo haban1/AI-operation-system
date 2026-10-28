@@ -51,6 +51,8 @@ export const config = {
   contentLibraryEditingRoot: String(process.env.CONTENT_LIBRARY_EDITING_ROOT || '').trim(),
   contentLibraryCreationRoot: String(process.env.CONTENT_LIBRARY_CREATION_ROOT || '').trim(),
   contentLibraryDir: path.resolve(ROOT, process.env.CONTENT_LIBRARY_DIR || path.join(path.dirname(process.env.DATABASE_PATH || './data/mvp.db'), 'content-library')),
+  contentLibrarySeedRoot: path.resolve(ROOT, process.env.CONTENT_LIBRARY_SEED_ROOT || 'bundled/content-library'),
+  contentLibrarySeedEnabled: booleanEnv('CONTENT_LIBRARY_SEED_ENABLED', true),
   contentLibraryMaxFileBytes: Math.max(1024, Math.min(20 * 1024 ** 3, numberEnv('CONTENT_LIBRARY_MAX_FILE_BYTES', 2 * 1024 ** 3))),
   wechatRobotAdminUrl: process.env.WECHAT_ROBOT_ADMIN_URL || '',
   wechatRobotAdminFollowHost: booleanEnv('WECHAT_ROBOT_ADMIN_FOLLOW_HOST', false),

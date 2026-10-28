@@ -7,6 +7,9 @@
 !scripts/**
 !platform-workflows/**
 !engines/video-studio/**
+!bundled/
+!bundled/content-library/
+!bundled/content-library/**
 engines/video-studio/node_modules/**
 engines/video-studio/runtime/node_modules/**
 engines/video-studio/runtime/private/**
