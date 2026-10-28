@@ -5,8 +5,7 @@ let unauthorized;
 let publish;
 let receiveMessage;
 
-// Keep the transplanted three-route workspace mounted, including its engine
-// frames, when switching between creation and operations.
+// Keep the production chat and library mounted while navigating operations.
 export function hideHotTopicStudio({ reset = false } = {}) {
   document.body.classList.remove('studio-active');
   if (content) content.hidden = false;
@@ -27,10 +26,10 @@ export function renderHotTopicStudio(container, { onUnauthorized, onPublish } = 
     workspace = document.createElement('section');
     workspace.id = 'hotTopicWorkspace';
     workspace.className = 'signal-workspace';
-    workspace.setAttribute('aria-label', '视频创作工作台');
+    workspace.setAttribute('aria-label', '内容生成');
     frame = document.createElement('iframe');
     frame.className = 'signal-workbench-frame';
-    frame.title = '视频创作工作台 · 三条创作路径与共享成片库';
+    frame.title = '内容生成 · 自动热点与混剪';
     frame.referrerPolicy = 'no-referrer';
     frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals');
     frame.src = '/video-workbench/index.html';

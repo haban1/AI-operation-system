@@ -3624,6 +3624,18 @@ function stopConversationRecoverySchedule() {
 }
 
 const contentLibrary = createContentLibrary(config);
+let embeddedVideoStudio;
+async function videoStudioRequest(req, res) {
+  if (!requireAdminSession(req, res)) return;
+  if (!embeddedVideoStudio) {
+    const { createVideoStudio } = await import('../engines/video-studio/server.mjs');
+    embeddedVideoStudio = createVideoStudio({
+      stateDir: process.env.VIDEO_STUDIO_DATA_DIR || path.join(ROOT, 'runtime', 'video-studio'),
+      automaticUrl: config.aiSignalStudioUrl || 'http://127.0.0.1:8892/',
+    });
+  }
+  return embeddedVideoStudio.handle(req, res, { mountPath: '/video-workbench' });
+}
 const proxyAiSignal = createAiSignalProxy({
   upstreamUrl: config.aiSignalStudioInternalUrl,
   authorize: requireAdminSession,
@@ -5826,6 +5838,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'OPTIONS') return send(res, 204, '');
     if (isAiSignalProxyPath(url.pathname)) return await proxyAiSignal(req, res, url);
+    if (url.pathname === '/video-workbench' || url.pathname.startsWith('/video-workbench/')) {
+      if (url.pathname === '/video-workbench') { res.writeHead(302, { Location: '/video-workbench/' }); return res.end(); }
+      return await videoStudioRequest(req, res);
+    }
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     return staticFile(req, res, url.pathname);
   } catch (error) {

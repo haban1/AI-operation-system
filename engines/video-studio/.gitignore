@@ -1,0 +1,11 @@
+runtime/private/
+runtime/node_modules/
+node_modules/
+runtime/data/
+runtime/codex-home/
+.env
+.env.*
+!.env.example
+
+# Ignore local dependency symlinks as well as directories.
+node_modules

@@ -3,7 +3,7 @@ import { renderHotTopicStudio, hideHotTopicStudio } from './hot-topic-studio.js'
 import { openContentLibraryPicker, closeContentLibraryPicker } from './content-library-picker.js';
 const navItems = [
   ['dashboard','dashboard','运营总览','推广、内容、活动转化与 AI 运营建议'],
-  ['create','create','内容工作台','三路径工作台：自动化成片、素材智剪与 AIGC 创作'],
+  ['create','create','内容生成','自动热点与混剪：成片库、视频制作和素材库'],
   ['platforms','accounts','平台启停','五个平台独立启停；未开启平台绝不唤醒；账号与智能回复统一管理，设备和登录状态集中展示在运行总览'],
   ['publish','publish','内容发布','本地选材、格式预检、合规审核和一键发布'],
   ['tasks','tasks','任务中心','区分已提交、审核中、已发布和审核失败'],
@@ -347,14 +347,14 @@ async function downloadReplyExport(platformCodes,button){
 /* ==========================================================================
    分组工作区导航（智慧驱动版）
    - 侧边栏按运营任务分组；组内页面通过顶部子导航切换。
-   - 内容创作统一使用三路径工作台；旧创作入口兼容跳转到 #studio。
+   - 内容生成统一使用自动热点与混剪；旧创作入口兼容跳转到 #studio。
    - 发布管理独立保留；hiddenNavPages 仅隐藏导航，不影响对应页面访问。
    ========================================================================== */
 const workspaceGroups=[
   {id:'overview',label:'运营总览',icon:'dashboard',section:'work',description:'推广、内容、活动转化与 AI 运营建议。',items:[
     {key:'overview',label:'运营总览',page:'dashboard'}]},
-  {id:'content',label:'内容工作台',icon:'create',section:'work',description:'自动化成片、素材智剪与 AIGC 创作，生成结果统一进入成片库。',items:[
-    {key:'studio',label:'视频创作工作台',page:'create'}]},
+  {id:'content',label:'内容生成',icon:'create',section:'work',description:'自动热点与混剪：统一管理成片、视频制作和素材。',items:[
+    {key:'studio',label:'内容生成',page:'create'}]},
   {id:'publishing',label:'发布管理',icon:'publish',section:'work',description:'素材预检、审核、发布排期与任务状态，继续使用运营系统的发布流程。',items:[
     {key:'publishing',label:'发布与排期',page:'publish'},
     {key:'publish-tasks',label:'发布任务',page:'tasks'}]},

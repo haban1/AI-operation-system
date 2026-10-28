@@ -6,3 +6,9 @@
 !public/**
 !scripts/**
 !platform-workflows/**
+!engines/video-studio/**
+engines/video-studio/node_modules/**
+engines/video-studio/runtime/node_modules/**
+engines/video-studio/runtime/private/**
+engines/video-studio/runtime/data/**
+engines/video-studio/runtime/codex-home/**
