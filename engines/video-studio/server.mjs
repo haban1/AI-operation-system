@@ -80,6 +80,11 @@ export function createVideoStudio({root=ROOT,stateDir=process.env.VIDEO_STUDIO_D
     return storePromise;
   }
   async function save() { await writeJson(path.join(stateDir,'collections.json'),await store()); }
+  async function selectedAsset(collectionId,relativePath) {
+    const actual=await collectionFile(collectionId,relativePath),data=await store();
+    const category=data.labels[`${actual.collection.id}:${actual.relative}`]||SAMPLE_CATEGORIES[path.basename(actual.file)]||'待分类';
+    return {name:path.basename(actual.file),path:actual.file,category};
+  }
   async function collections() {
     const data=await store();
     return Promise.all(data.collections.map(async c=>({ ...c,available:await fsp.stat(c.path).then(s=>s.isDirectory()).catch(()=>false) })));
@@ -208,8 +213,8 @@ export function createVideoStudio({root=ROOT,stateDir=process.env.VIDEO_STUDIO_D
           for(const asset of (input.assetContext||[]).slice(0,30)) {
             const savedSlogan=(await store()).slogans.find(s=>s.id===asset.id||`slogan:${s.id}`===asset.id);
             if(savedSlogan)assetContext.push({name:savedSlogan.name,text:savedSlogan.text,type:'text'});
-            else if(asset.collectionId&&asset.relativePath) {const actual=await collectionFile(asset.collectionId,asset.relativePath);assetContext.push({name:path.basename(actual.file),path:actual.file,category:asset.category||null});}
-            else if(asset.id) {const i=asset.id.indexOf(':');if(i>0){const actual=await collectionFile(asset.id.slice(0,i),asset.id.slice(i+1));assetContext.push({name:path.basename(actual.file),path:actual.file});}}
+            else if(asset.collectionId&&asset.relativePath)assetContext.push(await selectedAsset(asset.collectionId,asset.relativePath));
+            else if(asset.id) {const i=asset.id.indexOf(':');if(i>0)assetContext.push(await selectedAsset(asset.id.slice(0,i),asset.id.slice(i+1)));}
           }
           const result=await b.send(id,{message:input.message,skillIds:input.skillIds||[],assetContext,modules:input.modules||{}});
           return json(res,result||{accepted:true},202);

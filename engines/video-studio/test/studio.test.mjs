@@ -8,6 +8,8 @@ import { createVideoStudio } from '../server.mjs';
 
 test('bundled video ranges, mappings, category persistence, and traversal boundaries', async t => {
   const root=await mkdtemp(path.join(tmpdir(),'video-studio-test-'));
+  await mkdir(path.join(root,'runtime'));
+  await writeFile(path.join(root,'runtime','codex-bridge.mjs'),`export class CodexBridge { async send(id,input) { return input; } }`);
   await mkdir(path.join(root,'bundled','videos'),{recursive:true});
   await mkdir(path.join(root,'dist'));
   await writeFile(path.join(root,'bundled','videos','demo.mp4'),'0123456789');
@@ -27,6 +29,9 @@ test('bundled video ranges, mappings, category persistence, and traversal bounda
   response=await fetch(base+'/api/media?collectionId='+collection.id);const listing=await response.json();
   assert.equal(listing.entries.length,1);assert.match(listing.entries[0].url,/^\/video-workbench\/api\/media\/file/);
   response=await fetch(base+'/api/assets/category',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({collectionId:collection.id,relativePath:'photo.jpg',category:'实操教学'})});assert.equal(response.status,200);
+  response=await fetch(base+'/api/chat/sessions/test-session/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'使用选中素材',assetContext:[{collectionId:collection.id,relativePath:'photo.jpg',category:'场地环境'}]})});
+  assert.equal(response.status,202);const queued=await response.json();
+  assert.equal(queued.assetContext[0].category,'实操教学');assert.equal(queued.assetContext[0].path,path.join(collection.path,'photo.jpg'));
   const again=createVideoStudio({root,stateDir});assert.equal((await again.collections()).some(c=>c.id===collection.id),true);
   response=await fetch(base+'/api/media/file?collectionId='+collection.id+'&path=..%2Fbundled%2Fmanifest.json');assert.equal(response.status,403);
   response=await fetch(base+'/api/collections',{method:'POST',headers:{Origin:'https://unrelated.example','Content-Type':'application/json'},body:JSON.stringify({path:source})});assert.equal(response.status,403);
