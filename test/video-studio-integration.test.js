@@ -39,7 +39,9 @@ async function startIsolatedServer(t) {
       AGENT_PORT: String(agentPort),
       DATABASE_PATH: path.join(dir, 'isolated.sqlite3'),
       CONTENT_LIBRARY_DIR: path.join(dir, 'content-library'),
+      CONTENT_LIBRARY_SIGNAL_ROOT: '', CONTENT_LIBRARY_EDITING_ROOT: '', CONTENT_LIBRARY_CREATION_ROOT: '',
       VIDEO_STUDIO_DATA_DIR: path.join(dir, 'video-studio'),
+      VIDEO_STUDIO_UPSTREAM_URL: '',
       VIDEO_MATERIALS_DIR: materials,
       VIDEO_RELAY_API_KEY: relaySecret,
       VIDEO_RELAY_BASE_URL: 'https://relay.invalid/v1',
@@ -89,7 +91,7 @@ test('authenticated main-system mount serves six bundled videos and prefixed med
   assert.equal(manifest.videos.length, 6);
 
   await t.test('all mounted pages, APIs and bundled media require the business login', async () => {
-    for (const suffix of ['/', '/app.js', '/api/studio/bootstrap', manifest.videos[0].videoPath]) {
+    for (const suffix of ['/', '/app.js', '/api/studio/bootstrap', '/api/studio/outputs', manifest.videos[0].videoPath]) {
       const response = await fetch(base + MOUNT + suffix);
       assert.equal(response.status, 401, `Unauthenticated ${suffix}`);
       await response.arrayBuffer();
@@ -97,6 +99,12 @@ test('authenticated main-system mount serves six bundled videos and prefixed med
     const response = await fetch(base + MOUNT + '/api/chat/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     assert.equal(response.status, 401);
     await response.arrayBuffer();
+    for (const prefix of ['', MOUNT]) {
+      const list = await fetch(base + prefix + '/api/studio/outputs');
+      assert.equal(list.status, 401); await list.arrayBuffer();
+      const confirm = await fetch(base + prefix + '/api/studio/outputs/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"ids":["v5-01"]}' });
+      assert.equal(confirm.status, 401); await confirm.arrayBuffer();
+    }
   });
 
   const login = await fetch(base + '/api/auth/login', {
@@ -142,7 +150,7 @@ test('authenticated main-system mount serves six bundled videos and prefixed med
     assert.equal(new Set(bootstrap.skills.map(skill => skill.id)).size, 6);
     for (const id of ['codex', 'chatcut', 'remotion', 'hyperframes']) assert.ok(bootstrap.tools.some(tool => tool.id === id), `${id} tool status`);
     for (const video of bootstrap.videos.filter(video => video.bundled)) {
-      assert.ok(video.videoPath.startsWith(MOUNT + '/bundled/videos/'));
+      assert.ok(video.videoPath.startsWith(MOUNT + '/api/studio/outputs/'));
       assert.ok(video.posterPath.startsWith(MOUNT + '/bundled/posters/'));
       assert.ok(video.bytes > 0);
     }
@@ -196,5 +204,40 @@ test('authenticated main-system mount serves six bundled videos and prefixed med
     assert.equal(read.status, 200);
     const stored = await read.json();
     assert.equal(stored.messages.length, 0);
+  });
+
+  await t.test('human confirmation alone copies an exact output into the approved publishing library', async () => {
+    const paused = await fetch(base + '/api/settings/operations', {
+      method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false, updatedBy: 'isolated-video-test' }),
+    });
+    assert.equal(paused.status, 200);
+    assert.equal((await paused.json()).settings.enabled, false);
+    const initial = await (await request('/api/studio/outputs')).json();
+    assert.equal(initial.items.length, 6);
+    assert.ok(initial.items.every(item => item.status === 'pending'));
+    const pendingLibrary = await (await fetch(base + '/api/content-library', { headers: { Cookie: cookie } })).json();
+    assert.equal(pendingLibrary.counts.total, 0);
+    const forged = await request('/api/studio/outputs/confirm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: ['v5-04'], path: '/tmp/forged.mp4' }),
+    });
+    assert.equal(forged.status, 400); await forged.arrayBuffer();
+    const confirmed = await request('/api/studio/outputs/confirm', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: ['v5-04', 'missing-output'] }),
+    });
+    assert.equal(confirmed.status, 200);
+    const batch = await confirmed.json();
+    assert.deepEqual(batch.results.map(item => item.ok), [true, false]);
+    const materialId = batch.results[0].materialId;
+    const library = await (await fetch(base + '/api/content-library', { headers: { Cookie: cookie } })).json();
+    assert.equal(library.counts.total, 1);
+    assert.equal(library.items[0].id, materialId);
+    assert.equal(library.items[0].admittedBy, 'video-test-admin');
+    const list = await (await request('/api/studio/outputs')).json();
+    assert.equal(list.items.find(item => item.id === 'v5-04').status, 'approved');
+    assert.equal(list.items.filter(item => item.status === 'pending').length, 5);
+    const draft = await fetch(base + `/api/content-library/${materialId}/publish-draft`, { headers: { Cookie: cookie } });
+    assert.equal(draft.status, 200);
+    assert.equal((await draft.json()).requiresPrecheck, true);
   });
 });

@@ -3,10 +3,13 @@
   const deploymentBase = location.pathname.replace(/\/index\.html$/, '').replace(/\/$/, '');
   const API_BASE = window.__VIDEO_STUDIO_API_BASE__ ?? deploymentBase;
   const pickerMode = new URLSearchParams(location.search).get('picker') === '1';
+  const embeddedMode = window.parent !== window;
+  const selectionStorageKey = `video-studio:pending-selection:${API_BASE}`;
+  function savedSelection() { try { const value = JSON.parse(sessionStorage.getItem(selectionStorageKey) || '[]'); return new Set(Array.isArray(value) ? value.filter((id) => typeof id === 'string') : []); } catch { return new Set(); } }
   const $ = (id) => document.getElementById(id);
   const icon = (name, cls = '') => `<i data-lucide="${name}"${cls ? ` class="${cls}"` : ''}></i>`;
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (x) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
-  const state = { videos: [], skills: [], tools: [], collections: [], sessions: [], selectedSkill: null, selectedAssets: [], assetKind: 'content', collectionId: null, folder: '', entries: [], categories: [], categoryCounts: {}, slogans: [], session: null, sessionEpoch: 0, loadingSession: false, running: false, stream: null, poll: null, tab: 'library', mediaRequest: 0, previewAsset: null, previewVideo: null, online: false, automaticUrl: '/automatic/', seenEvents: new Map(), lastEvents: new Map() };
+  const state = { videos: [], skills: [], tools: [], collections: [], sessions: [], selectedSkill: null, selectedAssets: [], assetKind: 'content', collectionId: null, folder: '', entries: [], categories: [], categoryCounts: {}, slogans: [], session: null, sessionEpoch: 0, loadingSession: false, running: false, stream: null, poll: null, tab: 'library', mediaRequest: 0, previewAsset: null, previewVideo: null, online: false, automaticUrl: '/automatic/', seenEvents: new Map(), lastEvents: new Map(), selectedOutputs: savedSelection(), confirmErrors: new Map(), confirmingOutputs: false, outputsLoaded: false, outputRequest: 0, videoMetadata: new Map(), loadedMediaKey: null, outputWarnings: [], outputLoadError: '', outputActionError: '' };
   const defaultCategories = ['讲师讲解','听众反应','实操教学','交流互动','场地环境','团队合影','颁证仪式','课程信息','品牌资产','虚拟形象','音乐音效','待分类'];
   const styleNames = ['纪录混剪｜证据与现场','预告片｜由静到燃','品牌开场｜分享的价值','社交短片｜三眼看现场','节拍混剪｜现场脉动','对照蒙太奇｜台上与台下'];
   const styleDescriptions = ['现场与事实，组织一条清晰的叙事','铺垫、转折与节奏推进','以主题与价值建立第一印象','短节奏、多视角与局部说明','围绕音乐节拍组织镜头','在讲授与实践之间形成呼应'];
@@ -14,8 +17,13 @@
   const renderIcons = () => window.lucide?.createIcons();
   function toast(text) { $('toast').textContent = text; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 3200); }
   function errorIn(id, text) { $(id).textContent = text || ''; $(id).hidden = !text; }
+  function renderOutputErrors() {
+    const messages = [state.outputActionError, state.outputLoadError, ...state.outputWarnings].filter(Boolean);
+    errorIn('outputsError', [...new Set(messages)].join('；'));
+  }
+  function outputError(text) { state.outputActionError = text || ''; renderOutputErrors(); }
   function seconds(value) { const s = Math.floor(Number(value) || 0); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
-  function localUrl(value) { if (!value || /^(https?:|data:|blob:)/.test(value)) return value || ''; if (API_BASE && value.startsWith('/') && !value.startsWith(`${API_BASE}/`)) return API_BASE + value; return value; }
+  function localUrl(value) { if (!value || /^(https?:|data:|blob:)/.test(value)) return value || ''; if (value.startsWith('/api/content-library/')) return value; if (API_BASE && value.startsWith('/') && !value.startsWith(`${API_BASE}/`)) return API_BASE + value; return value; }
   function bundledPath(value) { if (!value) return ''; if (/^(https?:|\/|data:)/.test(value)) return localUrl(value); return `${API_BASE}/bundled/${value.replace(/^bundled\//, '')}`; }
   function fileSize(value) { const n = Number(value); if (!n) return ''; return n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`; }
   function empty(iconName, title, description = '') { return `<div class="empty-state">${icon(iconName)}<strong>${esc(title)}</strong>${description ? `<p>${esc(description)}</p>` : ''}</div>`; }
@@ -50,17 +58,104 @@
     } finally { $('createFromLibrary').disabled = false; }
   }
   function publishSelection(id) {
-    const item = state.videos.find((video) => video.id === id && video.libraryItem);
-    if (!item) return;
+    const item = state.videos.find((video) => video.id === id);
+    const materialId = pickerMode && item?.libraryItem ? item.id : item?.status === 'approved' ? item.materialId : null;
+    if (!materialId) return toast('请先确认入库，再进入发布。');
+    if (!embeddedMode) return toast('请在主系统的内容生成页面使用“去发布”。');
     if ($('videoDialog').open) $('videoDialog').close();
-    window.parent.postMessage({ type: 'content-library:publish', id: item.id }, location.origin);
-    toast(window.parent === window ? '请从主应用的发布页面选择作品。' : '已选择作品，正在带入发布。');
+    window.parent.postMessage({ type: 'content-library:publish', id: materialId }, location.origin);
+  }
+  function saveOutputSelection() { try { sessionStorage.setItem(selectionStorageKey, JSON.stringify([...state.selectedOutputs])); } catch {} }
+  function normalizeOutput(item) {
+    const metadata = state.videoMetadata.get(String(item.id)) || {};
+    return { ...metadata, ...item, id: String(item.id), source: item.source === 'automatic' ? 'automatic' : 'mix', status: item.status === 'approved' ? 'approved' : 'pending' };
+  }
+  function reconcileOutputSelection() {
+    const pending = new Set(state.videos.filter((v) => v.status !== 'approved').map((v) => v.id));
+    state.selectedOutputs = new Set([...state.selectedOutputs].filter((id) => pending.has(id)));
+    saveOutputSelection();
+  }
+  async function loadOutputs({ reportError = true } = {}) {
+    const request = ++state.outputRequest;
+    try {
+      const data = await api('/api/studio/outputs', { cache: 'no-store' });
+      if (request !== state.outputRequest) return false;
+      if (!Array.isArray(data.items)) throw new Error('成片列表返回了无法识别的数据。');
+      state.videos = data.items.map(normalizeOutput);
+      state.outputsLoaded = true;
+      reconcileOutputSelection();
+      state.outputWarnings = (Array.isArray(data.warnings) ? data.warnings : []).map((warning) => typeof warning === 'string' ? warning : warning?.message || '').filter((warning) => typeof warning === 'string' && warning.trim());
+      state.outputLoadError = ''; renderOutputErrors(); renderVideos();
+      return true;
+    } catch (err) {
+      if (request === state.outputRequest && reportError) { state.outputLoadError = `成片状态未能刷新：${err.message}`; renderOutputErrors(); }
+      return false;
+    }
+  }
+  function visibleVideos() {
+    const query = $('videoSearch').value.trim().toLowerCase();
+    const status = pickerMode ? '' : $('outputStatusFilter').value;
+    const source = pickerMode ? '' : $('outputSourceFilter').value;
+    return state.videos.filter((v) => `${v.title} ${v.style || ''} ${v.styleId || ''} ${v.sourceSkill || ''} ${v.description || ''}`.toLowerCase().includes(query) && (!status || v.status === status) && (!source || v.source === source));
+  }
+  function renderOutputSelection() {
+    const pending = visibleVideos().filter((v) => v.status !== 'approved');
+    const selectedVisible = pending.filter((v) => state.selectedOutputs.has(v.id));
+    const all = $('selectAllOutputs');
+    all.checked = pending.length > 0 && selectedVisible.length === pending.length;
+    all.indeterminate = selectedVisible.length > 0 && selectedVisible.length < pending.length;
+    all.disabled = !pending.length || state.confirmingOutputs;
+    $('selectionSummary').textContent = state.selectedOutputs.size ? `已选 ${state.selectedOutputs.size} 条待确认成片` : '选择成片后确认入发布素材库';
+    $('confirmSelected').disabled = !state.selectedOutputs.size || state.confirmingOutputs;
+    $('confirmSelected').innerHTML = `${icon(state.confirmingOutputs ? 'loader-circle' : 'check-check')}${state.confirmingOutputs ? '正在入库…' : `确认入库${state.selectedOutputs.size ? ` (${state.selectedOutputs.size})` : ''}`}`;
+  }
+  async function confirmOutputs(ids) {
+    if (pickerMode || state.confirmingOutputs) return;
+    const pending = [...new Set(ids)].filter((id) => state.videos.some((v) => v.id === id && v.status !== 'approved'));
+    if (!pending.length) return;
+    state.confirmingOutputs = true;
+    pending.forEach((id) => state.confirmErrors.delete(id));
+    outputError(''); renderVideos();
+    try {
+      const data = await api('/api/studio/outputs/confirm', { method: 'POST', body: JSON.stringify({ ids: pending }) });
+      if (!Array.isArray(data.results)) throw new Error('入库结果未返回，请刷新后核对状态。');
+      const returnedItems = new Map((Array.isArray(data.items) ? data.items : []).map((item) => [String(item.id), item]));
+      const results = new Map(data.results.map((result) => [String(result.id), result]));
+      for (const id of pending) {
+        const result = results.get(id);
+        const returned = returnedItems.get(id);
+        const materialId = result?.materialId || (returned?.status === 'approved' ? returned.materialId : null);
+        if (result?.ok === true && materialId) {
+          state.videos = state.videos.map((v) => v.id === id ? normalizeOutput({ ...v, ...returned, status: 'approved', materialId }) : v);
+          state.selectedOutputs.delete(id);
+        } else if (result?.ok !== true) state.confirmErrors.set(id, typeof result?.error === 'string' ? result.error : result?.error?.message || '未能确认入库，请重试。');
+      }
+      await loadOutputs({ reportError: false });
+      let succeeded = 0;
+      for (const id of pending) {
+        const result = results.get(id);
+        const item = state.videos.find((v) => v.id === id);
+        if (result?.ok === true && item?.status === 'approved' && item.materialId) {
+          succeeded++; state.confirmErrors.delete(id); state.selectedOutputs.delete(id);
+        } else if (!state.confirmErrors.has(id)) state.confirmErrors.set(id, '尚未取得入库记录，请刷新核对后重试。');
+      }
+      const failed = pending.length - succeeded;
+      if (failed) outputError(`${failed} 条成片未能确认入库，已保留选择。请查看卡片提示后重试。`);
+      if (succeeded) toast(`${succeeded} 条成片已入发布素材库${failed ? `，${failed} 条未完成` : ''}`);
+    } catch (err) {
+      pending.forEach((id) => state.confirmErrors.set(id, err.message));
+      outputError(`入库未完成：${err.message}`);
+    } finally {
+      state.confirmingOutputs = false; saveOutputSelection(); renderVideos();
+    }
   }
   async function bootstrap() {
     if (pickerMode) return bootstrapPicker();
     try {
       const data = await api('/api/studio/bootstrap');
-      state.videos = data.videos || data.manifest?.videos || [];
+      const videos = data.videos || data.manifest?.videos || [];
+      state.videoMetadata = new Map(videos.map((item) => [String(item.id), item]));
+      if (!state.outputsLoaded) state.videos = videos.map(normalizeOutput);
       state.skills = (data.skills || []).map(normalizeSkill);
       state.tools = Array.isArray(data.tools) ? data.tools : Object.entries(data.tools || {}).map(([id, value]) => typeof value === 'object' ? { id, ...value } : { id, status: value });
       state.collections = data.collections || [];
@@ -72,7 +167,8 @@
       $('connectionDot').className = 'connection-dot online';
       $('connectionLabel').textContent = '服务在线';
       renderVideos(); renderSkills(); renderTools(); renderSessions(); renderCollections();
-      if (state.tab === 'assets') await loadMedia();
+      await loadOutputs();
+      if (state.tab === 'assets') await loadMedia({ resetFilters: false });
     } catch (err) {
       state.online = false;
       $('connectionDot').className = 'connection-dot error';
@@ -88,43 +184,60 @@
     if (!hash || ['overview', 'editing', 'creation'].includes(hash)) hash = 'mix/library';
     if (hash === 'automatic' || hash === 'automatic/') {
       $('mixWorkspace').hidden = true; $('automaticWorkspace').hidden = false;
-      $('breadcrumbMethod').textContent = '自动热点';
-      $('automaticLink').href = state.automaticUrl;
-      if (!$('automaticFrame').src) $('automaticFrame').src = state.automaticUrl;
+      if (state.online && !$('automaticFrame').getAttribute('src')) $('automaticFrame').src = state.automaticUrl;
       document.title = '自动热点 · 内容生成工作台';
     } else {
       $('mixWorkspace').hidden = false; $('automaticWorkspace').hidden = true;
-      $('breadcrumbMethod').textContent = '混剪';
       state.tab = ['library','create','assets'].includes(hash.split('/')[1]) ? hash.split('/')[1] : 'library';
       document.querySelectorAll('[data-tab]').forEach((el) => { const selected = el.dataset.tab === state.tab; el.setAttribute('aria-selected', selected); el.tabIndex = selected ? 0 : -1; $('panel-' + el.dataset.tab).hidden = !selected; });
       $('headingActions').hidden = state.tab === 'create';
       document.title = `${{ library: '成片库', create: '视频制作', assets: '素材库' }[state.tab]} · 混剪工作台`;
       if (pickerMode) document.title = '从共享成片库选择';
-      if (state.tab === 'assets') { renderCollections(); loadMedia(); }
+      if (state.tab === 'assets') { renderCollections(); if (state.loadedMediaKey !== `${state.collectionId || ''}:${state.folder}`) loadMedia({ resetFilters: false }); }
+      if (state.tab === 'library' && state.outputsLoaded && !pickerMode && !automaticConfirmation) loadOutputs();
       if (state.tab === 'create') { renderMessages(); renderSelectedAssets(); }
     }
     document.querySelectorAll('[data-method]').forEach((el) => el.classList.toggle('active', el.dataset.method === (hash.startsWith('automatic') ? 'automatic' : 'mix')));
     renderIcons();
   }
+  function renderPreviewActions() {
+    const video = state.videos.find((v) => v.id === state.previewVideo?.id);
+    if (!video) return;
+    state.previewVideo = video;
+    const approved = video.status === 'approved';
+    $('videoDialogStatus').hidden = pickerMode;
+    $('videoDialogStatus').textContent = approved ? '已入库' : '待确认';
+    $('videoDialogStatus').className = `output-status ${approved ? 'approved' : 'pending'}`;
+    $('confirmPreviewOutput').hidden = pickerMode || approved;
+    $('confirmPreviewOutput').disabled = state.confirmingOutputs;
+    $('publishPreviewOutput').hidden = pickerMode || !approved || !video.materialId;
+    $('useVideoStyle').hidden = !pickerMode && !video.sourceSkill && !skillForVideo(video);
+  }
   function renderVideos() {
-    const query = $('videoSearch').value.trim().toLowerCase();
-    const videos = state.videos.filter((v) => `${v.title} ${v.styleId} ${v.sourceSkill} ${v.description || ''}`.toLowerCase().includes(query));
+    const query = $('videoSearch').value.trim();
+    const videos = visibleVideos();
+    const pendingCount = state.videos.filter((v) => v.status !== 'approved').length;
     $('videoCount').textContent = state.videos.length;
-    $('librarySummary').textContent = `${state.videos.length} 条作品`;
+    $('librarySummary').textContent = pickerMode ? `${state.videos.length} 条作品` : `${state.videos.length} 条 · ${pendingCount} 待确认 · ${state.videos.length - pendingCount} 已入库`;
     $('videoGrid').innerHTML = videos.length ? videos.map((v, i) => {
-      const preview = v.libraryItem ? (v.mediaType === 'image'
-        ? `<img src="${esc(v.mediaUrl)}" alt="${esc(v.title)}画面" loading="lazy">`
-        : `<video src="${esc(v.mediaUrl)}" preload="metadata" muted playsinline aria-hidden="true"></video>`)
-        : `<img src="${esc(bundledPath(v.posterPath || v.posterUrl))}" alt="${esc(v.title)}画面" loading="lazy">`;
-      return `<article class="video-card"><button class="video-cover" data-play-video="${esc(v.id)}" aria-label="预览${esc(v.title)}">${preview}<span class="style-chip">${esc(v.styleLabel || v.style || ['纪录混剪','预告片','品牌开场','社交短片','节拍混剪','对照蒙太奇'][i] || '作品')}</span><span class="play-button"><span>${icon(v.mediaType === 'image' ? 'expand' : 'play')}</span></span>${!v.libraryItem || v.durationSeconds || v.duration ? `<span class="duration-chip">${seconds(v.durationSeconds || v.duration)}</span>` : ''}</button><div class="video-info"><h3>${esc(v.title)}</h3><div class="video-subtitle"><span class="video-meta">${icon('layers-2')}${esc(v.width && v.height ? `${v.width} × ${v.height}` : v.mediaType === 'image' ? '图片素材' : '视频成片')}</span><span>${esc(v.createdLabel || '工作流样片')}</span></div></div><div class="video-card-footer">${pickerMode ? `<button class="text-button" data-publish-video="${esc(v.id)}">${icon('check')}选择用于发布</button>` : `<button class="text-button" data-style-video="${esc(v.id)}">${icon('wand-sparkles')}使用此工作流</button>`}<a class="icon-button" href="${esc(v.libraryItem ? v.mediaUrl : bundledPath(v.videoPath || v.url))}" download title="下载${esc(v.title)}" aria-label="下载${esc(v.title)}">${icon('download')}</a></div></article>`;
-    }).join('') : empty('search', query ? '没有找到匹配的成片' : '暂无成片', pickerMode ? '先在内容生成工作台完成导出，再刷新成片库。' : '');
-    renderIcons();
+      const approved = v.status === 'approved';
+      const mediaUrl = v.libraryItem ? v.mediaUrl : bundledPath(v.videoPath || v.url);
+      const posterUrl = bundledPath(v.posterPath || v.posterUrl);
+      const preview = v.libraryItem && v.mediaType === 'image' ? `<img src="${esc(mediaUrl)}" alt="${esc(v.title)}画面" loading="lazy">` : posterUrl ? `<img src="${esc(posterUrl)}" alt="${esc(v.title)}画面" loading="lazy">` : `<video src="${esc(mediaUrl)}" preload="metadata" muted playsinline aria-hidden="true"></video>`;
+      const hasWorkflow = Boolean(v.sourceSkill || skillForVideo(v));
+      const workflow = hasWorkflow ? `<button class="text-button" data-style-video="${esc(v.id)}">${icon('wand-sparkles')}使用工作流</button>` : `<span class="video-source">${icon(v.source === 'automatic' ? 'radio' : 'film')}${v.source === 'automatic' ? '自动热点' : '混剪'}</span>`;
+      const confirm = approved ? (v.materialId ? `<button class="text-button publish-output" data-publish-video="${esc(v.id)}">${icon('send')}去发布</button>` : '<span class="muted">入库记录待核对</span>') : `<button class="text-button confirm-output" data-confirm-output="${esc(v.id)}"${state.confirmingOutputs ? ' disabled' : ''}>${icon('check')}确认入库</button>`;
+      return `<article class="video-card${!pickerMode && !approved ? ' has-selection' : ''}${state.selectedOutputs.has(v.id) ? ' selected-output' : ''}">${!pickerMode && !approved ? `<label class="output-select" title="选择${esc(v.title)}"><input type="checkbox" data-select-output="${esc(v.id)}" aria-label="选择${esc(v.title)}"${state.selectedOutputs.has(v.id) ? ' checked' : ''}${state.confirmingOutputs ? ' disabled' : ''}></label>` : ''}<button class="video-cover" data-play-video="${esc(v.id)}" aria-label="预览${esc(v.title)}">${preview}<span class="style-chip">${esc(v.styleLabel || v.style || (v.source === 'automatic' ? '自动热点' : '混剪'))}</span><span class="play-button"><span>${icon(v.mediaType === 'image' ? 'expand' : 'play')}</span></span>${v.durationSeconds || v.duration ? `<span class="duration-chip">${seconds(v.durationSeconds || v.duration)}</span>` : ''}</button><div class="video-info"><div class="video-title-row"><h3>${esc(v.title)}</h3>${pickerMode ? '' : `<span class="output-status ${approved ? 'approved' : 'pending'}">${approved ? '已入库' : '待确认'}</span>`}</div><div class="video-subtitle"><span class="video-meta">${icon('layers-2')}${esc(v.width && v.height ? `${v.width} × ${v.height}` : v.mediaType === 'image' ? '图片素材' : '视频成片')}</span><span>${esc(v.createdLabel || (v.bundled || hasWorkflow ? '工作流样片' : v.source === 'automatic' ? '自动热点' : '制作导出'))}</span></div>${state.confirmErrors.has(v.id) ? `<p class="output-card-error" role="alert">${esc(state.confirmErrors.get(v.id))}</p>` : ''}</div><div class="video-card-footer">${pickerMode ? `<button class="text-button" data-publish-video="${esc(v.id)}">${icon('check')}选择用于发布</button>` : workflow}<div class="video-footer-actions">${pickerMode ? '' : confirm}<a class="icon-button" href="${esc(mediaUrl)}" download title="下载${esc(v.title)}" aria-label="下载${esc(v.title)}">${icon('download')}</a></div></div></article>`;
+    }).join('') : empty('search', query || $('outputStatusFilter').value || $('outputSourceFilter').value ? '没有找到匹配的成片' : '暂无成片', pickerMode ? '先在内容生成工作台完成导出，再刷新成片库。' : '完成视频导出后，在这里预览并确认入库。');
+    if (!pickerMode) renderOutputSelection();
+    renderPreviewActions(); renderIcons();
   }
   function openVideo(id) {
     const video = state.videos.find((v) => v.id === id); if (!video) return;
     state.previewVideo = video;
     $('videoDialogTitle').textContent = video.title;
-    $('videoDialogMeta').textContent = video.libraryItem ? (video.mediaType === 'image' ? '图片素材' : '视频成片') : `${seconds(video.durationSeconds || video.duration)} · ${video.width} × ${video.height}`;
+    const duration = Number(video.durationSeconds || video.duration);
+    $('videoDialogMeta').textContent = video.libraryItem ? (video.mediaType === 'image' ? '图片素材' : '视频成片') : [Number.isFinite(duration) && duration > 0 ? seconds(duration) : '', video.width && video.height ? `${video.width} × ${video.height}` : '', video.source === 'automatic' ? '自动热点' : '混剪'].filter(Boolean).join(' · ');
     const isImage = video.mediaType === 'image';
     $('videoPlayer').hidden = isImage;
     $('pickerImagePreview').hidden = !isImage;
@@ -133,10 +246,11 @@
     $('videoPlayer').poster = bundledPath(video.posterPath || video.posterUrl);
     $('downloadVideo').href = video.libraryItem ? video.mediaUrl : bundledPath(video.videoPath || video.url);
     $('downloadVideo').download = (video.videoPath || '').split('/').pop() || `${video.title}.${isImage ? 'png' : 'mp4'}`;
+    renderPreviewActions();
     $('videoDialog').showModal();
     if (!isImage) $('videoPlayer').play().catch(() => {});
   }
-  function skillForVideo(v) { return state.skills.find((s) => s.id === v.sourceSkill || s.id === v.styleId || s.name === v.sourceSkill) || state.skills.find((s) => String(s.id).endsWith(String(v.styleId || '').match(/\d+$/)?.[0] || '---')); }
+  function skillForVideo(v) { if (!v.sourceSkill && !v.styleId) return undefined; return state.skills.find((s) => (v.sourceSkill && (s.id === v.sourceSkill || s.name === v.sourceSkill)) || (v.styleId && s.id === v.styleId)) || state.skills.find((s) => String(s.id).endsWith(String(v.styleId || '').match(/\d+$/)?.[0] || '---')); }
   function useVideoStyle(id) {
     const video = state.videos.find((v) => v.id === id); if (!video) return;
     const skill = skillForVideo(video); if (skill) state.selectedSkill = skill.id;
@@ -287,9 +401,10 @@
     if (state.assetKind === 'company') $('collectionList').innerHTML += `<button class="folder-button ${state.collectionId === '__slogans' ? 'active' : ''}" data-collection="__slogans">${icon('type')}<span class="folder-name">公司 Slogan</span></button><button class="folder-button ${state.collectionId === '__character' ? 'active' : ''}" data-collection="__character">${icon('person-standing')}<span class="folder-name">虚拟形象</span><span class="folder-offline">待定</span></button>`;
     renderIcons();
   }
-  async function loadMedia() {
+  async function loadMedia({ resetFilters = true } = {}) {
     const request = ++state.mediaRequest;
-    $('assetSearch').value = ''; $('assetCategoryFilter').value = '';
+    state.loadedMediaKey = `${state.collectionId || ''}:${state.folder}`;
+    if (resetFilters) { $('assetSearch').value = ''; $('assetCategoryFilter').value = ''; }
     if (state.collectionId === '__slogans') { state.entries = state.slogans.map((s) => ({ ...s, type:'slogan', name:s.name || '公司 Slogan', text:s.text || s.content })); renderAssetBreadcrumbs(); renderAssets(); return; }
     if (state.collectionId === '__character') { state.entries = []; $('assetGrid').innerHTML = empty('person-standing', '虚拟形象待定'); $('assetFooter').textContent = ''; renderAssetBreadcrumbs(); renderIcons(); return; }
     if (!state.collectionId) { state.entries = []; $('assetGrid').innerHTML = empty('folder-plus', state.assetKind === 'company' ? '尚未添加公司资产' : '尚未映射素材目录'); $('assetBreadcrumbs').textContent = '全部目录'; $('assetFooter').textContent = ''; renderIcons(); return; }
@@ -302,7 +417,7 @@
       state.categoryCounts = data.categoryCounts || {};
       renderCategoryFilter();
       renderAssetBreadcrumbs(); renderAssets();
-    } catch (err) { if (request !== state.mediaRequest) return; state.entries = []; $('assetGrid').innerHTML = empty('folder-x', '目录暂时无法读取', err.message); $('assetFooter').textContent = ''; renderIcons(); }
+    } catch (err) { if (request !== state.mediaRequest) return; state.loadedMediaKey = null; state.entries = []; $('assetGrid').innerHTML = empty('folder-x', '目录暂时无法读取', err.message); $('assetFooter').textContent = ''; renderIcons(); }
   }
   function renderAssetBreadcrumbs() {
     const collection = state.collections.find((c) => c.id === state.collectionId);
@@ -356,15 +471,18 @@
   $('videoPlayer').before(imagePreview);
   if (pickerMode) {
     document.body.classList.add('library-picker-mode');
-    document.querySelector('.page-heading h1').textContent = '从成片库选择';
+    $('libraryHeading').textContent = '从成片库选择';
+    $('libraryBatchbar').hidden = true; $('outputStatusFilter').hidden = true; $('outputSourceFilter').hidden = true;
     $('createFromLibrary').innerHTML = `${icon('refresh-cw')}刷新成片`;
     $('useVideoStyle').innerHTML = `${icon('check')}选择用于发布`;
   }
+  if (embeddedMode) document.body.classList.add('studio-embedded');
   document.addEventListener('click', (event) => {
     const close = event.target.closest('[data-close-dialog]'); if (close) $(close.dataset.closeDialog).close();
     const play = event.target.closest('[data-play-video]'); if (play) openVideo(play.dataset.playVideo);
     const style = event.target.closest('[data-style-video]'); if (style) useVideoStyle(style.dataset.styleVideo);
     const publish = event.target.closest('[data-publish-video]'); if (publish) publishSelection(publish.dataset.publishVideo);
+    const confirm = event.target.closest('[data-confirm-output]'); if (confirm) confirmOutputs([confirm.dataset.confirmOutput]);
     const skill = event.target.closest('[data-skill]'); if (skill) { state.selectedSkill = state.selectedSkill === skill.dataset.skill ? null : skill.dataset.skill; renderSkills(); }
     const suggestion = event.target.closest('[data-prompt]'); if (suggestion) { $('chatInput').value = suggestion.dataset.prompt; $('chatInput').focus(); }
     const remove = event.target.closest('[data-remove-asset]'); if (remove) { state.selectedAssets.splice(Number(remove.dataset.removeAsset), 1); renderSelectedAssets(); }
@@ -375,6 +493,14 @@
     const add = event.target.closest('[data-add-asset]'); if (add) { const asset = state.entries.find((e) => String(e.id) === add.dataset.addAsset); if (asset) addAsset(asset); }
   });
   $('videoSearch').addEventListener('input', renderVideos);
+  $('outputStatusFilter').addEventListener('change', renderVideos);
+  $('outputSourceFilter').addEventListener('change', renderVideos);
+  $('videoGrid').addEventListener('change', (event) => { const input = event.target.closest('[data-select-output]'); if (!input || state.confirmingOutputs) return; const id = input.dataset.selectOutput; if (input.checked) state.selectedOutputs.add(id); else state.selectedOutputs.delete(id); saveOutputSelection(); input.closest('.video-card')?.classList.toggle('selected-output', input.checked); renderOutputSelection(); renderIcons(); });
+  $('selectAllOutputs').addEventListener('change', () => { const checked = $('selectAllOutputs').checked; visibleVideos().filter((v) => v.status !== 'approved').forEach((v) => checked ? state.selectedOutputs.add(v.id) : state.selectedOutputs.delete(v.id)); saveOutputSelection(); renderVideos(); });
+  $('confirmSelected').addEventListener('click', () => confirmOutputs([...state.selectedOutputs]));
+  $('refreshOutputs').addEventListener('click', () => loadOutputs());
+  $('confirmPreviewOutput').addEventListener('click', () => confirmOutputs([state.previewVideo?.id]));
+  $('publishPreviewOutput').addEventListener('click', () => publishSelection(state.previewVideo?.id));
   $('assetSearch').addEventListener('input', renderAssets);
   $('assetCategoryFilter').addEventListener('change', renderAssets);
   $('assetGrid').addEventListener('change', async (event) => {
@@ -404,6 +530,37 @@
   $('sloganForm').addEventListener('submit', async (event) => { event.preventDefault(); errorIn('sloganError', ''); try { const data = await api('/api/assets/slogan', { method:'POST', body:JSON.stringify({ name:$('sloganName').value.trim() || '公司 Slogan', text:$('sloganText').value.trim() }) }); const slogan = data.slogan || data; state.slogans.push(slogan); $('sloganDialog').close(); state.collectionId = '__slogans'; renderCollections(); state.collectionId = '__slogans'; loadMedia(); toast('Slogan 已保存'); } catch (err) { errorIn('sloganError', err.message); } });
   document.querySelectorAll('dialog').forEach((dialog) => dialog.addEventListener('click', (event) => { if (event.target === dialog) { const rect = dialog.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close(); } }));
   document.querySelector('.workspace-tabs').addEventListener('keydown', (event) => { if (!['ArrowLeft','ArrowRight'].includes(event.key)) return; const tabs = Array.from(document.querySelectorAll('[data-tab]')); const i = tabs.findIndex((t) => t === document.activeElement); if (i < 0) return; event.preventDefault(); const next = tabs[(i + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; next.focus(); next.click(); });
+  let automaticConfirmation = false;
+  function showAutomaticOutputs() {
+    $('outputSourceFilter').value = 'automatic';
+    $('outputStatusFilter').value = '';
+    $('videoSearch').value = '';
+    location.hash = 'mix/library'; renderVideos();
+  }
+  window.addEventListener('message', async (event) => {
+    if (pickerMode || event.origin !== location.origin || event.source !== $('automaticFrame').contentWindow) return;
+    if (event.data?.type === 'content-workbench:open-library' && event.data.source === 'automatic') {
+      showAutomaticOutputs(); await loadOutputs(); return;
+    }
+    if (event.data?.type !== 'content-workbench:confirm-automatic' || !Array.isArray(event.data.runIds)) return;
+    const runIds = [...new Set(event.data.runIds.filter((id) => typeof id === 'string' && id.length > 0 && id.length <= 200))].slice(0, 100);
+    if (!runIds.length || automaticConfirmation) return;
+    if (state.confirmingOutputs) { showAutomaticOutputs(); outputError('另一个入库操作正在进行，请完成后再确认热点成片。'); return; }
+    automaticConfirmation = true;
+    try {
+      showAutomaticOutputs();
+      if (!await loadOutputs()) return;
+      const matches = state.videos.filter((v) => v.source === 'automatic' && runIds.includes(String(v.sourceId || '')));
+      const ids = matches.filter((v) => v.status !== 'approved').map((v) => v.id);
+      if (!matches.length) { outputError('尚未找到这些热点任务的有效成片，请先确认导出已完成，再刷新核对。'); return; }
+      if (ids.length) {
+        ids.forEach((id) => state.selectedOutputs.add(id)); saveOutputSelection();
+        await confirmOutputs(ids);
+      } else toast('所选热点成片已入库，可直接去发布。');
+      const unmatched = runIds.filter((id) => !matches.some((v) => String(v.sourceId || '') === id));
+      if (unmatched.length) outputError(`${unmatched.length} 个热点任务尚未找到有效成片；其余成片已逐条核对入库结果。`);
+    } finally { automaticConfirmation = false; }
+  });
   window.addEventListener('hashchange', route);
   $('videoGrid').innerHTML = Array.from({length:6}, () => '<div class="skeleton-card" aria-hidden="true"></div>').join('');
   renderMessages(); renderTools(); renderCollections(); route(); renderIcons();

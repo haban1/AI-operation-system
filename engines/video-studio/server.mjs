@@ -13,6 +13,9 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MIME = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.svg':'image/svg+xml', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png', '.webp':'image/webp', '.gif':'image/gif', '.mp4':'video/mp4', '.mov':'video/quicktime', '.webm':'video/webm', '.mp3':'audio/mpeg', '.wav':'audio/wav', '.m4a':'audio/mp4', '.json':'application/json; charset=utf-8' };
 const IMAGE = new Set(['.jpg','.jpeg','.png','.webp','.gif','.svg']);
 const VIDEO = new Set(['.mp4','.mov','.mkv','.webm']);
+// Publishing accepts final video containers supported by the material library.
+// A mapped source clip is deliberately not an output merely because it is video.
+const OUTPUT_VIDEO = new Set(['.mp4','.mov','.m4v','.webm']);
 const AUDIO = new Set(['.mp3','.wav','.m4a','.aac','.flac']);
 const MEDIA = new Set([...IMAGE,...VIDEO,...AUDIO]);
 const SAMPLE_CATEGORIES = {
@@ -50,9 +53,11 @@ async function sendFile(req,res,file,{download=false}={}) {
   const stream=fs.createReadStream(file,{start,end}); stream.on('error',()=>res.destroy()); res.on('close',()=>stream.destroy()); stream.pipe(res);
 }
 
-export function createVideoStudio({root=ROOT,stateDir=process.env.VIDEO_STUDIO_DATA_DIR||path.join(root,'runtime','data'),automaticUrl=process.env.AI_SIGNAL_STUDIO_URL||'http://127.0.0.1:8892/'}={}) {
+export function createVideoStudio({root=ROOT,stateDir=process.env.VIDEO_STUDIO_DATA_DIR||path.join(root,'runtime','data'),automaticUrl=process.env.AI_SIGNAL_STUDIO_URL||'http://127.0.0.1:8892/',publishingLibrary=null,automaticOutputs=null}={}) {
   let bridgePromise,storePromise;
   const thumbJobs=new Map();
+  let confirmationTail=Promise.resolve();
+  const durationCache=new Map();
   async function bridge() {
     if(!bridgePromise)bridgePromise=import(path.join(root,'runtime','codex-bridge.mjs')).then(async m=>{
       const b=new m.CodexBridge({root,workspaceRoot:root,stateDir:path.join(stateDir,'chat')});
@@ -139,39 +144,155 @@ export function createVideoStudio({root=ROOT,stateDir=process.env.VIDEO_STUDIO_D
     }
     return sendFile(req,res,target);
   }
-  async function videos(base) {
-    const manifest=await readJson(path.join(root,'bundled','manifest.json'),{videos:[]});
-    const data=await store();
-    const auto=[];
-    const outputCollection=data.collections.find(c=>c.id==='studio-outputs');
-    if(outputCollection) {
-      const tasks=await fsp.readdir(outputCollection.path,{withFileTypes:true}).catch(()=>[]);
-      for(const task of tasks.filter(d=>d.isDirectory()).slice(0,100)) {
-        const dir=path.join(outputCollection.path,task.name,'exports');
-        const files=await fsp.readdir(dir,{withFileTypes:true}).catch(()=>[]);
-        for(const file of files.filter(d=>d.isFile()&&VIDEO.has(path.extname(d.name).toLowerCase()))) {
-          const rel=path.join(task.name,'exports',file.name);
-          auto.push({id:`export-${task.name}-${file.name}`,title:path.parse(file.name).name,videoPath:mediaUrl(base,outputCollection.id,rel),posterPath:`${base}/api/media/thumbnail?collectionId=${outputCollection.id}&path=${encodeURIComponent(rel)}`,bundled:false,style:'我的作品'});
+  async function registeredFile(rootPath,relativePath) {
+    if(typeof relativePath!=='string'||!relativePath||path.isAbsolute(relativePath)||relativePath.split(/[\\/]/).some(p=>!p||p==='.'||p==='..'||p.startsWith('.')))throw error(403,'成片路径无效');
+    const base=await fsp.realpath(rootPath),target=path.resolve(base,relativePath);
+    if(!inside(base,target))throw error(403,'成片路径超出输出目录');
+    const file=await fsp.realpath(target);
+    if(!inside(base,file)||file===base||!OUTPUT_VIDEO.has(path.extname(file).toLowerCase()))throw error(403,'此文件不是已登记成片');
+    const stat=await fsp.stat(file);
+    if(!stat.isFile()||stat.size<=0)throw error(409,'成片文件为空或不可用');
+    return {file,rootPath:base,relativePath:path.relative(base,file),stat};
+  }
+  async function fingerprint(file,initial) {
+    const hash=createHash('sha256');
+    for await(const chunk of fs.createReadStream(file))hash.update(chunk);
+    const after=await fsp.stat(file);
+    if(initial.size!==after.size||initial.mtimeMs!==after.mtimeMs||initial.ctimeMs!==after.ctimeMs||initial.ino!==after.ino)throw error(409,'成片正在变化，请等待导出完成');
+    return {bytes:after.size,sha256:hash.digest('hex')};
+  }
+  async function duration(file,sha256,hint) {
+    if(Number.isFinite(Number(hint))&&Number(hint)>0)return Number(hint);
+    if(durationCache.has(sha256))return durationCache.get(sha256);
+    let value=null;
+    try {
+      const {stdout}=await exec(process.env.FFPROBE_BIN||'ffprobe',['-v','error','-show_entries','format=duration','-of','json',file],{timeout:4000,maxBuffer:64*1024});
+      const seconds=Number(JSON.parse(stdout).format?.duration);if(Number.isFinite(seconds)&&seconds>0)value=seconds;
+    } catch {}
+    durationCache.set(sha256,value);return value;
+  }
+  async function outputRegistry() {
+    const candidates=[],manifest=await readJson(path.join(root,'bundled','manifest.json'),{videos:[]});
+    for(const item of manifest.videos||[]) {
+      if(typeof item.id!=='string'||!/^[\w-]{1,160}$/.test(item.id)||!String(item.videoPath||'').startsWith('/bundled/videos/'))continue;
+      candidates.push({...item,id:item.id,source:'mix',rootPath:path.join(root,'bundled','videos'),relativePath:item.videoPath.slice('/bundled/videos/'.length),bundled:true,posterRelativePath:String(item.posterPath||'').startsWith('/bundled/posters/')?item.posterPath.slice('/bundled/'.length):null});
+    }
+    // Only persisted CLI conversations can own task exports. Neither arbitrary
+    // material mappings nor legacy POST /api/outputs entries establish ownership.
+    const saved=await readJson(path.join(stateDir,'chat','sessions.json'),{sessions:[]});
+    const tasksRoot=path.join(stateDir,'chat','workspaces');
+    const tasksBase=await fsp.realpath(tasksRoot).catch(()=>null);
+    for(const session of (saved.sessions||[]).slice(0,500)) {
+      if(!/^[\w-]{1,100}$/.test(session.id||'')||!session.threadId||!tasksBase)continue;
+      const taskPath=path.join(tasksBase,session.id);
+      if(!(await fsp.lstat(taskPath).catch(()=>null))?.isDirectory())continue;
+      const workspace=await fsp.realpath(taskPath).catch(()=>null);
+      if(!workspace||!inside(tasksBase,workspace)||workspace===tasksBase)continue;
+      if(!(await fsp.lstat(path.join(workspace,'exports')).catch(()=>null))?.isDirectory())continue;
+      const exportsRoot=await fsp.realpath(path.join(workspace,'exports')).catch(()=>null);
+      if(!exportsRoot||!inside(workspace,exportsRoot)||exportsRoot===workspace)continue;
+      async function scan(folder='',depth=0) {
+        const files=await fsp.readdir(path.join(exportsRoot,folder),{withFileTypes:true}).catch(()=>[]);
+        for(const file of files.slice(0,500)) {
+          if(file.name.startsWith('.'))continue;
+          const relativePath=path.join(folder,file.name);
+          if(file.isDirectory()&&depth<3)await scan(relativePath,depth+1);
+          else if(file.isFile()&&OUTPUT_VIDEO.has(path.extname(file.name).toLowerCase())) {
+            const id='mix-export-'+createHash('sha256').update(session.id+'\0'+relativePath).digest('hex').slice(0,32);
+            candidates.push({id,title:path.parse(file.name).name,source:'mix',rootPath:exportsRoot,relativePath,sessionId:session.id,bundled:false,style:'我的作品'});
+          }
         }
       }
+      await scan();
     }
-    return [...manifest.videos.map(v=>({...v,videoPath:base+v.videoPath,posterPath:base+v.posterPath})),...auto,...data.outputs.map(v=>({...v,videoPath:mediaUrl(base,v.collectionId,v.relativePath),posterPath:v.posterPath||null,bundled:false}))];
+    // Optional provider is server code, never an HTTP URL/path from the client.
+    // Main-system deployments normally merge their automatic outputs themselves.
+    const automatic=typeof automaticOutputs==='function'?await automaticOutputs():automaticOutputs;
+    for(const item of (Array.isArray(automatic)?automatic:automatic?.items||[]).slice(0,500)) {
+      if(!item?.id||!item.rootPath||!item.relativePath)continue;
+      candidates.push({...item,id:'automatic-'+createHash('sha256').update(String(item.id)).digest('hex').slice(0,32),source:'automatic',bundled:false});
+    }
+    const registered=[];
+    for(const candidate of candidates) {
+      try {
+        const actual=await registeredFile(candidate.rootPath,candidate.relativePath),identity=await fingerprint(actual.file,actual.stat);
+        registered.push({...candidate,rootPath:actual.rootPath,relativePath:actual.relativePath,absolutePath:actual.file,filePath:actual.file,filename:path.basename(actual.file),...identity,fingerprint:`sha256:${identity.sha256}:${identity.bytes}`,durationSeconds:await duration(actual.file,identity.sha256,candidate.durationSeconds)});
+      } catch(e) { if(!['ENOENT','ENOTDIR'].includes(e.code)&&e.statusCode!==403&&e.statusCode!==409)throw e; }
+    }
+    return registered;
   }
+  function publicOutput(item,base) {
+    return {id:item.id,title:String(item.title||path.parse(item.filename).name).slice(0,500),source:item.source,videoPath:`${base}/api/studio/outputs/${encodeURIComponent(item.id)}/file`,posterPath:/^posters\/[\w.-]+\.(?:jpe?g|png|webp)$/i.test(item.posterRelativePath||'')?`${base}/bundled/${item.posterRelativePath}`:null,durationSeconds:item.durationSeconds,status:'pending',filename:item.filename,bytes:item.bytes,sha256:item.sha256,fingerprint:item.fingerprint,bundled:!!item.bundled,style:item.style||'我的作品',subtitle:item.subtitle,description:item.description,width:item.width,height:item.height,orientation:item.orientation,sourceSkill:item.sourceSkill,styleId:item.styleId};
+  }
+  async function listOutputs({mountPath='',actor}={}) {
+    const base=mountPath.replace(/\/$/,''),registered=await outputRegistry(),items=registered.map(item=>publicOutput(item,base));
+    if(publishingLibrary?.list) {
+      const answer=await publishingLibrary.list({items:registered,actor});
+      const statuses=Array.isArray(answer)?answer:answer?.items||[];
+      for(const item of items) {
+        const approved=statuses.find(s=>s.id===item.id&&s.status==='approved'&&s.materialId&&s.sha256===item.sha256&&s.bytes===item.bytes);
+        if(approved){item.status='approved';item.materialId=approved.materialId;}
+      }
+    }
+    return {items};
+  }
+  async function resolveOutput(id) {
+    if(typeof id!=='string'||!/^[\w-]{1,160}$/.test(id))throw error(400,'成片 ID 无效');
+    const item=(await outputRegistry()).find(item=>item.id===id);
+    if(!item)throw error(404,'已登记成片不存在或文件已失效');
+    return item;
+  }
+  function confirmOutputs(ids,{actor}={}) {
+    if(!Array.isArray(ids)||ids.length<1||ids.length>50||ids.some(id=>typeof id!=='string'||!/^[\w-]{1,160}$/.test(id)))throw error(400,'请选择 1–50 个已登记成片');
+    const operation=async()=>{
+      const results=[];
+      for(const id of [...new Set(ids)]) {
+        try {
+          if(!publishingLibrary?.confirm)throw error(503,'请从已登录的主系统确认入库');
+          const item=await resolveOutput(id);
+          const prior=publishingLibrary.list?await publishingLibrary.list({items:[item],actor}):null;
+          const approved=(Array.isArray(prior)?prior:prior?.items||[]).find(s=>s.id===id&&s.status==='approved'&&s.materialId&&s.sha256===item.sha256&&s.bytes===item.bytes);
+          const result=approved||await publishingLibrary.confirm(item,{actor});
+          if(result?.status!=='approved'||!result.materialId)throw error(409,'发布素材库尚未完成复制校验与确认');
+          const current=await resolveOutput(id);
+          if(current.fingerprint!==item.fingerprint)throw error(409,'成片在确认过程中发生变化，请重新确认');
+          results.push({id,ok:true,materialId:result.materialId});
+        } catch(e) { results.push({id,ok:false,error:e.message||'成片确认失败'}); }
+      }
+      return {results};
+    };
+    const result=confirmationTail.then(operation);confirmationTail=result.catch(()=>{});return result;
+  }
+  async function videos(base,actor) { return (await listOutputs({mountPath:base,actor})).items; }
   async function toolStatus() {
     try { return await (await bridge()).status(); }
     catch(e) { return {configured:false,tools:[{id:'codex',name:'Codex CLI',status:'error',detail:e.message}]}; }
   }
-  async function handle(req,res,{mountPath=''}={}) {
+  async function handle(req,res,{mountPath='',actor}={}) {
     const full=new URL(req.url,`http://${req.headers.host||'localhost'}`),base=mountPath.replace(/\/$/,''),pathname=full.pathname.slice(base.length)||'/';
     try {
       if(!['GET','HEAD','POST','PATCH','DELETE'].includes(req.method))throw error(405,'不支持的请求方式');
       if(req.headers.origin&&req.headers.origin!==`http://${req.headers.host}`&&req.headers.origin!==`https://${req.headers.host}`)throw error(403,'请求来源不匹配');
+      if(pathname==='/api/studio/outputs'&&req.method==='GET')return json(res,await listOutputs({mountPath:base,actor}));
+      if(pathname==='/api/studio/outputs/confirm'&&req.method==='POST') {
+        const input=await body(req);
+        if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>key!=='ids'))throw error(400,'只接受已登记的成片 ID');
+        return json(res,await confirmOutputs(input.ids,{actor}));
+      }
+      const outputFileMatch=/^\/api\/studio\/outputs\/([^/]+)\/file$/.exec(pathname);
+      if(outputFileMatch&&['GET','HEAD'].includes(req.method)) {
+        if([...full.searchParams.keys()].some(key=>key!=='download'))throw error(400,'成片媒体只接受已登记 ID');
+        const output=await resolveOutput(decodeURIComponent(outputFileMatch[1])),etag=`"${output.sha256}"`;
+        if(req.headers['if-match']&&req.headers['if-match']!==etag)throw error(409,'成片已变化，请刷新列表');
+        res.setHeader('ETag',etag);res.setHeader('X-Content-SHA256',output.sha256);
+        return await sendFile(req,res,output.absolutePath,{download:full.searchParams.get('download')==='1'});
+      }
       if(pathname==='/api/studio/bootstrap'&&req.method==='GET') {
         const runtime=await toolStatus();
         const manifest=await readJson(path.join(root,'bundled','manifest.json'),{});
         const styles=manifest.videos||[];
         let sessions=[]; try{sessions=await(await bridge()).listSessions();}catch{}
-        return json(res,{videos:await videos(base),skills:styles.map(v=>({id:v.sourceSkill||`chatcut-source-pack-${String(v.styleId).padStart(2,'0')}`,name:v.title,title:v.title,description:v.description||v.subtitle||'',styleId:v.styleId})),tools:runtime.tools||runtime,cli:runtime,collections:await collections(),slogans:(await store()).slogans,sessions,automaticUrl});
+        return json(res,{videos:await videos(base,actor),skills:styles.map(v=>({id:v.sourceSkill||`chatcut-source-pack-${String(v.styleId).padStart(2,'0')}`,name:v.title,title:v.title,description:v.description||v.subtitle||'',styleId:v.styleId})),tools:runtime.tools||runtime,cli:runtime,collections:await collections(),slogans:(await store()).slogans,sessions,automaticUrl});
       }
       if(pathname==='/api/status'&&req.method==='GET')return json(res,{online:true,...await toolStatus()});
       if(pathname==='/api/media'&&req.method==='GET')return json(res,await listMedia(full,base));
@@ -227,9 +348,7 @@ export function createVideoStudio({root=ROOT,stateDir=process.env.VIDEO_STUDIO_D
         }
       }
       if(pathname==='/api/outputs'&&req.method==='POST') {
-        const b=await body(req),{file}=await collectionFile(b.collectionId,b.relativePath);
-        if(!VIDEO.has(path.extname(file).toLowerCase()))throw error(400,'请选择成片视频文件');
-        const data=await store(),v={id:randomUUID(),title:String(b.title||path.basename(file)),collectionId:b.collectionId,relativePath:b.relativePath,createdAt:new Date().toISOString()};data.outputs.push(v);await save();return json(res,v,201);
+        throw error(410,'成片仅从已登记制作任务的 exports 目录自动收集，请使用成片库确认入库');
       }
       if(pathname.startsWith('/api/'))throw error(404,'接口不存在');
       let file;
@@ -246,7 +365,7 @@ export function createVideoStudio({root=ROOT,stateDir=process.env.VIDEO_STUDIO_D
       return json(res,{error:e.message||'操作失败'},status);
     }
   }
-  return {handle,bridge,collections};
+  return {handle,bridge,collections,listOutputs,resolveOutput,confirmOutputs};
 }
 
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
