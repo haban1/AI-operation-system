@@ -63,6 +63,7 @@ export function createStudioOutputSource({ upstreamUrl, timeoutMs = 120_000, max
 
 export function createStudioOutputLibrary({ library, source, mountPath = '/video-workbench' }) {
   let confirmationTail = Promise.resolve();
+  let discoveryTail = Promise.resolve();
   async function verifiedSnapshot() {
     const snapshot = await library.list();
     for (const item of allItems(snapshot).filter(item => item.admissionStatus === 'approved')) {
@@ -83,7 +84,7 @@ export function createStudioOutputLibrary({ library, source, mountPath = '/video
       videoPath: `${mountPath}/api/studio/outputs/${encodeURIComponent(item.id)}/file`, posterPath: poster,
       durationSeconds: Number.isFinite(item.durationSeconds) ? item.durationSeconds : null,
       bytes: item.bytes, sha256: item.sha256, filename: item.filename,
-      status: approved ? 'approved' : 'pending', ...(approved ? { materialId: record.id } : {}),
+      status: approved ? 'approved' : 'pending', materialId: record?.id || null,
       ...Object.fromEntries(['style', 'styleId', 'sourceSkill', 'subtitle', 'description', 'orientation'].filter(key => typeof item[key] === 'string').map(key => [key, item[key].slice(0, key === 'description' ? 2000 : 500)])),
       ...Object.fromEntries(['width', 'height'].filter(key => Number.isSafeInteger(item[key]) && item[key] > 0).map(key => [key, item[key]])),
       bundled: item.bundled === true };
@@ -91,9 +92,9 @@ export function createStudioOutputLibrary({ library, source, mountPath = '/video
   function automaticItems(snapshot) {
     return allItems(snapshot).filter(item => item.source === 'automatic' && item.mediaType === 'video' && item.artifactType === 'final_video').map(item => ({
       id: `automatic-${item.id}`, sourceId: item.sourceId, title: item.title, source: 'automatic', videoPath: item.mediaUrl,
-      posterPath: null, durationSeconds: null, bytes: item.sizeBytes, sha256: item.sha256,
+      posterPath: null, durationSeconds: item.durationSeconds, width: item.width, height: item.height, bytes: item.sizeBytes, sha256: item.sha256,
       status: item.admissionStatus === 'approved' ? 'approved' : 'pending',
-      ...(item.admissionStatus === 'approved' ? { materialId: item.id } : {}),
+      materialId: item.id,
     }));
   }
   async function localMixItems(snapshot, remoteIds) {
@@ -110,29 +111,62 @@ export function createStudioOutputLibrary({ library, source, mountPath = '/video
       seen.add(id);
       const approved = record.admissionStatus === 'approved';
       items.push({ record, item: { id, title: record.title, source: 'mix', videoPath: record.mediaUrl,
-        posterPath: null, durationSeconds: null, bytes: record.sizeBytes, sha256: record.sha256,
-        status: approved ? 'approved' : 'pending', ...(approved ? { materialId: record.id } : {}) } });
+        posterPath: null, durationSeconds: record.durationSeconds, width: record.width, height: record.height, bytes: record.sizeBytes, sha256: record.sha256,
+        status: approved ? 'approved' : 'pending', materialId: record.id } });
     }
     return items;
   }
+  async function receiveMix(item, actor) {
+    const opened = await source.open(item);
+    try {
+      return (await library.receive(opened.stream, {
+        source: 'editing', filename: item.filename, title: item.title, artifactType: 'final_video',
+      }, actor, { contentLength: opened.contentLength, sourceId: `studio:${item.id}`, expectedSha256: item.sha256, expectedBytes: item.bytes })).item;
+    } finally { opened.stream.destroy(); }
+  }
+  function discoverMix(items) {
+    const operation = discoveryTail.then(async () => {
+      let snapshot = await verifiedSnapshot();
+      const failures = new Map();
+      for (const item of items.filter(validOutput)) {
+        try {
+          const existing = recordFor(item, snapshot);
+          if (existing) {
+            // Discovery reuses a verified version. It must not silently repair
+            // a damaged approved copy and present that as a new confirmation.
+            await library.verify(existing.id);
+            continue;
+          }
+          await receiveMix(item, 'video-studio-discovery');
+          snapshot = await library.list();
+        } catch (failure) {
+          failures.set(item.id, failure instanceof ContentLibraryError ? failure.message : '成片暂未同步到公共素材库，请稍后重试');
+        }
+      }
+      return { snapshot: await verifiedSnapshot(), failures };
+    });
+    discoveryTail = operation.catch(() => {});
+    return operation;
+  }
   async function inventory(actor) {
-    const snapshot = await verifiedSnapshot();
     let remote = [], offline = false;
     try { remote = (await source.list({ actor })).items.filter(validOutput); }
     catch { offline = true; }
+    const { snapshot, failures } = await discoverMix(remote);
     const fallback = await localMixItems(snapshot, remote.map(item => item.id));
-    const warning = offline ? (fallback.length ? '混剪制作服务暂时不可读取；仍可查看已保存的本地成片' : '混剪制作服务暂时不可读取，暂无可用的本地成片副本') : null;
-    return { snapshot, remote, fallback, warning };
+    const warnings = [];
+    if (offline) warnings.push(fallback.length ? '混剪制作服务暂时不可读取；仍可查看已保存的本地成片' : '混剪制作服务暂时不可读取，暂无可用的本地成片副本');
+    if (failures.size) warnings.push(`${failures.size} 条成片暂未完成公共素材同步，其余成片已保留`);
+    return { snapshot, remote, fallback, failures, warnings };
   }
-  async function confirmMix(item, actor) {
-    const opened = await source.open(item);
-    try {
-      const received = await library.receive(opened.stream, {
-        source: 'editing', filename: item.filename, title: item.title, artifactType: 'final_video',
-      }, actor, { contentLength: opened.contentLength, sourceId: `studio:${item.id}`, expectedSha256: item.sha256, expectedBytes: item.bytes });
-      const reviewed = await library.setAdmission(received.item.id, 'approved', actor);
-      return { materialId: reviewed.item.id, status: 'approved' };
-    } finally { opened.stream.destroy(); }
+  async function confirmMix(item, actor, snapshot) {
+    let record = recordFor(item, snapshot || await library.list());
+    // Normal confirmation changes admission only. An explicit confirmation can
+    // also retry a failed copy or repair damaged storage from the trusted source.
+    if (record) { try { await library.verify(record.id); } catch { record = null; } }
+    if (!record) record = await receiveMix(item, actor);
+    const reviewed = await library.setAdmission(record.id, 'approved', actor);
+    return { materialId: reviewed.item.id, status: 'approved' };
   }
   async function confirmBatch(ids, actor) {
     if (typeof actor !== 'string' || !actor.trim() || actor.length > 200) throw error('CONTENT_ADMISSION_ACTOR_REQUIRED', '确认入库需要有效的管理员身份', 401);
@@ -143,19 +177,21 @@ export function createStudioOutputLibrary({ library, source, mountPath = '/video
       const { snapshot, remote, fallback } = await inventory(actor);
       const automatic = new Map(automaticItems(snapshot).map(item => [item.id, item]));
       const localMix = new Map(fallback.map(entry => [entry.item.id, entry.record]));
+      const materials = new Map(allItems(snapshot).map(item => [item.id, item]));
       const results = [];
       for (const id of new Set(ids)) {
         try {
           let approved;
-          const local = automatic.get(id) || localMix.get(id);
+          const material = /^[a-f0-9]{32}$/.test(id) ? materials.get(id) : null;
+          const local = material || automatic.get(id) || localMix.get(id);
           if (local) {
-            const materialId = localMix.get(id)?.id || id.slice('automatic-'.length);
+            const materialId = material?.id || localMix.get(id)?.id || id.slice('automatic-'.length);
             await library.setAdmission(materialId, 'approved', actor);
             approved = { materialId, status: 'approved' };
           } else {
             const item = remote.find(item => item.id === id);
             if (!item) throw error('STUDIO_OUTPUT_NOT_FOUND', '成片不存在或来源暂时不可用', 404);
-            approved = await confirmMix(item, actor);
+            approved = await confirmMix(item, actor, snapshot);
           }
           results.push({ id, ok: true, ...approved });
         } catch (failure) {
@@ -167,15 +203,30 @@ export function createStudioOutputLibrary({ library, source, mountPath = '/video
     confirmationTail = operation.catch(() => {});
     return operation;
   }
+  function outputs({ snapshot, remote, fallback, failures, warnings }) {
+    return { items: [...remote.map(item => ({ ...mixItem(item, snapshot), ...(failures.has(item.id) ? { syncError: failures.get(item.id) } : {}) })), ...fallback.map(entry => entry.item), ...automaticItems(snapshot)], ...(warnings.length ? { warnings } : {}) };
+  }
   return {
     async list({ actor } = {}) {
-      const { snapshot, remote, fallback, warning } = await inventory(actor);
-      return { items: [...remote.map(item => mixItem(item, snapshot)), ...fallback.map(entry => entry.item), ...automaticItems(snapshot)], ...(warning ? { warnings: [warning] } : {}) };
+      return outputs(await inventory(actor));
     },
+    async materials({ actor } = {}) {
+      const state = await inventory(actor), result = outputs(state);
+      const covered = new Set(result.items.map(item => item.materialId).filter(Boolean));
+      const legacy = [...state.snapshot.items, ...state.snapshot.pendingItems].filter(item => !covered.has(item.id)).map(item => ({
+        id: item.id, materialId: item.id, title: item.title, source: 'legacy', originalSource: item.source,
+        libraryItem: true, styleLabel: '历史素材', mediaType: item.mediaType,
+        mediaUrl: item.mediaUrl, videoPath: item.mediaUrl, posterPath: item.mediaType === 'image' ? item.mediaUrl : null,
+        durationSeconds: item.durationSeconds, width: item.width, height: item.height,
+        bytes: item.sizeBytes, sha256: item.sha256, status: item.admissionStatus === 'approved' ? 'approved' : 'pending',
+      }));
+      return { ...result, items: [...result.items, ...legacy] };
+    },
+    async sync({ actor } = {}) { const { warnings } = await inventory(actor); return { warnings }; },
     confirmBatch,
     publishingLibrary: {
       async list({ items }) {
-        const snapshot = await verifiedSnapshot();
+        const { snapshot } = await discoverMix(items);
         return { items: items.filter(validOutput).map(item => mixItem(item, snapshot)) };
       },
       async confirm(item, { actor }) {

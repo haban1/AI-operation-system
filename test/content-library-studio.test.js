@@ -17,7 +17,7 @@ async function fixture(t) {
   const config = { contentLibraryDir: path.join(root, 'library'), contentLibrarySignalRoot: path.join(root, 'signal') };
   await mkdir(config.contentLibrarySignalRoot);
   const entries = [];
-  const options = { collectSources: async () => ({ entries, sources: [] }), cacheMs: 0, inspectMedia: async () => ({ type: 'video', durationSeconds: 1 }) };
+  const options = { collectSources: async () => ({ entries, sources: [] }), cacheMs: 0, inspectMedia: async file => ({ type: path.extname(file) === '.png' ? 'image' : 'video', durationSeconds: path.extname(file) === '.png' ? null : 1, width: 1280, height: 720 }) };
   const library = createContentLibrary(config, options);
   const bytes = new Map(Array.from({ length: 6 }, (_, i) => [`v5-0${i + 1}`, Buffer.from(`sample video bytes ${i}`)]));
   const state = { items: [...bytes].map(([id, content]) => output(id, content)), opened: [], unavailable: false };
@@ -32,9 +32,10 @@ test('the six samples remain pending until human confirmation; duplicate confirm
   const ctx = await fixture(t);
   const initial = await ctx.studio.list();
   assert.equal(initial.items.length, 6);
-  assert.ok(initial.items.every(item => item.status === 'pending' && !item.materialId));
-  assert.deepEqual(ctx.state.opened, []);
-  assert.equal((await ctx.library.list()).counts.total, 0);
+  assert.ok(initial.items.every(item => item.status === 'pending' && /^[a-f0-9]{32}$/.test(item.materialId)));
+  assert.equal(ctx.state.opened.length, 6);
+  assert.deepEqual((await ctx.library.list()).counts, { total: 6, approved: 0, pending: 6, rejected: 0 });
+  await assert.rejects(ctx.library.publishDraft(initial.items[0].materialId), { code: 'CONTENT_ADMISSION_REQUIRED' });
   const first = await ctx.studio.confirmBatch(['v5-01'], 'reviewer-one');
   assert.equal(first.results[0].ok, true);
   const materialId = first.results[0].materialId;
@@ -48,7 +49,8 @@ test('the six samples remain pending until human confirmation; duplicate confirm
   const repeated = await ctx.studio.confirmBatch(['v5-01', 'v5-01'], 'reviewer-one');
   assert.equal(repeated.results.length, 1);
   assert.equal(repeated.results[0].materialId, materialId);
-  assert.deepEqual((await ctx.library.list()).counts, { total: 1, approved: 1, pending: 0, rejected: 0 });
+  assert.deepEqual((await ctx.library.list()).counts, { total: 6, approved: 1, pending: 5, rejected: 0 });
+  assert.equal(ctx.state.opened.length, 6, 'discovery and repeated confirmations do not redownload unchanged bytes');
   const restarted = createStudioOutputLibrary({ library: ctx.makeLibrary(), source: ctx.source });
   assert.equal((await restarted.list()).items.find(item => item.id === 'v5-01').materialId, materialId);
   const remaining = (await restarted.list()).items.filter(item => item.id !== 'v5-01');
@@ -64,8 +66,11 @@ test('batch confirmations keep independent successes and preserve pending items 
   assert.equal(batch.results[1].code, 'CONTENT_FILE_CHANGED');
   assert.doesNotMatch(JSON.stringify(batch), /private network/);
   assert.deepEqual(batch.summary, { approved: 2, failed: 3 });
-  assert.deepEqual((await ctx.library.list()).counts, { total: 2, approved: 2, pending: 0, rejected: 0 });
-  assert.equal((await ctx.studio.list()).items.find(item => item.id === 'v5-02').status, 'pending');
+  assert.deepEqual((await ctx.library.list()).counts, { total: 4, approved: 2, pending: 2, rejected: 0 });
+  const failed = (await ctx.studio.list()).items.find(item => item.id === 'v5-02');
+  assert.equal(failed.status, 'pending');
+  assert.equal(failed.materialId, null);
+  assert.ok(failed.syncError);
 });
 
 test('a new byte version requires a new confirmation and never inherits prior approval', async t => {
@@ -75,7 +80,8 @@ test('a new byte version requires a new confirmation and never inherits prior ap
   ctx.state.items[0] = output('v5-01', ctx.bytes.get('v5-01'));
   const current = (await ctx.studio.list()).items.find(item => item.id === 'v5-01');
   assert.equal(current.status, 'pending');
-  assert.equal(current.materialId, undefined);
+  assert.ok(current.materialId);
+  assert.notEqual(current.materialId, old);
   const confirmed = await ctx.studio.confirmBatch(['v5-01'], 'reviewer-two');
   assert.notEqual(confirmed.results[0].materialId, old);
   assert.equal((await ctx.library.list()).counts.approved, 2);
@@ -102,11 +108,11 @@ test('an offline companion retains approved local copies without overriding an o
   const materialId = (await ctx.studio.confirmBatch(['v5-01'], 'reviewer')).results[0].materialId;
   ctx.state.unavailable = true;
   const offline = await ctx.studio.list();
-  assert.equal(offline.items.length, 1);
-  assert.equal(offline.items[0].id, 'v5-01');
-  assert.equal(offline.items[0].status, 'approved');
-  assert.equal(offline.items[0].materialId, materialId);
-  assert.equal(offline.items[0].videoPath, `/api/content-library/${materialId}/media`);
+  assert.equal(offline.items.length, 6);
+  const retained = offline.items.find(item => item.id === 'v5-01');
+  assert.equal(retained.status, 'approved');
+  assert.equal(retained.materialId, materialId);
+  assert.equal(retained.videoPath, `/api/content-library/${materialId}/media`);
   assert.match(offline.warnings[0], /仍可查看已保存/);
   ctx.state.unavailable = false;
   ctx.bytes.set('v5-01', Buffer.from('new online version awaits approval'));
@@ -115,7 +121,8 @@ test('an offline companion retains approved local copies without overriding an o
   const versions = online.items.filter(item => item.id === 'v5-01');
   assert.equal(versions.length, 1);
   assert.equal(versions[0].status, 'pending');
-  assert.equal(versions[0].materialId, undefined);
+  assert.ok(versions[0].materialId);
+  assert.notEqual(versions[0].materialId, materialId);
   assert.equal(versions[0].sha256, ctx.state.items[0].sha256);
   assert.equal(online.warnings, undefined);
 });
@@ -125,7 +132,7 @@ test('local fallback skips corrupted copies and permits explicit confirmation of
   const materialId = (await ctx.studio.confirmBatch(['v5-01'], 'reviewer')).results[0].materialId;
   await ctx.library.setAdmission(materialId, 'pending', 'reviewer');
   ctx.state.items = [];
-  const pending = (await ctx.studio.list()).items[0];
+  const pending = (await ctx.studio.list()).items.find(item => item.id === 'v5-01');
   assert.equal(pending.id, 'v5-01');
   assert.equal(pending.status, 'pending');
   const openedBefore = ctx.state.opened.length;
@@ -134,7 +141,7 @@ test('local fallback skips corrupted copies and permits explicit confirmation of
   const draft = await ctx.library.publishDraft(materialId);
   const bytes = await readFile(draft.materialPath); bytes[0] ^= 1;
   await writeFile(draft.materialPath, bytes);
-  assert.deepEqual((await ctx.studio.list()).items, []);
+  assert.equal((await ctx.studio.list()).items.some(item => item.id === 'v5-01'), false);
 });
 
 test('automatic finals share the existing admission gate while previous pending records stay untouched', async t => {
@@ -146,13 +153,78 @@ test('automatic finals share the existing admission gate while previous pending 
   const upload = await ctx.library.receive(Readable.from(['previous unreviewed material']), { source: 'editing', filename: 'old.mp4' }, 'receiver');
   const auto = (await ctx.studio.list()).items.find(item => item.source === 'automatic');
   assert.equal(auto.status, 'pending');
+  assert.match(auto.materialId, /^[a-f0-9]{32}$/);
+  assert.equal(auto.sourceId, 'run-one');
+  assert.equal(auto.durationSeconds, 1);
+  assert.equal(auto.width, 1280);
+  assert.equal(auto.height, 720);
   const confirmed = await ctx.studio.confirmBatch([auto.id], 'human-reviewer');
   assert.equal(confirmed.results[0].ok, true);
   assert.equal((await ctx.studio.list()).items.find(item => item.source === 'automatic').status, 'approved');
   const snapshot = await ctx.library.list();
   assert.equal(snapshot.pendingItems.find(item => item.id === upload.item.id).admissionStatus, 'pending');
   assert.equal(snapshot.items[0].admittedBy, 'human-reviewer');
-  assert.deepEqual(ctx.state.opened, []);
+  assert.equal(ctx.state.opened.length, 6);
+});
+
+test('embedded adapter discovery and concurrent library views import once without granting approval', async t => {
+  const ctx = await fixture(t);
+  const [adapter, view] = await Promise.all([
+    ctx.studio.publishingLibrary.list({ items: ctx.state.items }),
+    ctx.studio.list(),
+  ]);
+  assert.equal(adapter.items.length, 6);
+  assert.equal(view.items.length, 6);
+  assert.equal(ctx.state.opened.length, 6);
+  assert.ok(adapter.items.every(item => item.status === 'pending' && item.materialId));
+  const snapshot = await ctx.library.list();
+  assert.equal(snapshot.counts.approved, 0);
+  assert.equal(snapshot.pendingItems.length, 6);
+  assert.ok(snapshot.pendingItems.every(item => item.receivedBy === 'video-studio-discovery' && item.admittedBy === null));
+});
+
+test('the shared materials pool retains legacy images and videos while output libraries stay source-specific', async t => {
+  const ctx = await fixture(t);
+  const image = (await ctx.library.receive(Readable.from(['legacy image bytes']), { source: 'editing', filename: 'previous-image.png' }, 'historical-import')).item;
+  const video = (await ctx.library.receive(Readable.from(['legacy video bytes']), { source: 'creation', filename: 'previous-video.mp4' }, 'historical-import')).item;
+  const rejected = (await ctx.library.receive(Readable.from(['rejected image bytes']), { source: 'creation', filename: 'rejected.png' }, 'historical-import')).item;
+  await ctx.library.setAdmission(video.id, 'approved', 'previous-reviewer');
+  await ctx.library.setAdmission(rejected.id, 'rejected', 'previous-reviewer');
+  const shared = await ctx.studio.materials();
+  assert.equal(shared.items.length, 8);
+  assert.equal(new Set(shared.items.map(item => item.materialId)).size, 8);
+  assert.equal(shared.items.some(item => item.materialId === rejected.id), false);
+  const legacyImage = shared.items.find(item => item.materialId === image.id);
+  assert.equal(legacyImage.source, 'legacy');
+  assert.equal(legacyImage.originalSource, 'editing');
+  assert.equal(legacyImage.libraryItem, true);
+  assert.equal(legacyImage.mediaType, 'image');
+  assert.equal(legacyImage.status, 'pending');
+  assert.equal(legacyImage.mediaUrl, `/api/content-library/${image.id}/media`);
+  assert.equal(legacyImage.videoPath, legacyImage.mediaUrl);
+  assert.equal(shared.items.find(item => item.materialId === video.id).status, 'approved');
+  const outputs = await ctx.studio.list();
+  assert.equal(outputs.items.length, 6);
+  assert.ok(outputs.items.every(item => item.source === 'mix'));
+  await assert.rejects(ctx.library.publishDraft(image.id), { code: 'CONTENT_ADMISSION_REQUIRED' });
+  const confirmed = await ctx.studio.confirmBatch([image.id, 'f'.repeat(32)], 'current-reviewer');
+  assert.deepEqual(confirmed.results.map(item => item.ok), [true, false]);
+  assert.equal(confirmed.results[0].materialId, image.id);
+  assert.equal((await ctx.library.list()).items.find(item => item.id === image.id).admittedBy, 'current-reviewer');
+});
+
+test('raw library IDs cannot bypass byte verification during explicit legacy confirmation', async t => {
+  const ctx = await fixture(t);
+  const received = (await ctx.library.receive(Readable.from(['stored historical video']), { source: 'creation', filename: 'legacy.mp4' }, 'receiver')).item;
+  await ctx.library.setAdmission(received.id, 'approved', 'reviewer');
+  const draft = await ctx.library.publishDraft(received.id);
+  const changed = await readFile(draft.materialPath); changed[0] ^= 1;
+  await writeFile(draft.materialPath, changed);
+  const shared = await ctx.studio.materials();
+  assert.equal(shared.items.find(item => item.materialId === received.id).status, 'pending');
+  const confirmed = await ctx.studio.confirmBatch([received.id], 'reviewer-two');
+  assert.equal(confirmed.results[0].ok, false);
+  assert.equal(confirmed.results[0].code, 'CONTENT_FILE_CHANGED');
 });
 
 test('confirmation requires identity and rejects paths or URLs; unavailable hosts retain automatic entries', async t => {

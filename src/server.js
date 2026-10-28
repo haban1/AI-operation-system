@@ -3652,9 +3652,10 @@ async function getEmbeddedVideoStudio() {
 }
 const proxyVideoStudio = createVideoStudioProxy({ upstreamUrl: videoStudioUpstreamUrl, authorize: requireAdminSession, allowedOrigins: config.allowedOrigins });
 async function studioOutputsRequest(req, res, pathname, session) {
-  if (!['/api/studio/outputs', '/api/studio/outputs/confirm'].includes(pathname)) return false;
+  if (!['/api/studio/outputs', '/api/studio/materials', '/api/studio/outputs/confirm'].includes(pathname)) return false;
   try {
     if (req.method === 'GET' && pathname === '/api/studio/outputs') { ok(res, await studioOutputLibrary.list({ actor: session.sub })); return true; }
+    if (req.method === 'GET' && pathname === '/api/studio/materials') { ok(res, await studioOutputLibrary.materials({ actor: session.sub })); return true; }
     if (req.method === 'POST' && pathname === '/api/studio/outputs/confirm') {
       const input = await body(req);
       if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => key !== 'ids')) {
@@ -3709,7 +3710,7 @@ async function api(req, res, url) {
   if (pathname.startsWith('/api/agent/')) {
     if (!requireAgentToken(req, res)) return;
   } else if (!requireAdminSession(req, res)) return;
-  if (pathname === '/api/studio/outputs' || pathname === '/api/studio/outputs/confirm') {
+  if (['/api/studio/outputs', '/api/studio/materials', '/api/studio/outputs/confirm'].includes(pathname)) {
     const session = requireAdminSession(req, res);
     if (!session) return;
     return await studioOutputsRequest(req, res, pathname, session);
@@ -3720,7 +3721,12 @@ async function api(req, res, url) {
   if (req.method === 'GET' && pathname === '/api/creative-workbench/status') return ok(res, await getCreativeWorkbenchStatus(config));
   if (pathname === '/api/content-library' || pathname.startsWith('/api/content-library/')) {
     try {
-      if (req.method === 'GET' && pathname === '/api/content-library') return ok(res, await contentLibrary.list());
+      if (req.method === 'GET' && pathname === '/api/content-library') {
+        const session = requireAdminSession(req, res);
+        if (!session) return;
+        const { warnings } = await studioOutputLibrary.sync({ actor: session.sub });
+        return ok(res, { ...await contentLibrary.list(), ...(warnings.length ? { warnings } : {}) });
+      }
       if (req.method === 'POST' && pathname === '/api/content-library/receive') {
         try {
           const allowed = ['source', 'filename', 'title', 'artifactType'];

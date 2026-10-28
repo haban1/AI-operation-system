@@ -102,6 +102,8 @@ test('authenticated main-system mount serves six bundled videos and prefixed med
     for (const prefix of ['', MOUNT]) {
       const list = await fetch(base + prefix + '/api/studio/outputs');
       assert.equal(list.status, 401); await list.arrayBuffer();
+      const materials = await fetch(base + prefix + '/api/studio/materials');
+      assert.equal(materials.status, 401); await materials.arrayBuffer();
       const confirm = await fetch(base + prefix + '/api/studio/outputs/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"ids":["v5-01"]}' });
       assert.equal(confirm.status, 401); await confirm.arrayBuffer();
     }
@@ -117,6 +119,21 @@ test('authenticated main-system mount serves six bundled videos and prefixed med
   await login.arrayBuffer();
   const request = (suffix, options = {}) => fetch(base + MOUNT + suffix, { ...options, headers: { Cookie: cookie, ...options.headers } });
   let bootstrap;
+
+  await t.test('opening publishing directly discovers six pending materials without approving them', async () => {
+    const response = await fetch(base + '/api/content-library', { headers: { Cookie: cookie } });
+    assert.equal(response.status, 200);
+    const library = await response.json();
+    assert.deepEqual(library.counts, { total: 6, approved: 0, pending: 6, rejected: 0 });
+    assert.ok(library.pendingItems.every(item => item.receivedBy === 'video-studio-discovery' && item.admittedBy === null));
+    const draft = await fetch(base + `/api/content-library/${library.pendingItems[0].id}/publish-draft`, { headers: { Cookie: cookie } });
+    assert.equal(draft.status, 409); await draft.arrayBuffer();
+    const shared = await fetch(base + '/api/studio/materials', { headers: { Cookie: cookie } });
+    assert.equal(shared.status, 200);
+    const materials = await shared.json();
+    assert.equal(materials.items.length, 6);
+    assert.ok(materials.items.every(item => item.source === 'mix' && item.materialId && item.status === 'pending'));
+  });
 
   await t.test('the mounted page and script use the deployment path', async () => {
     const redirect = await fetch(base + MOUNT, { redirect: 'manual', headers: { Cookie: cookie } });
@@ -206,7 +223,7 @@ test('authenticated main-system mount serves six bundled videos and prefixed med
     assert.equal(stored.messages.length, 0);
   });
 
-  await t.test('human confirmation alone copies an exact output into the approved publishing library', async () => {
+  await t.test('only human confirmation approves a discovered material while the system is globally paused', async () => {
     const paused = await fetch(base + '/api/settings/operations', {
       method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled: false, updatedBy: 'isolated-video-test' }),
@@ -217,7 +234,7 @@ test('authenticated main-system mount serves six bundled videos and prefixed med
     assert.equal(initial.items.length, 6);
     assert.ok(initial.items.every(item => item.status === 'pending'));
     const pendingLibrary = await (await fetch(base + '/api/content-library', { headers: { Cookie: cookie } })).json();
-    assert.equal(pendingLibrary.counts.total, 0);
+    assert.deepEqual(pendingLibrary.counts, { total: 6, approved: 0, pending: 6, rejected: 0 });
     const forged = await request('/api/studio/outputs/confirm', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: ['v5-04'], path: '/tmp/forged.mp4' }),
     });
@@ -230,7 +247,7 @@ test('authenticated main-system mount serves six bundled videos and prefixed med
     assert.deepEqual(batch.results.map(item => item.ok), [true, false]);
     const materialId = batch.results[0].materialId;
     const library = await (await fetch(base + '/api/content-library', { headers: { Cookie: cookie } })).json();
-    assert.equal(library.counts.total, 1);
+    assert.deepEqual(library.counts, { total: 6, approved: 1, pending: 5, rejected: 0 });
     assert.equal(library.items[0].id, materialId);
     assert.equal(library.items[0].admittedBy, 'video-test-admin');
     const list = await (await request('/api/studio/outputs')).json();

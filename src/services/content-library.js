@@ -142,6 +142,9 @@ export function createContentLibrary(config, {
   function publicItem(item) {
     return { id: item.id, source: item.source, sourceId: item.sourceId, title: item.title, body: item.body, createdAt: item.createdAt,
       mediaType: item.mediaType, mimeType: item.mimeType, sizeBytes: item.sizeBytes, sha256: item.sha256,
+      durationSeconds: Number.isFinite(item.meta?.durationSeconds) && item.meta.durationSeconds > 0 ? item.meta.durationSeconds : null,
+      width: Number.isFinite(item.meta?.width) && item.meta.width > 0 ? item.meta.width : null,
+      height: Number.isFinite(item.meta?.height) && item.meta.height > 0 ? item.meta.height : null,
       reviewStatus: item.reviewStatus, sourceStatus: boundedText(item.sourceStatus, 200), artifactType: item.artifactType,
       receivedAt: item.receivedAt || null, receivedBy: item.receivedBy || null,
       ...admissionFields(item), mediaUrl: `/api/content-library/${item.id}/media` };
