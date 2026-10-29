@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "title": "六套剪辑成片",
+  "mediaDelivery": "repository-bundled",
+  "videos": [
+    {
+      "id": "v5-01",
+      "title": "纪录混剪 · 证据与现场",
+      "style": "纪录混剪",
+      "subtitle": "证据与现场",
+      "description": "用讲解、演示与实操建立现场证据。",
+      "styleId": "chatcut-source-pack-01",
+      "sourceSkill": "chatcut-source-pack-01",
+      "durationSeconds": 42.048,
+      "width": 1280,
+      "height": 720,
+      "orientation": "landscape",
+      "bytes": 20578113,
+      "sha256": "296b13ded7d3d9c0759424a40f7bc393ce2e175383d8ed8058673e407f9ff290",
+      "videoPath": "/bundled/videos/V5_01_Documentary.mp4",
+      "posterPath": "/bundled/posters/V5_01_Documentary.jpg",
+      "posterAtSeconds": 8,
+      "bundled": true,
+      "validation": {
+        "metadata": "passed",
+        "posterDecoded": true
+      }
+    },
+    {
+      "id": "v5-02",
+      "title": "预告片 · 由静到燃",
+      "style": "预告片",
+      "subtitle": "由静到燃",
+      "description": "从主题铺垫到现场证明，逐步提升节奏。",
+      "styleId": "chatcut-source-pack-02",
+      "sourceSkill": "chatcut-source-pack-02",
+      "durationSeconds": 30.037333,
+      "width": 1280,
+      "height": 720,
+      "orientation": "landscape",
+      "bytes": 15273016,
+      "sha256": "8d35599658547f2920c2234ba6756ecec597bb55bacbf5e0c8f1a21c69c24501",
+      "videoPath": "/bundled/videos/V5_02_Trailer.mp4",
+      "posterPath": "/bundled/posters/V5_02_Trailer.jpg",
+      "posterAtSeconds": 8,
+      "bundled": true,
+      "validation": {
+        "metadata": "passed",
+        "posterDecoded": true
+      }
+    },
+    {
+      "id": "v5-03",
+      "title": "品牌开场 · 分享的价值",
+      "style": "品牌开场",
+      "subtitle": "分享的价值",
+      "description": "用分享、案例和实操呈现活动价值。",
+      "styleId": "chatcut-source-pack-03",
+      "sourceSkill": "chatcut-source-pack-03",
+      "durationSeconds": 36.053333,
+      "width": 1280,
+      "height": 720,
+      "orientation": "landscape",
+      "bytes": 14024783,
+      "sha256": "d9a82c12116632cdb6a913a405291d41a135f5cf06422ccae92677d3ed8f63b4",
+      "videoPath": "/bundled/videos/V5_03_Brand.mp4",
+      "posterPath": "/bundled/posters/V5_03_Brand.jpg",
+      "posterAtSeconds": 8,
+      "bundled": true,
+      "validation": {
+        "metadata": "passed",
+        "posterDecoded": true
+      }
+    },
+    {
+      "id": "v5-04",
+      "title": "社交短片 · 三眼看现场",
+      "style": "社交短片",
+      "subtitle": "三眼看现场",
+      "description": "竖屏短片，以三个现场要点快速展开。",
+      "styleId": "chatcut-source-pack-04",
+      "sourceSkill": "chatcut-source-pack-04",
+      "durationSeconds": 20.053333,
+      "width": 720,
+      "height": 1280,
+      "orientation": "portrait",
+      "bytes": 11624783,
+      "sha256": "138ee40f1e43cc238990d6037464885afd4b091882aa4c26c18cb53925081efb",
+      "videoPath": "/bundled/videos/V5_04_Social.mp4",
+      "posterPath": "/bundled/posters/V5_04_Social.jpg",
+      "posterAtSeconds": 6.6844443333333325,
+      "bundled": true,
+      "validation": {
+        "metadata": "passed",
+        "posterDecoded": true
+      }
+    },
+    {
+      "id": "v5-05",
+      "title": "节拍混剪 · 现场脉动",
+      "style": "节拍混剪",
+      "subtitle": "现场脉动",
+      "description": "随配乐节拍组织镜头与分层文字。",
+      "styleId": "chatcut-source-pack-05",
+      "sourceSkill": "chatcut-source-pack-05",
+      "durationSeconds": 32.917333,
+      "width": 1280,
+      "height": 720,
+      "orientation": "landscape",
+      "bytes": 18772595,
+      "sha256": "9eb25d72224e55d04cffb1084037b87c33b8625adabaf90ff77a1570467d8d7b",
+      "videoPath": "/bundled/videos/V5_05_Beat.mp4",
+      "posterPath": "/bundled/posters/V5_05_Beat.jpg",
+      "posterAtSeconds": 8,
+      "bundled": true,
+      "validation": {
+        "metadata": "passed",
+        "posterDecoded": true
+      }
+    },
+    {
+      "id": "v5-06",
+      "title": "对照蒙太奇 · 台上与台下",
+      "style": "对照蒙太奇",
+      "subtitle": "台上与台下",
+      "description": "交叉连接讲授与实践，保留场次区分。",
+      "styleId": "chatcut-source-pack-06",
+      "sourceSkill": "chatcut-source-pack-06",
+      "durationSeconds": 37.077333,
+      "width": 1280,
+      "height": 720,
+      "orientation": "landscape",
+      "bytes": 15573662,
+      "sha256": "9106cb7657640217595a9afb27b7c0739056c2088a8a7a08453b1e64fd718751",
+      "videoPath": "/bundled/videos/V5_06_Contrast.mp4",
+      "posterPath": "/bundled/posters/V5_06_Contrast.jpg",
+      "posterAtSeconds": 8,
+      "bundled": true,
+      "validation": {
+        "metadata": "passed",
+        "posterDecoded": true
+      }
+    }
+  ]
+}

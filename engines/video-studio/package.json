@@ -1,0 +1,23 @@
+{
+  "name": "content-video-studio",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Local video studio with a Codex CLI assistant and bundled example films",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs runtime/*.test.mjs"
+  },
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "@openai/codex": "0.165.0",
+    "hyperframes": "0.8.210",
+    "@remotion/cli": "4.0.539",
+    "@remotion/player": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "remotion": "4.0.539",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "smol-toml": "1.9.1"
+  }
+}

@@ -162,7 +162,7 @@ test('bundled Signal engine integrates through authenticated main app and persis
         AUTH_ENABLED: 'true', ADMIN_USERNAME: username, ADMIN_PASSWORD: password, SESSION_SECRET: 'test-only-bundled-engine-session-secret',
         LOCAL_AGENT_AUTO_START: 'false', AUTO_COLLECT_ENABLED: 'false', SMOKE_TEST_ENABLED: 'false', RAG_AUTO_START: 'false', QWEN_MODE: 'mock', RPA_MODE: 'simulated',
         AI_SIGNAL_STUDIO_URL: prefix, AI_SIGNAL_STUDIO_INTERNAL_URL: upstream, AI_SIGNAL_STUDIO_HEALTH_URL: upstream + '/api/health',
-        CONTENT_LIBRARY_DIR: libraryRoot, CONTENT_LIBRARY_SIGNAL_ROOT: engineRoot, CONTENT_LIBRARY_EDITING_ROOT: '', CONTENT_LIBRARY_CREATION_ROOT: '',
+        CONTENT_LIBRARY_DIR: libraryRoot, CONTENT_LIBRARY_SEED_ENABLED: 'false', CONTENT_LIBRARY_SIGNAL_ROOT: engineRoot, CONTENT_LIBRARY_EDITING_ROOT: '', CONTENT_LIBRARY_CREATION_ROOT: '',
         CONTENT_LIBRARY_MAX_FILE_BYTES: String(maxUploadBytes),
         VIDEO_EDITING_URL: '', VIDEO_EDITING_HEALTH_URL: '', AIGC_CREATION_URL: '', AIGC_CREATION_HEALTH_URL: '',
       },

@@ -1,0 +1,7 @@
+{
+  "name": "video-workbench-runtime",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test codex-bridge.test.mjs" },
+  "dependencies": { "smol-toml": "^1.4.2" }
+}

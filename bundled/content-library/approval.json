@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "actor": "user-request-2026-10-29",
+  "basis": "用户明确要求现有视频全部确认可发布，并随仓库部署自动加载。授权范围仅限本清单列明来源、sourceId、SHA-256与字节数的固定视频版本。",
+  "approvedAt": "2026-10-28T14:34:16Z",
+  "items": [
+    {
+      "source": "automatic",
+      "sourceId": "archify-v2-20260908",
+      "sha256": "8d9893fac8f78e7b03a8bad807c9d01bdd62d51d46293edc6138dfa0c2dcf0df",
+      "bytes": 13698106
+    },
+    {
+      "source": "automatic",
+      "sourceId": "compare-20261016-145550-294851-agent-a",
+      "sha256": "e350baf9f8a45c08b89198bfd6e2f6f86f70c52fa76e7ed42a610b66f5ba9a6f",
+      "bytes": 13412346
+    },
+    {
+      "source": "automatic",
+      "sourceId": "compare-20261016-145550-294851-agent-b",
+      "sha256": "10625561bb5eeb690a57117d6a82459e1cac395f5727dd8c87424608037325e7",
+      "bytes": 9200847
+    },
+    {
+      "source": "automatic",
+      "sourceId": "compare-20261016-145550-294851-agent-c",
+      "sha256": "43052f003b840edbd6229b72f1b4db8ab3722cffb98a6e7f09bb677f4195e175",
+      "bytes": 8471018
+    },
+    {
+      "source": "automatic",
+      "sourceId": "compare-20261016-164127-846906-agent-a",
+      "sha256": "a3f56c4897f59c19484cee46e5a9319cd066458b6a6a8d668a203fea763868a9",
+      "bytes": 8292699
+    },
+    {
+      "source": "automatic",
+      "sourceId": "compare-20261016-164127-846906-agent-b",
+      "sha256": "9611d71994ce2b92c82e41216286336dd7640199b97124ce1b8344dceb687311",
+      "bytes": 15274013
+    },
+    {
+      "source": "automatic",
+      "sourceId": "compare-20261016-164127-846906-agent-c",
+      "sha256": "0de4943c8a098bf636a196eabf2b5cd51a3dfb701484b4fa0d5c76bb577a8c5b",
+      "bytes": 12429143
+    },
+    {
+      "source": "automatic",
+      "sourceId": "edit-20260909-172613-459612",
+      "sha256": "c5dd7c6bb52b29d319ea8cb4a415b3038cbea3a983c7168f0a95e41411e5ba8f",
+      "bytes": 6484636
+    },
+    {
+      "source": "automatic",
+      "sourceId": "narrative-v2-discovery-20261015",
+      "sha256": "724b5c7788bea4822f4be0e30861941e636415984231dece95cf3ba6d17d64d4",
+      "bytes": 11913075
+    },
+    {
+      "source": "automatic",
+      "sourceId": "narrative-v2-rapid-20261015",
+      "sha256": "5d2f860312f5e8a6fb2d28ff3e9a2fc0cf3b12e99149eccdf7a46f7304d354a1",
+      "bytes": 12818868
+    },
+    {
+      "source": "automatic",
+      "sourceId": "narrative-v2-walkthrough-20261015",
+      "sha256": "89e65bd7871345add188c6a3f76057736843b50383af955f04765b6aa518a3db",
+      "bytes": 9549031
+    },
+    {
+      "source": "automatic",
+      "sourceId": "run-20260909-174936-191485",
+      "sha256": "8945cec2513fb4a90914808638327db350c2f51e8d6e0d3d389c538b75d666f4",
+      "bytes": 7188795
+    },
+    {
+      "source": "automatic",
+      "sourceId": "style-discovery-20261015",
+      "sha256": "55b6997fc97c8a4e68128d96c8218ccad81856a2da3d399b95c949ea370a7668",
+      "bytes": 6777704
+    },
+    {
+      "source": "automatic",
+      "sourceId": "style-rapid-20261015",
+      "sha256": "8bcfa357fb32a6231a24ed255a36191d108886e7ef223174fa2186ef9a84a90a",
+      "bytes": 6801921
+    },
+    {
+      "source": "automatic",
+      "sourceId": "style-walkthrough-20261015",
+      "sha256": "a89f0334e149974feacadf02d54922fa1c5de8aeaaff54442acf0678ec816aeb",
+      "bytes": 6122666
+    },
+    {
+      "source": "automatic",
+      "sourceId": "voice-natural-discovery-20261015",
+      "sha256": "cf3d8c603565b41389562a83db9a6461580c3258d82e573b2e94486d07a7ce06",
+      "bytes": 7978250
+    },
+    {
+      "source": "automatic",
+      "sourceId": "voice-natural-rapid-20261015",
+      "sha256": "93ca9b6a0c42d26345964a61b05b9617eac4aa7d9064c503ff75e190eb1787da",
+      "bytes": 8628404
+    },
+    {
+      "source": "automatic",
+      "sourceId": "voice-natural-walkthrough-20261015",
+      "sha256": "480bd1e81f7d8385b6948e8a3e971f5531096dfcfb1ccc4d748048ba373d0fe5",
+      "bytes": 6746263
+    },
+    {
+      "source": "creation",
+      "sourceId": "11/assets/productionPreview/shortReview.mp4",
+      "sha256": "f3d5211ee02ca61ea5bf6677ff39ac99e761b6e713f831eecbf7261fc1b5e9de",
+      "bytes": 130990
+    },
+    {
+      "source": "creation",
+      "sourceId": "11/assets/productionPreview/storyboardReview.mp4",
+      "sha256": "667b5870c96f62a93959283d27acea083c3624ce64759c03630748ec7dba12bf",
+      "bytes": 2016566
+    },
+    {
+      "source": "editing",
+      "sourceId": "0d08b1ad-723f-43f5-9c58-999c7ea06ff2",
+      "sha256": "0fc5b1ff91e62b59876d56e15758cd6b165e31ce6f10bbb7ee7ade01fcd1971f",
+      "bytes": 18500925
+    },
+    {
+      "source": "editing",
+      "sourceId": "5d20d800-2aa2-4ca2-af08-f67c9c9482a1",
+      "sha256": "ca5637ed5bf77bf0d7301007aa12ff6a56376f1d7b90743a11d6a5a3b8df00bf",
+      "bytes": 15342072
+    },
+    {
+      "source": "editing",
+      "sourceId": "studio:v5-01",
+      "sha256": "296b13ded7d3d9c0759424a40f7bc393ce2e175383d8ed8058673e407f9ff290",
+      "bytes": 20578113
+    },
+    {
+      "source": "editing",
+      "sourceId": "studio:v5-02",
+      "sha256": "8d35599658547f2920c2234ba6756ecec597bb55bacbf5e0c8f1a21c69c24501",
+      "bytes": 15273016
+    },
+    {
+      "source": "editing",
+      "sourceId": "studio:v5-03",
+      "sha256": "d9a82c12116632cdb6a913a405291d41a135f5cf06422ccae92677d3ed8f63b4",
+      "bytes": 14024783
+    },
+    {
+      "source": "editing",
+      "sourceId": "studio:v5-04",
+      "sha256": "138ee40f1e43cc238990d6037464885afd4b091882aa4c26c18cb53925081efb",
+      "bytes": 11624783
+    },
+    {
+      "source": "editing",
+      "sourceId": "studio:v5-05",
+      "sha256": "9eb25d72224e55d04cffb1084037b87c33b8625adabaf90ff77a1570467d8d7b",
+      "bytes": 18772595
+    },
+    {
+      "source": "editing",
+      "sourceId": "studio:v5-06",
+      "sha256": "9106cb7657640217595a9afb27b7c0739056c2088a8a7a08453b1e64fd718751",
+      "bytes": 15573662
+    }
+  ]
+}

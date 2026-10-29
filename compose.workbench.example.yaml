@@ -1,67 +1,37 @@
-# Local three-route workbench. Docker Compose 2.24.4+ is required for !override.
-# Existing host engines only. For a fresh install use compose.signal.yaml;
+# Content generation: automatic hot topics and the unified video studio.
+# Docker Compose 2.24.4+ is required for !override.
+# Existing host automatic-hot-topic engine only. For a fresh install use compose.signal.yaml;
 # see docs/Windows本机部署.md. Do not combine the two overlays.
+# Merge and validate without printing credentials:
+# docker compose --env-file .env.docker -f compose.yaml -f compose.workbench.example.yaml config --quiet
+# Start or update the web service:
+# docker compose --env-file .env.docker -f compose.yaml -f compose.workbench.example.yaml up -d --build web
+# VIDEO_RELAY_* values must be in the shell or --env-file used above.
 services:
   web:
     ports: !override
       - "127.0.0.1:3100:3100"
     environment:
-      AI_SIGNAL_STUDIO_URL: http://127.0.0.1:8892/
-      AI_SIGNAL_STUDIO_HEALTH_URL: http://host.docker.internal:8892/api/health
-      VIDEO_EDITING_URL: http://127.0.0.1:5199/
-      VIDEO_EDITING_HEALTH_URL: http://host.docker.internal:5199/
-      AIGC_CREATION_URL: http://127.0.0.1:13000/
-      AIGC_CREATION_HEALTH_URL: http://host.docker.internal:13000/
+      AI_SIGNAL_STUDIO_URL: "${AI_SIGNAL_STUDIO_URL:-http://127.0.0.1:8892/}"
+      AI_SIGNAL_STUDIO_HEALTH_URL: "${AI_SIGNAL_STUDIO_HEALTH_URL:-http://host.docker.internal:8892/api/health}"
       CONTENT_LIBRARY_DIR: /app/data/content-library
       CONTENT_LIBRARY_SIGNAL_ROOT: /sources/ai-signal
-      CONTENT_LIBRARY_EDITING_ROOT: /sources/openchatcut
-      CONTENT_LIBRARY_CREATION_ROOT: /sources/toonflow
+      VIDEO_STUDIO_DATA_DIR: /app/data/video-studio
+      VIDEO_RELAY_BASE_URL: "${VIDEO_RELAY_BASE_URL:-https://cs.intellidriven.cn/v1}"
+      VIDEO_RELAY_API_KEY: "${VIDEO_RELAY_API_KEY:-}"
+      VIDEO_RELAY_MODEL: "${VIDEO_RELAY_MODEL:-gpt-6-astra}"
+      VIDEO_MATERIALS_DIR: /sources/video-materials
     volumes:
       - type: bind
-        source: "${AI_SIGNAL_HOST_DIR:?Set AI_SIGNAL_HOST_DIR to the AI Signal Studio data directory}/runs"
-        target: /sources/ai-signal/runs
+        source: "${VIDEO_MATERIALS_HOST_DIR:-./sample-material}"
+        target: /sources/video-materials
         read_only: true
         bind:
           create_host_path: false
-      - type: bind
-        source: "${AI_SIGNAL_HOST_DIR:?Set AI_SIGNAL_HOST_DIR to the AI Signal Studio data directory}/data/library-review.json"
-        target: /sources/ai-signal/data/library-review.json
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: "${AI_SIGNAL_HOST_DIR:?Set AI_SIGNAL_HOST_DIR to the AI Signal Studio data directory}/data/comparisons"
-        target: /sources/ai-signal/data/comparisons
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: "${OPENCHATCUT_PROFILE_DIR:?Set OPENCHATCUT_PROFILE_DIR to the OpenChatCut profile directory}/project-store-v1.sqlite3"
-        target: /sources/openchatcut/project-store-v1.sqlite3
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: "${OPENCHATCUT_PROFILE_DIR:?Set OPENCHATCUT_PROFILE_DIR to the OpenChatCut profile directory}/project-store-v1.sqlite3-wal"
-        target: /sources/openchatcut/project-store-v1.sqlite3-wal
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: "${OPENCHATCUT_PROFILE_DIR:?Set OPENCHATCUT_PROFILE_DIR to the OpenChatCut profile directory}/project-store-v1.sqlite3-shm"
-        target: /sources/openchatcut/project-store-v1.sqlite3-shm
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: "${OPENCHATCUT_PROFILE_DIR:?Set OPENCHATCUT_PROFILE_DIR to the OpenChatCut profile directory}/media/uploads"
-        target: /sources/openchatcut/media/uploads
-        read_only: true
-        bind:
-          create_host_path: false
-      - type: bind
-        source: "${TOONFLOW_WORKSPACE_DIR:?Set TOONFLOW_WORKSPACE_DIR to the Toonflow workspaces directory}"
-        target: /sources/toonflow
-        read_only: true
-        bind:
-          create_host_path: false
+      # Optional: mount the automatic-hot-topic service's existing data.
+      # - type: bind
+      #   source: "${AI_SIGNAL_HOST_DIR:?Set AI_SIGNAL_HOST_DIR}"
+      #   target: /sources/ai-signal
+      #   read_only: true
+      #   bind:
+      #     create_host_path: false

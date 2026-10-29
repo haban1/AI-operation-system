@@ -2,6 +2,8 @@
 
 这套部署启动运营系统 Web、RAG 和 AI Signal Studio。Signal 引擎源码位于 `engines/ai-signal-studio/`，不依赖另一台电脑的源码、历史成片或仓库同级的 `platforms/` 启动脚本。
 
+仓库现已携带 28 个固定视频及审批证明，本机图片不随此包分发。新部署重建公共素材库与按来源查看既有作品，先按 [随仓库部署现有成片](DEPLOY_BUNDLED_MEDIA.md) 验收数量、摘要和审批状态；本页继续说明 Signal 引擎及其新任务配置。
+
 浏览器登录运营系统后，通过 `/integrations/ai-signal/` 使用“自动化成片”。Signal 容器只在 Compose 内网监听 `8892`，不映射宿主端口；浏览器入口由 Web 管理员会话保护。Signal 完成的作品通过只读共享卷进入素材库的待确认队列，人工确认入库后才供发布选择，发布仍沿用预检、审核和最终授权流程。
 
 随仓引擎包含 **AI Signal Studio**。OpenChatCut 和 Toonflow 是可选外部服务，没有安装它们也能启动本部署；可通过新的 `compose.outputs.local.yaml` 接入它们的产物目录，详见 [产物确认入库](产物确认入库.md)。配置挂载不会安装应用或赋予外部模型生成能力。旧的三台本机服务接入方式保留为 [历史记录](视频创作工作台本地接入.md)，不再作为新部署入口。
@@ -41,7 +43,7 @@ Windows 可直接双击 `start-workbench.cmd`，停止用 `stop-workbench.cmd`�
 
 启动器要求 `docker` 在 PATH。macOS 若未启用 Docker Desktop 的命令行工具，可用下方日常操作中的手动 Compose 命令，将 `docker` 替换为 `/Applications/Docker.app/Contents/Resources/bin/docker`。不要叠加旧的 `compose.local.yaml` 或 `compose.workbench.example.yaml`，它们会引入另一台电脑的来源挂载和浏览器地址。
 
-打开 `http://localhost:3100/#studio`，使用刚设置的管理员凭据登录，再进入“自动化成片”。首次启动没有历史作品，成片库为空是正常状态。基础 RAG 配置仍需单独准备知识模型与正式知识版本；没有可用知识库不代表 Signal 安装失败。
+打开 `http://localhost:3100/#studio`，使用刚设置的管理员凭据登录。公共素材库应按随仓库清单初始化现有媒体，自动热点成片页按来源显示已交付的热点视频；Signal 原生的生成任务、研究和评审历史另存于其运行卷，新机器没有这些过程记录属于正常情况。基础 RAG 配置仍需单独准备知识模型与正式知识版本；没有可用知识库不代表 Signal 安装失败。
 
 默认只绑定本机 `127.0.0.1:3100`。需要服务器或局域网访问时，由部署维护人员为 Web 配置受保护的 HTTPS 入口并更新允许的来源；保持 Signal 不暴露宿主端口。不要把 `127.0.0.1:8892` 当作远程用户浏览器的入口。
 

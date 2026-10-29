@@ -1,0 +1,40 @@
+{
+  "documentary-montage-production": {
+    "url": "https://raw.githubusercontent.com/calesthio/generative-media-skills/main/skills/production/content-formats/documentary-montage-production/SKILL.md",
+    "sha256": "afd36a061781589ee6e1e6e5284c44aa9d912eb4fa675ee7522fd0510e0d41e4"
+  },
+  "cinematic-trailer-production": {
+    "url": "https://raw.githubusercontent.com/calesthio/generative-media-skills/main/skills/production/content-formats/cinematic-trailer-production/SKILL.md",
+    "sha256": "3133635494fe183440827c9725df38705b5f15b0b72811a82ba4607ccfbd710b"
+  },
+  "brand-launch-film-production": {
+    "url": "https://raw.githubusercontent.com/calesthio/generative-media-skills/main/skills/production/content-formats/brand-launch-film-production/SKILL.md",
+    "sha256": "1456903aa27a2fdbb589d3ab034d762cd7b6d69b1abf3f87b5d0c5068d04882d"
+  },
+  "social-short-production": {
+    "url": "https://raw.githubusercontent.com/calesthio/generative-media-skills/main/skills/production/content-formats/social-short-production/SKILL.md",
+    "sha256": "ab74fa1593456bbf69ff60530cfab13bddbd87976dce5b3a7332a9b15ef2ae3c"
+  },
+  "editing-montage": {
+    "url": "https://raw.githubusercontent.com/calesthio/generative-media-skills/main/skills/production/post-production/editing-montage/SKILL.md",
+    "sha256": "c1cc77a249f5607d11ab4b562a3982dfc61583a5f79dfbcc3755550fcc5cfe1a"
+  },
+  "beat-sync-editing": {
+    "url": "https://raw.githubusercontent.com/iart-ai/motion-design-skills/main/skills/beat-sync-editing/SKILL.md",
+    "sha256": "92118cd6a5821974aa084a9838f263b46ee65fa1f48aaded8e676861f8c2de28"
+  },
+  "motion-art-direction": {
+    "url": "https://raw.githubusercontent.com/iart-ai/motion-design-skills/main/skills/motion-art-direction/SKILL.md",
+    "sha256": "0337edf7c93b8e130bd7658e3d43f546c46f333cacbb2bb970613d65d340c5de"
+  },
+  "animation-principles": {
+    "url": "https://raw.githubusercontent.com/iart-ai/motion-design-skills/main/skills/animation-principles/SKILL.md",
+    "sha256": "21637766f8ae115f427ab086ec903106b3dfa5eac7fdf05d9926e4b557bff892"
+  },
+  "multi-clips-to-reels": {
+    "provider": "ChatCut official skill catalog",
+    "id": "11111111-1240-4000-8000-000000000012",
+    "url": "https://chatcut.io/skills",
+    "instruction": "Read canonical full Skill through ChatCut catalog before use. Not a local replacement."
+  }
+}

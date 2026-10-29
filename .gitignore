@@ -1,5 +1,5 @@
 # Dependencies
-node_modules/
+node_modules
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -93,3 +93,19 @@ UNTRACKED_FILES_*.txt
 # Machine-specific workbench source mounts
 compose.local.yaml
 compose.outputs.local.yaml
+
+# Deployable video-studio UI and bridge sources; private data stays ignored.
+!engines/video-studio/dist/
+!engines/video-studio/dist/**
+!engines/video-studio/runtime/
+engines/video-studio/runtime/*
+!engines/video-studio/runtime/*.mjs
+!engines/video-studio/runtime/*.md
+!engines/video-studio/runtime/package.json
+!engines/video-studio/runtime/package-lock.json
+!engines/video-studio/runtime/test/
+!engines/video-studio/runtime/test/**
+engines/video-studio/runtime/node_modules/
+engines/video-studio/runtime/private/
+engines/video-studio/runtime/data/
+engines/video-studio/runtime/codex-home/

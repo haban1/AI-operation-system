@@ -2,3 +2,5 @@ start-workbench.cmd text eol=crlf
 stop-workbench.cmd text eol=crlf
 check-workbench.cmd text eol=crlf
 scripts/workbench.mjs text eol=lf
+bundled/content-library/*.json text eol=lf
+bundled/content-library/media/** -text

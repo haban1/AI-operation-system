@@ -24,6 +24,9 @@ import { getAiSignalIntegration } from './services/ai-signal-integration.js';
 import { createAiSignalProxy, isAiSignalProxyPath } from './services/ai-signal-proxy.js';
 import { getCreativeWorkbenchStatus } from './services/creative-workbench.js';
 import { createContentLibrary, ContentLibraryError } from './services/content-library.js';
+import { createContentLibrarySeedLoader } from './services/content-library-seeds.js';
+import { createStudioOutputLibrary, createStudioOutputSource } from './services/content-library-studio.js';
+import { createVideoStudioProxy } from './services/video-studio-proxy.js';
 import { enqueueMiniProgramReply, startMiniProgramCallbackWorker, stopMiniProgramCallbackWorker } from './services/mini-program-callback.js';
 import { MINI_PROGRAM_MESSAGE_PATH, cleanupExpiredMiniProgramNonces, startMiniProgramNonceCleanupWorker, stopMiniProgramNonceCleanupWorker } from './services/mini-program-auth.js';
 import { startMiniProgramProcessingWorker, stopMiniProgramProcessingWorker } from './services/mini-program-processing.js';
@@ -3624,6 +3627,65 @@ function stopConversationRecoverySchedule() {
 }
 
 const contentLibrary = createContentLibrary(config);
+const contentLibrarySeedReady = createContentLibrarySeedLoader({ library: contentLibrary, root: config.contentLibrarySeedRoot, enabled: config.contentLibrarySeedEnabled }).load().then(result => {
+  if (result.items.length) console.log(`[content-library seeds] imported=${result.imported} approved=${result.approved} retained=${result.retained} failed=${result.failed}`);
+  for (const warning of result.warnings) console.warn(`[content-library seeds] ${warning}`);
+  return result;
+}).catch(() => { console.warn('[content-library seeds] 预置素材初始化失败，已保留原素材与审核记录'); return { failed: true }; });
+let embeddedVideoStudio;
+const videoStudioUpstreamUrl = process.env.VIDEO_STUDIO_UPSTREAM_URL || '';
+const videoStudioSource = videoStudioUpstreamUrl ? createStudioOutputSource({ upstreamUrl: videoStudioUpstreamUrl }) : {
+  async list({ actor }) { return (await getEmbeddedVideoStudio()).listOutputs({ actor }); },
+  async open(item) {
+    const output = await (await getEmbeddedVideoStudio()).resolveOutput(item.id);
+    if (!output || output.sha256 !== item.sha256 || output.bytes !== item.bytes) {
+      throw new ContentLibraryError(409, 'CONTENT_FILE_CHANGED', '成片在确认期间已改变，请刷新后重新确认');
+    }
+    return { stream: fs.createReadStream(output.absolutePath || output.filePath, { flags: fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW }), contentLength: output.bytes };
+  },
+};
+const studioOutputLibrary = createStudioOutputLibrary({ library: contentLibrary, source: videoStudioSource });
+async function getEmbeddedVideoStudio() {
+  if (!embeddedVideoStudio) {
+    const { createVideoStudio } = await import('../engines/video-studio/server.mjs');
+    embeddedVideoStudio = createVideoStudio({
+      stateDir: process.env.VIDEO_STUDIO_DATA_DIR || path.join(ROOT, 'runtime', 'video-studio'),
+      automaticUrl: '/integrations/ai-signal/',
+      publishingLibrary: studioOutputLibrary.publishingLibrary,
+    });
+  }
+  return embeddedVideoStudio;
+}
+const proxyVideoStudio = createVideoStudioProxy({ upstreamUrl: videoStudioUpstreamUrl, authorize: requireAdminSession, allowedOrigins: config.allowedOrigins });
+async function studioOutputsRequest(req, res, pathname, session) {
+  if (!['/api/studio/outputs', '/api/studio/materials', '/api/studio/outputs/confirm'].includes(pathname)) return false;
+  try {
+    await contentLibrarySeedReady;
+    if (req.method === 'GET' && pathname === '/api/studio/outputs') { ok(res, await studioOutputLibrary.list({ actor: session.sub })); return true; }
+    if (req.method === 'GET' && pathname === '/api/studio/materials') { ok(res, await studioOutputLibrary.materials({ actor: session.sub })); return true; }
+    if (req.method === 'POST' && pathname === '/api/studio/outputs/confirm') {
+      const input = await body(req);
+      if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => key !== 'ids')) {
+        fail(res, 400, '确认请求只接受成片 ids，不接受文件路径或来源地址', null, 'STUDIO_CONFIRM_INVALID'); return true;
+      }
+      ok(res, await studioOutputLibrary.confirmBatch(input.ids, session.sub)); return true;
+    }
+    fail(res, 405, '此成片接口不支持该请求方法', null, 'METHOD_NOT_ALLOWED'); return true;
+  } catch (error) {
+    if (!(error instanceof ContentLibraryError)) throw error;
+    fail(res, error.statusCode, error.message, null, error.code); return true;
+  }
+}
+async function videoStudioRequest(req, res) {
+  const session = requireAdminSession(req, res);
+  if (!session) return;
+  await contentLibrarySeedReady;
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const localPath = url.pathname.slice('/video-workbench'.length);
+  if (await studioOutputsRequest(req, res, localPath, session)) return;
+  if (videoStudioUpstreamUrl) return proxyVideoStudio(req, res, url);
+  return (await getEmbeddedVideoStudio()).handle(req, res, { mountPath: '/video-workbench', actor: session.sub });
+}
 const proxyAiSignal = createAiSignalProxy({
   upstreamUrl: config.aiSignalStudioInternalUrl,
   authorize: requireAdminSession,
@@ -3656,13 +3718,24 @@ async function api(req, res, url) {
   if (pathname.startsWith('/api/agent/')) {
     if (!requireAgentToken(req, res)) return;
   } else if (!requireAdminSession(req, res)) return;
+  if (['/api/studio/outputs', '/api/studio/materials', '/api/studio/outputs/confirm'].includes(pathname)) {
+    const session = requireAdminSession(req, res);
+    if (!session) return;
+    return await studioOutputsRequest(req, res, pathname, session);
+  }
   if (req.method === 'GET' && pathname === '/api/integrations/ai-signal') {
     return ok(res, { data: await getAiSignalIntegration({ url: config.aiSignalStudioUrl, healthUrl: config.aiSignalStudioHealthUrl }) });
   }
   if (req.method === 'GET' && pathname === '/api/creative-workbench/status') return ok(res, await getCreativeWorkbenchStatus(config));
   if (pathname === '/api/content-library' || pathname.startsWith('/api/content-library/')) {
     try {
-      if (req.method === 'GET' && pathname === '/api/content-library') return ok(res, await contentLibrary.list());
+      await contentLibrarySeedReady;
+      if (req.method === 'GET' && pathname === '/api/content-library') {
+        const session = requireAdminSession(req, res);
+        if (!session) return;
+        const { warnings } = await studioOutputLibrary.sync({ actor: session.sub });
+        return ok(res, { ...await contentLibrary.list(), ...(warnings.length ? { warnings } : {}) });
+      }
       if (req.method === 'POST' && pathname === '/api/content-library/receive') {
         try {
           const allowed = ['source', 'filename', 'title', 'artifactType'];
@@ -5826,6 +5899,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'OPTIONS') return send(res, 204, '');
     if (isAiSignalProxyPath(url.pathname)) return await proxyAiSignal(req, res, url);
+    if (url.pathname === '/video-workbench' || url.pathname.startsWith('/video-workbench/')) {
+      if (url.pathname === '/video-workbench') { res.writeHead(302, { Location: '/video-workbench/' }); return res.end(); }
+      return await videoStudioRequest(req, res);
+    }
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     return staticFile(req, res, url.pathname);
   } catch (error) {

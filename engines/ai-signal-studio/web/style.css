@@ -68,3 +68,12 @@ input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px soli
 
 .supervisor-summary{padding:18px;border:1px solid #35505a;border-radius:8px;color:#c4d4dc;line-height:1.8}
 #comparison-actions{margin:22px 0;flex-wrap:wrap}
+
+/* The main application already supplies navigation; keep creation controls wide. */
+.system-embedded aside{position:sticky;top:0;inset:auto;width:100%;padding:10px 24px;flex-direction:row;align-items:center;gap:24px;z-index:10;border-right:0;border-bottom:1px solid var(--line)}
+.system-embedded .logo{font-size:13px;letter-spacing:1px;white-space:nowrap}.system-embedded .logo small,.system-embedded .workspace,.system-embedded .aside-note{display:none}
+.system-embedded .mark{font-size:22px}.system-embedded nav{flex-direction:row;gap:6px;flex-wrap:wrap}.system-embedded nav button{padding:9px 14px;white-space:nowrap}
+.system-embedded main{margin-left:0;padding:20px 26px 36px;max-width:none;min-width:0}.system-embedded main>header{margin-bottom:14px}.system-embedded h1{font-size:24px;margin:2px 0 0}
+.system-embedded main>.workflow-link,.system-embedded main>header .eyebrow{display:none}.system-embedded .steps{padding:10px 0;gap:16px;flex-wrap:wrap}
+.system-embedded .tab{margin-top:20px}.system-embedded .topic-layout{grid-template-columns:minmax(0,1fr) minmax(280px,340px)}.system-embedded .pick-panel{padding:22px}
+@media(max-width:760px){.system-embedded aside{padding:8px 16px;gap:10px;flex-wrap:wrap}.system-embedded main{padding:16px}.system-embedded .topic-layout{grid-template-columns:1fr}.system-embedded nav button{padding:7px 10px}.system-embedded .steps{gap:8px;font-size:11px}}

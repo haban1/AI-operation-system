@@ -4,9 +4,11 @@
 
 GitHub 源码仓库：[AI-operation-system](https://github.com/haban1/AI-operation-system)。当前源码快照包含天河、RAG、8080 微信机器人，以及朋友圈定时发布和 AI 内容计划，详见 [GitHub 源码仓库说明](docs/GitHub源码仓库说明.md)。运行数据、真实配置和模型文件需在本机准备。
 
+现有 28 个视频以真实文件、清单和固定字节审批证明随仓库交付，新机器默认初始化到公共素材库，无需开发者本机路径或原数据库。本机的 16 张图片不随此交付包分发。新部署步骤、精确摘要验收与审批边界见 [随仓库部署现有成片](docs/DEPLOY_BUNDLED_MEDIA.md)。
+
 Windows 本机部署完整内容工作台：先看 [Windows 本机部署](docs/Windows本机部署.md)，准备 Node.js 24+ 和 Docker Desktop 的 WSL2 / Linux containers 后，运行 `start-workbench.cmd`，检查用 `check-workbench.cmd`，关闭用 `stop-workbench.cmd`。这组入口包含主系统、RAG 与仓库自带的 Signal 引擎，不依赖开发者电脑上的其他源码。配置、持久化和验收细节见 [AI Signal Studio 部署](docs/Signal-Studio部署.md)。OpenChatCut 与 Toonflow 仍是可选外部服务。
 
-三条创作路径的输出统一进入“待确认”，人工确认后才进入素材库并供发布选择。支持目录自动发现和浏览器“接收产物”上传；Windows 或跨机交接无需提供容器文件路径。操作与可选目录配置见 [产物确认入库](docs/产物确认入库.md)。
+自动热点与混剪的输出自动同步到公共素材库，新作品默认“待确认”，在发布时明确确认后再沿用预检与审核。随仓库交付的既有成片按固定字节审批证明恢复已确认状态，未来输出不继承该审批。支持目录自动发现和浏览器“接收产物”上传；Windows 或跨机交接无需提供容器文件路径。操作与可选目录配置见 [产物确认入库](docs/产物确认入库.md)。
 
 此前的 Codeup 仓库：[zhihuiqudong-AI](https://codeup.aliyun.com/68a53af7a72fbe627240d5b0/zhihuiqudong-AI)，首次上传记录见 [Codeup 源码仓库说明](docs/Codeup源码仓库说明.md)。
 

@@ -1,0 +1,19 @@
+{
+  "enabled_skills": [
+    "beat-sync-editing",
+    "motion-art-direction",
+    "animation-principles",
+    "multi-clips-to-reels"
+  ],
+  "disabled_skills": [],
+  "modules": {
+    "descriptive_text": true,
+    "music": true,
+    "voiceover": false,
+    "logo": false,
+    "picture_in_picture": false,
+    "decorative_transitions": false
+  },
+  "natural_language_overrides": true,
+  "note": "配置供下一次剪辑执行读取；修改文件不会自动修改现有 ChatCut 时间线。"
+}

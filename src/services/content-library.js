@@ -142,8 +142,12 @@ export function createContentLibrary(config, {
   function publicItem(item) {
     return { id: item.id, source: item.source, sourceId: item.sourceId, title: item.title, body: item.body, createdAt: item.createdAt,
       mediaType: item.mediaType, mimeType: item.mimeType, sizeBytes: item.sizeBytes, sha256: item.sha256,
+      durationSeconds: Number.isFinite(item.meta?.durationSeconds) && item.meta.durationSeconds > 0 ? item.meta.durationSeconds : null,
+      width: Number.isFinite(item.meta?.width) && item.meta.width > 0 ? item.meta.width : null,
+      height: Number.isFinite(item.meta?.height) && item.meta.height > 0 ? item.meta.height : null,
       reviewStatus: item.reviewStatus, sourceStatus: boundedText(item.sourceStatus, 200), artifactType: item.artifactType,
       receivedAt: item.receivedAt || null, receivedBy: item.receivedBy || null,
+      ...(item.seedApproval ? { seedApproval: item.seedApproval } : {}),
       ...admissionFields(item), mediaUrl: `/api/content-library/${item.id}/media` };
   }
   function snapshot() {
@@ -223,7 +227,8 @@ export function createContentLibrary(config, {
       const filename = `${sha256}${extension}`;
       const destination = path.join(libraryRoot, 'media', filename);
       const id = crypto.createHash('sha256').update(`${entry.source}\0${entry.sourceId}\0${sha256}`).digest('hex').slice(0, 32);
-      const admission = admissionFields(items.find(item => item.id === id));
+      const previousItem = items.find(item => item.id === id);
+      const admission = admissionFields(previousItem);
       if (items.length >= 1000 && !items.some(item => item.id === id)) throw libraryError('CONTENT_LIBRARY_FULL', '成片库索引已达到容量上限');
       // Content-addressed copies are immutable to callers; a later source edit creates a new item.
       await fsp.rename(temporary, destination); temporary = null;
@@ -232,6 +237,7 @@ export function createContentLibrary(config, {
         mediaType: metadata.type, mimeType: formats[extension][1], sizeBytes: copied, sha256, filename, sourceFingerprint: fingerprint,
         reviewStatus: entry.reviewStatus === 'selected' ? 'selected' : 'unreviewed', sourceStatus: boundedText(entry.sourceStatus, 200),
         artifactType: ['final_video', 'video_clip', 'image'].includes(entry.artifactType) ? entry.artifactType : metadata.type === 'image' ? 'image' : 'final_video', ...admission,
+        ...(previousItem?.seedApproval ? { seedApproval: previousItem.seedApproval } : {}),
         meta: { ...metadata, name: path.basename(sourcePath), size: copied, sha256 } };
     } finally { await input.close(); if (temporary) await fsp.rm(temporary, { force: true }); }
   }
@@ -276,7 +282,7 @@ export function createContentLibrary(config, {
     inFlight = serialize(() => !force && lastCheck && Date.now() - lastCheck < cacheMs ? snapshot() : synchronize()).finally(() => { inFlight = null; });
     return inFlight;
   }
-  async function receive(stream, params, actor, { contentLength } = {}) {
+  async function receive(stream, params, actor, { contentLength, sourceId, expectedSha256, expectedBytes } = {}) {
     const invalid = () => libraryError('CONTENT_RECEIVE_INVALID', '接收参数无效，请选择来源并上传有效的媒体文件名', 400);
     if (!params || typeof params !== 'object' || Array.isArray(params)
       || Object.keys(params).some(key => !['source', 'filename', 'title', 'artifactType'].includes(key))) throw invalid();
@@ -291,6 +297,10 @@ export function createContentLibrary(config, {
     if (!['final_video', 'video_clip', 'image'].includes(artifactType)
       || (artifactType === 'image') !== (formats[extension][0] === 'image')) throw invalid();
     if (typeof actor !== 'string' || !actor.trim() || actor.length > 200) throw libraryError('CONTENT_RECEIVE_ACTOR_REQUIRED', '接收产物需要有效的管理员身份', 401);
+    // These options are server-to-server provenance, never HTTP upload fields.
+    if ((sourceId !== undefined && (typeof sourceId !== 'string' || !sourceId.trim() || sourceId.length > 512))
+      || (expectedSha256 !== undefined && !/^[a-f0-9]{64}$/.test(expectedSha256))
+      || (expectedBytes !== undefined && (!Number.isSafeInteger(expectedBytes) || expectedBytes <= 0))) throw invalid();
     let expected;
     if (contentLength !== undefined) {
       if (!/^\d+$/.test(String(contentLength)) || !Number.isSafeInteger(Number(contentLength))) throw invalid();
@@ -308,10 +318,12 @@ export function createContentLibrary(config, {
     try {
       output = await fsp.open(filePath, 'wx', 0o600);
       let received = 0;
+      const receivingHash = expectedSha256 ? crypto.createHash('sha256') : null;
       // Keep the HTTP request alive on validation failure so the caller receives
       // a useful 4xx response, while writing chunks without buffering the body.
       for await (const chunk of stream.iterator({ destroyOnReturn: false })) {
         const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        receivingHash?.update(bytes);
         received += bytes.length;
         if (received > maxFileBytes) throw libraryError('CONTENT_MEDIA_TOO_LARGE', '媒体文件超过大小限制', 413);
         let offset = 0;
@@ -322,6 +334,10 @@ export function createContentLibrary(config, {
         }
       }
       if (!received || (expected !== undefined && received !== expected)) throw libraryError('CONTENT_MEDIA_INVALID', '媒体文件为空或传输不完整', 400);
+      if ((expectedBytes !== undefined && received !== expectedBytes)
+        || (receivingHash && receivingHash.digest('hex') !== expectedSha256)) {
+        throw libraryError('CONTENT_FILE_CHANGED', '成片在确认期间已改变，请刷新后重新确认');
+      }
       await output.sync(); await output.close(); output = null;
       // Uploads do not hold the mutation queue while waiting for network bytes.
       return await serialize(async () => {
@@ -329,15 +345,17 @@ export function createContentLibrary(config, {
         let imported;
         try {
           try {
-            imported = await importEntry({ source, sourceId: `received-${crypto.randomUUID()}`, rootPath: stagingRoot, filePath,
+            imported = await importEntry({ source, sourceId: sourceId || `received-${crypto.randomUUID()}`, rootPath: stagingRoot, filePath,
               title: params.title?.trim() || filename, createdAt: receivedAt, sourceStatus: '接收产物 · 待确认', artifactType },
             catalog.items, Date.now() + Math.max(maxSyncMs, 60_000), stagingRoot);
           } catch (error) {
             if (error instanceof ContentLibraryError) throw error;
             throw libraryError('CONTENT_MEDIA_INVALID', '文件不是有效的图片或视频，或媒体检测未完成', 400);
           }
-          imported = { ...imported, receivedAt, receivedBy: actor, meta: { ...imported.meta, name: filename } };
-          await save({ ...catalog, items: [...catalog.items, imported] });
+          const previous = catalog.items.find(item => item.id === imported.id);
+          imported = { ...imported, ...(previous ? { body: previous.body, createdAt: previous.createdAt, reviewStatus: previous.reviewStatus, sourceStatus: previous.sourceStatus } : {}),
+            receivedAt: previous?.receivedAt || receivedAt, receivedBy: previous?.receivedBy || actor, meta: { ...imported.meta, name: filename } };
+          await save({ ...catalog, items: previous ? catalog.items.map(item => item.id === imported.id ? imported : item) : [...catalog.items, imported] });
           return { item: publicItem(imported), counts: snapshot().counts };
         } catch (error) {
           if (imported && !catalog.items.some(item => item.filename === imported.filename)) {
@@ -436,6 +454,27 @@ export function createContentLibrary(config, {
       return { item: publicItem(reviewed), counts: snapshot().counts };
     });
   }
+  async function admitSeed(id, approval) {
+    if (!approval || typeof approval.actor !== 'string' || !approval.actor.trim() || approval.actor.length > 200
+      || typeof approval.basis !== 'string' || !approval.basis.trim() || approval.basis.length > 4000
+      || !Number.isFinite(Date.parse(approval.approvedAt)) || !/^[a-f0-9]{64}$/.test(approval.authorizationSha256 || '')) {
+      throw libraryError('CONTENT_SEED_APPROVAL_INVALID', '预置素材的固定授权无效', 400);
+    }
+    await initialize();
+    return serialize(async () => {
+      const item = await find(id);
+      // A deployment seed can apply the original fixed-byte consent only once.
+      // A later human review (including withdrawal to pending) always wins.
+      if (item.reviewedAt || admissionFields(item).admissionStatus !== 'pending') return { item: publicItem(item), applied: false };
+      const stored = await verifiedStored(item); await stored.handle.close();
+      const reviewed = { ...item, admissionStatus: 'approved', reviewedAt: new Date(approval.approvedAt).toISOString(), reviewedBy: approval.actor,
+        admittedAt: new Date().toISOString(), admittedBy: approval.actor,
+        seedApproval: { kind: 'bundled-user-confirmation', authorizationSha256: approval.authorizationSha256,
+          approvedAt: new Date(approval.approvedAt).toISOString(), basis: approval.basis } };
+      await save({ ...catalog, items: catalog.items.map(existing => existing.id === id ? reviewed : existing) });
+      return { item: publicItem(reviewed), applied: true };
+    });
+  }
   async function streamMedia(req, res, id) {
     const item = await find(id);
     const stored = await openStored(item);
@@ -449,5 +488,13 @@ export function createContentLibrary(config, {
     catch { if (!res.destroyed) res.destroy(); }
     finally { await stored.handle.close(); }
   }
-  return { list: () => sync(), sync, receive, setAdmission, publishDraft, assertPublishMaterial, streamMedia };
+  async function verify(id) {
+    await initialize();
+    return serialize(async () => {
+      const item = await find(id), stored = await verifiedStored(item);
+      await stored.handle.close();
+      return publicItem(item);
+    });
+  }
+  return { list: () => sync(), sync, receive, setAdmission, admitSeed, verify, publishDraft, assertPublishMaterial, streamMedia };
 }
