@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { chromium } from 'playwright-core';
 import { DouyinAssistedRpaAdapter } from '../agent/rpa-adapters/douyin-assisted.js';
-import { matchDouyinCommentIdentity, selectPrivateConversationHeaderEvidence } from '../agent/rpa-adapters/assisted-platform.js';
+import { classifyMessagePageEvidence, matchDouyinCommentIdentity, selectPrivateConversationHeaderEvidence } from '../agent/rpa-adapters/assisted-platform.js';
 import { assessAutoReplyEligibility } from '../src/services/auto-reply-eligibility.js';
 
 function fixture() {
@@ -142,7 +143,99 @@ test('constructor pins Douyin and verified scoped selectors', () => {
   assert.deepEqual(adapter.spec.privateMessageSendSelectors, ['.e2e-send-msg-btn']);
   assert.equal(adapter.spec.privateRequireUnreadForReply, true);
   assert.ok(adapter.spec.commentSendSelectors.includes('button[class*="cmt-btn-"]'));
-  assert.equal(adapter.spec.commentRowSelector, '[class*="cmt-li-"]');
+  assert.ok(adapter.spec.commentRowSelector.includes('[class*="cmt-li-"]'));
+  assert.ok(adapter.spec.commentRowSelector.includes('[class*="comment-content-text-"]'));
+});
+
+test('Douyin comment identity accepts the current interactive page and the legacy redirect only', () => {
+  const { adapter } = fixture();
+  assert.equal(adapter.spec.commentUrl, 'https://creator.douyin.com/creator-micro/interactive/comment');
+  const check = url => classifyMessagePageEvidence({ messageType: 'COMMENT', url, text: '评论管理 选择作品 全部评论', spec: adapter.spec });
+  assert.equal(check(adapter.spec.commentUrl).valid, true);
+  assert.equal(check('https://creator.douyin.com/creator-micro/data/following/comment?item_id=123').valid, true);
+  assert.equal(check('https://creator.douyin.com/creator-micro/content/manage').valid, false);
+  assert.equal(check('https://www.douyin.com/user/self').valid, false);
+  assert.equal(check('https://example.com/creator.douyin.com/creator-micro/interactive/comment').valid, false);
+});
+
+test('Douyin refresh readiness recognizes the current no-more-comments message', async () => {
+  const { adapter } = fixture();
+  let refreshes = 0;
+  adapter.classifyLiveMessagePage = async () => ({ valid: true });
+  adapter.firstVisibleSelector = async () => null;
+  adapter.refreshDouyinCommentListIfOffered = async () => { refreshes += 1; return { offered: true, clicked: true, loaded: true, rowSelector: '[class*="cmt-li-"]' }; };
+  const ready = await adapter.waitForMessageContentReady(evidencePage('评论管理 选择作品 暂无更多评论 点击刷新'), 'COMMENT');
+  assert.equal(ready.ready, true);
+  assert.equal(ready.reason, 'COMMENT_ROWS_READY_AFTER_REFRESH');
+  assert.equal(refreshes, 1);
+  const empty = await adapter.inspectDouyinCommentEmptyState({}, '暂无更多评论 点击刷新');
+  assert.equal(empty.confirmedEmpty, true);
+  const busy = await adapter.inspectDouyinCommentEmptyState({}, '暂无更多评论 正在加载中');
+  assert.equal(busy.confirmedEmpty, false);
+  const composer = await adapter.inspectDouyinCommentEmptyState({}, '有爱评论，说点好听的～');
+  assert.equal(composer.explicitEmpty, false);
+});
+
+const collectionTestChrome = [process.env.CHROME_EXECUTABLE_PATH, 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', '/usr/bin/chromium', '/usr/bin/google-chrome'].find(candidate => candidate && fs.existsSync(candidate));
+test('the current empty refresh wrapper is settled while a real spinner still blocks collection', { skip: !collectionTestChrome }, async t => {
+  const { adapter, root } = fixture();
+  const browser = await chromium.launch({ headless: true, executablePath: collectionTestChrome });
+  t.after(async () => { await browser.close(); fs.rmSync(root, { recursive: true, force: true }); });
+  const page = await browser.newPage();
+  await page.setContent('<div class="loading-NTmKHl"><div class="empty-refresh-Mt1Apg">暂无更多评论 <span>点击刷新</span></div></div>');
+  assert.equal((await adapter.inspectDouyinCommentEmptyState(page)).confirmedEmpty, true);
+  await page.setContent('<div class="loading-NTmKHl"><div class="empty-refresh-Mt1Apg">暂无更多评论 点击刷新</div></div><div class="spinner-active" style="width:20px;height:20px"></div>');
+  const loading = await adapter.inspectDouyinCommentEmptyState(page);
+  assert.equal(loading.confirmedEmpty, false);
+  assert.equal(loading.busy, true);
+  await page.setContent('<div class="douyin-creator-interactive-sidesheet-content">作品列表<ul class="douyin-creator-interactive-list-items"><div class="container-Lkxos9"><img class="cover-ansSRi"><div>测试作品</div></div></ul></div>');
+  await page.locator('.container-Lkxos9').evaluate(element => {
+    element.__reactProps$fixture = { data: { item_id_plain: 'video-current-1', title: '测试作品', comment_count: 7 } };
+  });
+  const inventory = await adapter.inspectDouyinCommentVideos(page, { maxRounds: 1 });
+  assert.equal(inventory.ok, true);
+  assert.equal(inventory.videos.length, 1);
+  assert.equal(inventory.videos[0].sourceVideoKey, 'video-current-1');
+  assert.equal(inventory.videos[0].commentCount, 7);
+  await page.setContent('<section class="previewCard-current"><div class="title-current">测试作品</div><div class="desc-current">发布于2026年10月29日 16:07</div></section>');
+  adapter.douyinCommentVideoInventories.set(page, [
+    { sourceVideoKey: 'video-current-1', sourceVideoTitle: '测试作品', sourceVideoPublishedAt: '发布于2026年10月29日 16:07' },
+    { sourceVideoKey: 'video-current-2', sourceVideoTitle: '测试作品', sourceVideoPublishedAt: '发布于2026年10月29日 16:54' }
+  ]);
+  assert.equal((await adapter.readDouyinCurrentVideoIdentity(page)).sourceVideoKey, 'video-current-1');
+  adapter.douyinCommentVideoInventories.get(page).push({ sourceVideoKey: 'ambiguous-video', sourceVideoTitle: '测试作品', sourceVideoPublishedAt: '发布于2026年10月29日 16:07' });
+  assert.equal(await adapter.readDouyinCurrentVideoIdentity(page), null);
+  adapter.douyinCommentVideoInventories.set(page, [{ sourceVideoKey: 'wrong-video', sourceVideoTitle: '测试作品', sourceVideoPublishedAt: '发布于2026年10月29日 16:54' }]);
+  assert.equal(await adapter.readDouyinCurrentVideoIdentity(page), null);
+  await page.setContent('<main class="creator-comment-redesign"><div class="container-current"><div class="content-current"><div><div class="username-current">真实用户</div><div class="time-current">1小时前</div><div class="comment-content-text-current">好</div><div>查看3条回复</div></div></div></div></main>');
+  await page.locator('.container-current').evaluate(element => {
+    element.__reactFiber$fixture = { memoizedProps: { content: '好', id: '7702007271278166810', uid: '59358576022', levelOneCid: '7702007271278166810' } };
+  });
+  const extracted = await adapter.extractMessages(page, 'COMMENT', {}, { sourceContext: { sourceVideoKey: 'video-current-1', sourceVerified: true } });
+  assert.equal(extracted.length, 1);
+  assert.equal(extracted[0].content, '好');
+  assert.equal(extracted[0].userName, '真实用户');
+  assert.equal(extracted[0].context.commentStableId, '7702007271278166810');
+  assert.equal(extracted[0].context.sourceVideoKey, 'video-current-1');
+  assert.equal(extracted[0].context.collapsedReplyCount, 3);
+  const candidate = await adapter.readDouyinElementIdentity(page.locator('.container-current'));
+  assert.equal(candidate.commentStableId, '7702007271278166810');
+  assert.equal(candidate.content, '好');
+  await page.locator('.container-current').evaluate(element => {
+    element.__reactFiber$fixture.memoizedProps.uid = '@opaque-user-id';
+    element.querySelector('.comment-content-text-current').textContent = '回复其他人:好';
+  });
+  assert.equal((await adapter.readDouyinElementIdentity(page.locator('.container-current'))).commentStableId, '7702007271278166810');
+  // A generic React ID with different rendered content is not a comment identity.
+  await page.locator('.container-current').evaluate(element => { element.__reactFiber$fixture.memoizedProps.content = '其他内容'; });
+  assert.equal((await adapter.readDouyinElementIdentity(page.locator('.container-current'))).commentStableId, undefined);
+  await page.setContent('<section class="previewCard-current"><div class="title-current">测试作品</div><div class="desc-current">发布于2026年10月29日 16:07</div></section><div class="douyin-creator-interactive-sidesheet-content">作品列表<ul class="douyin-creator-interactive-list-items"><div class="container-current active-current" onclick="this.closest(\'.douyin-creator-interactive-sidesheet-content\').style.display=\'none\'"><div class="title-current">测试作品</div><div class="time-current">发布于2026年10月29日 16:07</div><div class="right-current"><div>7</div></div></div></ul></div>');
+  await page.locator('.container-current').evaluate(element => { element.__reactProps$fixture = { data: { item_id_plain: 'video-current-1' } }; });
+  await adapter.inspectDouyinCommentVideos(page, { maxRounds: 1 });
+  const selected = await adapter.openDouyinCommentVideoByKey(page, 'video-current-1');
+  assert.equal(selected.ok, true);
+  assert.equal(selected.alreadySelected, false);
+  assert.equal(await page.locator('.douyin-creator-interactive-sidesheet-content').isVisible(), false);
 });
 
 test('Douyin read row recovers its stable conversation ID from suffixed React properties', async () => {
@@ -1093,6 +1186,18 @@ test('comment editor is resolved only inside the exact target comment', async ()
   assert.equal(result.editor, editor);
 });
 
+test('Douyin redesigned inline reply editor stays bound to the target username', async () => {
+  const { adapter } = fixture();
+  const editor = domLocator({ tagName: 'div', contentEditable: true, attributes: { placeholder: '回复 雷姆阿：' } });
+  const root = { isVisible: async () => true, locator: () => locatorList([editor]) };
+  const scope = { locator: selector => selector.includes('[class*="reply-content-"]') ? locatorList([root]) : missingLocator() };
+  const matched = await adapter.findDouyinCommentEditor({}, { userName: '雷姆阿' }, scope);
+  assert.equal(matched.ok, true);
+  assert.equal(matched.editor, editor);
+  const mismatch = await adapter.findDouyinCommentEditor({}, { userName: 'other' }, scope);
+  assert.equal(mismatch.reason, 'COMMENT_EDITOR_CONTEXT_MISMATCH');
+});
+
 test('comment editor rejects missing target scope and multiple local roots', async () => {
   const { adapter } = fixture();
   const page = { locator: () => missingLocator() };
@@ -1241,6 +1346,21 @@ test('Douyin private list never treats repeated empty child snapshots as loaded'
   assert.equal(result.stable, false);
   assert.equal(result.deferred, true);
   assert.equal(result.reason, 'CONVERSATION_LIST_LOADING_TIMEOUT');
+});
+
+test('Douyin exact private target is not blocked by unrelated chats with empty previews', async () => {
+  const { adapter } = fixture();
+  const target = {};
+  const unrelated = {};
+  adapter.readPrivateConversationRowSnapshot = async row => ({ visible: true, userName: row === target ? 'alice' : 'other', preview: row === target ? 'question' : '', unread: false });
+  const scope = { locator: () => locatorList([target, unrelated]), waitForTimeout: async () => {} };
+  const result = await adapter.waitForPrivateConversationRows(scope, { userName: 'alice', sourceContent: 'question' }, { requireSourcePreview: true });
+  assert.equal(result.stable, true);
+  assert.equal(result.exactRows.length, 1);
+  assert.equal(result.diagnostics.at(-1).visibleRowsComplete, false);
+  adapter.readPrivateConversationRowSnapshot = async row => ({ visible: true, userName: row === target ? 'alice' : '', preview: row === target ? 'question' : '', unread: false });
+  const unfinished = await adapter.waitForPrivateConversationRows(scope, { userName: 'alice', sourceContent: 'question' }, { requireSourcePreview: true });
+  assert.equal(unfinished.stable, false);
 });
 
 test('Douyin reply reuses the currently open verified conversation before scanning the virtualized list', async () => {
@@ -2189,6 +2309,27 @@ test('Douyin comment extraction reads comment_id and item_id_plain from React fi
     assert.equal(messages[0].context.commentStableId, 'comment-react-1001');
     assert.equal(messages[0].context.sourceVideoKey, 'video-react-9001');
     assert.equal(messages[0].context.sourceVerified, true);
+    delete row.__reactFiber$unit;
+    row.__reactProps$unit = { commentInfo: { list: [{ id: '7700000000000000001', uid: 'audience-101', content: 'React fiber question' }] }, itemInfo: { item_id_plain: 'video-react-9001' } };
+    const propsMessages = await adapter.extractMessages(page, 'COMMENT', { noteCandidates: [] });
+    assert.equal(propsMessages[0].context.commentStableId, '7700000000000000001');
+    assert.equal(propsMessages[0].context.actorPlatformId, 'audience-101');
+    row.__reactProps$unit.commentInfo.list[0].content = 'React fiber question[666][666][666]';
+    const reactions = await adapter.extractMessages(page, 'COMMENT', { noteCandidates: [] });
+    assert.equal(reactions[0].content, 'React fiber question[666][666][666]');
+    assert.equal(reactions[0].context.commentStableId, '7700000000000000001');
+    nodes['pre[class*="cmt-text-"],[class*="comment-content-text-"]'] = nodes[adapter.spec.commentTextSelector];
+    const candidate = await adapter.readDouyinElementIdentity({ evaluate: async fn => fn(row) });
+    // Candidate selection and collection must agree after emoji images replace text.
+    assert.equal(candidate.content, reactions[0].content);
+    row.__reactProps$unit.title = '评论最多可选20条';
+    row.__reactProps$unit.create_time = 1793585826;
+    const verifiedSource = await adapter.extractMessages(page, 'COMMENT', {}, { sourceContext: { sourceVideoKey: 'video-react-9001', sourceVerified: true, sourceVideoTitle: 'verified work title', sourceVideoPublishedAt: '2026-10-29 16:54' } });
+    assert.equal(verifiedSource[0].context.sourceVideoTitle, 'verified work title');
+    assert.equal(verifiedSource[0].context.sourceVideoPublishedAt, '2026-10-29 16:54');
+    row.__reactProps$unit.commentInfo.list[0].content = 'another comment';
+    const mismatch = await adapter.extractMessages(page, 'COMMENT', { noteCandidates: [] });
+    assert.equal(mismatch[0].context.commentStableId, null);
   } finally {
     if (previousGetComputedStyle === undefined) delete globalThis.getComputedStyle;
     else globalThis.getComputedStyle = previousGetComputedStyle;
@@ -2199,6 +2340,7 @@ test('Douyin multi-work historical scan continues after one work disappears', as
   const { adapter } = fixture();
   const openedWorkKeys = [];
   const collectedWorkKeys = [];
+  adapter.waitForCommentVideoReady = async () => ({ ready: true });
   adapter.inspectDouyinCommentVideos = async () => ({
     ok: true,
     reason: 'VIDEO_LIST_STABLE',
@@ -2233,6 +2375,7 @@ test('Douyin multi-work historical scan continues after one work disappears', as
     ['video-B', 'SKIPPED', true],
     ['video-C', 'SUCCESS', false]
   ]);
+  assert.equal(result.complete, false);
 });
 
 test('Douyin comment reply opens the work identified by sourceVideoKey before locating the comment', async () => {

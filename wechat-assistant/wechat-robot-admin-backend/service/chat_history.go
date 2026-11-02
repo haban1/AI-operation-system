@@ -26,6 +26,13 @@ func NewChatHistoryService(ctx context.Context) *ChatHistoryService {
 }
 
 func (sv *ChatHistoryService) GetChatHistory(req dto.ChatHistoryRequest, pager appx.Pager, robot *model.Robot) ([]*dto.ChatHistory, int64, error) {
+	pageSize := pager.PageSize
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
 	var result dto.Response[struct {
 		Itmes []*dto.ChatHistory `json:"items"`
 		Total int64              `json:"total"`
@@ -38,7 +45,7 @@ func (sv *ChatHistoryService) GetChatHistory(req dto.ChatHistoryRequest, pager a
 		SetQueryParam("time_start", strconv.FormatInt(req.TimeStart, 10)).
 		SetQueryParam("time_end", strconv.FormatInt(req.TimeEnd, 10)).
 		SetQueryParam("page_index", strconv.Itoa(pager.PageIndex)).
-		SetQueryParam("page_size", "20").
+		SetQueryParam("page_size", strconv.Itoa(pageSize)).
 		SetResult(&result).
 		Get(robot.GetBaseURL() + "/chat/history")
 	if err = result.CheckError(err); err != nil {

@@ -2,12 +2,15 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 	"wechat-robot-client/dto"
 	"wechat-robot-client/model"
 	"wechat-robot-client/pkg/appx"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ChatRoomMember struct {
@@ -39,8 +42,14 @@ func (c *ChatRoomMember) GetByChatRoomID(req dto.ChatRoomMemberListRequest, page
 	var total int64
 	query := c.DB.WithContext(c.Ctx).Model(&model.ChatRoomMember{})
 	query = query.Where("chat_room_id = ?", req.ChatRoomID)
+	switch req.Membership {
+	case "current":
+		query = query.Where("(is_leaved = 0 OR is_leaved IS NULL) AND leaved_at IS NULL")
+	case "left":
+		query = query.Where("(is_leaved = 1 OR leaved_at IS NOT NULL)")
+	}
 	if req.Keyword != "" {
-		query = query.Where("nickname LIKE ?", "%"+req.Keyword+"%").Or("remark LIKE ?", "%"+req.Keyword+"%")
+		query = query.Where("(nickname LIKE ? OR remark LIKE ?)", "%"+req.Keyword+"%", "%"+req.Keyword+"%")
 	}
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -55,9 +64,9 @@ func (c *ChatRoomMember) GetByChatRoomID(req dto.ChatRoomMemberListRequest, page
 func (c *ChatRoomMember) GetNotLeftMemberByChatRoomID(req dto.ChatRoomMemberListRequest) ([]*model.ChatRoomMember, error) {
 	var chatRoomMembers []*model.ChatRoomMember
 	query := c.DB.WithContext(c.Ctx).Model(&model.ChatRoomMember{})
-	query = query.Where("chat_room_id = ? AND is_leaved = 0", req.ChatRoomID)
+	query = query.Where("chat_room_id = ? AND (is_leaved = 0 OR is_leaved IS NULL) AND leaved_at IS NULL", req.ChatRoomID)
 	if req.Keyword != "" {
-		query = query.Where("nickname LIKE ?", "%"+req.Keyword+"%").Or("remark LIKE ?", "%"+req.Keyword+"%")
+		query = query.Where("(nickname LIKE ? OR remark LIKE ?)", "%"+req.Keyword+"%", "%"+req.Keyword+"%")
 	}
 	if err := query.Find(&chatRoomMembers).Error; err != nil {
 		return nil, err
@@ -98,7 +107,7 @@ func (c *ChatRoomMember) GetChatRoomMemberByWeChatIDs(chatRoomID string, wechatI
 // GetChatRoomMembers 获取未退出群聊的成员
 func (c *ChatRoomMember) GetChatRoomMembers(chatRoomID string) ([]*model.ChatRoomMember, error) {
 	var chatRoomMembers []*model.ChatRoomMember
-	err := c.DB.WithContext(c.Ctx).Where("chat_room_id = ? AND leaved_at IS NULL", chatRoomID).Find(&chatRoomMembers).Error
+	err := c.DB.WithContext(c.Ctx).Where("chat_room_id = ? AND (is_leaved = 0 OR is_leaved IS NULL) AND leaved_at IS NULL", chatRoomID).Find(&chatRoomMembers).Error
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +118,7 @@ func (c *ChatRoomMember) GetChatRoomMembers(chatRoomID string) ([]*model.ChatRoo
 func (c *ChatRoomMember) GetChatRoomMemberCount(chatRoomID string) (int64, error) {
 	var total int64
 	query := c.DB.WithContext(c.Ctx).Model(&model.ChatRoomMember{})
-	query = query.Where("chat_room_id = ?", chatRoomID).Where("leaved_at IS NULL")
+	query = query.Where("chat_room_id = ?", chatRoomID).Where("(is_leaved = 0 OR is_leaved IS NULL) AND leaved_at IS NULL")
 	if err := query.Count(&total).Error; err != nil {
 		return 0, err
 	}
@@ -159,7 +168,20 @@ func (c *ChatRoomMember) GetYesterdayLeaveCount(chatRoomID string) (int64, error
 }
 
 func (c *ChatRoomMember) Create(data *model.ChatRoomMember) error {
-	return c.DB.WithContext(c.Ctx).Create(data).Error
+	if strings.TrimSpace(data.ChatRoomID) == "" || strings.TrimSpace(data.WechatID) == "" {
+		return errors.New("群 ID 和成员微信 ID 不能为空")
+	}
+	// A message and a member refresh can discover the same account concurrently.
+	// An existing profile/settings record must not be overwritten by a blank one.
+	if err := c.DB.WithContext(c.Ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(data).Error; err != nil {
+		return err
+	}
+	var existing model.ChatRoomMember
+	if err := c.DB.WithContext(c.Ctx).Select("id").Where("chat_room_id = ? AND wechat_id = ?", data.ChatRoomID, data.WechatID).First(&existing).Error; err != nil {
+		return err
+	}
+	data.ID = existing.ID
+	return nil
 }
 
 func (c *ChatRoomMember) Update(data *model.ChatRoomMember) error {

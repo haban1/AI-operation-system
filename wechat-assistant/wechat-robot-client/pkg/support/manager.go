@@ -148,13 +148,32 @@ func (m *Manager) TakeoverForTurn(peer, room, reason string, version int64) (boo
 		return true, err
 	}
 	if s.Notifier != "" && m.SendText != nil {
-		err = m.SendText(s.Notifier, fmt.Sprintf("需要人工接待\n客户：%s\n原因：%s\n请在微信接待，完成后在机器人后台恢复 AI。", peer, reason))
+		err = m.SendText(s.Notifier, fmt.Sprintf("需要人工接待\n客户：%s\n原因：%s\n请在微信接待，完成后在机器人后台恢复 AI。", m.customerName(peer, room), reason))
 		if err != nil {
 			m.DB.Model(&r).Update("notification_error", "通知发送失败，请直接查看接待队列")
 			log.Printf("[Support] notification failed: %v", err)
 		}
 	}
 	return true, nil // Takeover remains effective even if the notification fails.
+}
+
+func (m *Manager) customerName(peer, room string) string {
+	var contact model.Contact
+	if err := m.DB.Select("nickname").Where("wechat_id = ?", peer).Take(&contact).Error; err == nil && contact.Nickname != nil {
+		if name := strings.TrimSpace(*contact.Nickname); name != "" && name != peer {
+			return name
+		}
+	}
+	// Group participants need not be friends, so also look in this group's members.
+	if room != "" {
+		var member model.ChatRoomMember
+		if err := m.DB.Select("nickname").Where("chat_room_id = ? AND wechat_id = ?", room, peer).Take(&member).Error; err == nil {
+			if name := strings.TrimSpace(member.Nickname); name != "" && name != peer {
+				return name
+			}
+		}
+	}
+	return "微信用户（昵称未同步）"
 }
 
 func (m *Manager) Observe(peer, room, content string) {

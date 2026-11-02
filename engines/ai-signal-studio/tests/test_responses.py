@@ -103,6 +103,24 @@ class ResponsesTests(unittest.TestCase):
             self.assertTrue(test_connection(values)['ok'])
             self.assertIsNone(send.call_args.args[0].get_header('Authorization'))
 
+    def test_schema_is_visible_to_every_provider_even_without_native_structured_outputs(self):
+        schema={'type':'object','properties':{'story_arc':{'type':'string','maxLength':350}},
+                'required':['story_arc'],'additionalProperties':False}
+        text='{"story_arc":"先提出问题，再解释机制，最后回应"}'
+        for provider in ('compatible','ollama','responses'):
+            with self.subTest(provider=provider):
+                result=(completed(text) if provider=='responses' else
+                        {'message':{'content':text}} if provider=='ollama' else
+                        {'choices':[{'finish_reason':'stop','message':{'content':text}}]})
+                with patch('llm_api.urllib.request.urlopen',return_value=reply(result)) as send:
+                    self.assertEqual(generate({**self.settings,'provider':provider},'创作指令','公共资料',schema=schema),text)
+                body=json.loads(send.call_args.args[0].data)
+                instructions=body['instructions'] if provider=='responses' else body['messages'][0]['content']
+                self.assertIn('创作指令',instructions)
+                self.assertIn(json.dumps(schema,ensure_ascii=False),instructions)
+                self.assertIn('不要将字符串字段写成数组或对象',instructions)
+                if provider=='compatible':self.assertEqual(body['response_format'],{'type':'json_object'})
+
     def test_responses_draft_keeps_verified_source_and_creates_v2(self):
         spec=json.loads((ROOT/'tests/fixtures/v2-script.json').read_text(encoding='utf-8'))
         with tempfile.TemporaryDirectory() as tmp:

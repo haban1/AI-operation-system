@@ -47,6 +47,28 @@ export function routeIncomingMessage({ message = {}, conversation = null, source
   if (risk.risk) {
     return { route: MESSAGE_ROUTE.HUMAN_HANDOFF, reasonCode: risk.code, reason: risk.reason, riskLevel: 'HIGH', allowRag: false, allowAutoReply: false };
   }
+  if (messageType === 'COMMENT' && (message.platform_code || message.platformCode) === 'douyin') {
+    const socialReplies = {
+      THANKS: '不客气，能帮上忙就好！',
+      PRAISE: '谢谢你的认可！',
+      ACKNOWLEDGEMENT: '好呀，感谢你的留言！',
+      GREETING: '你好呀，很高兴见到你！',
+      FAREWELL: '下次见呀！',
+      APOLOGY: '没关系呀！',
+      LAUGHTER: '哈哈，开心就好！'
+    };
+    // Douyin renders these positive reactions as text tokens after images load.
+    const socialContent = content.replace(/\[(?:666|赞|强|鼓掌|比心|爱心|抱拳)\]/gu, '').trim();
+    const intent = detectSmallTalkIntent(socialContent);
+    // Exact social expressions only; mixed questions still require grounded RAG.
+    const learned = /^(?:学到了|学到啦|学到了新知识|涨知识了|长知识了|受教了|受益匪浅)[!！。,.，～~\s]*$/u.test(socialContent);
+    const replyText = learned ? '能对你有帮助就好！' : intent.smallTalkOnly ? socialReplies[intent.category] : null;
+    if (replyText) return {
+      route: MESSAGE_ROUTE.DIRECT_REPLY, reasonCode: 'COMMENT_SOCIAL_REPLY',
+      reason: '纯互动评论自动自然回应，无需查询业务知识库', riskLevel: 'LOW',
+      allowRag: false, allowAutoReply: true, replyText
+    };
+  }
   if (messageType !== 'COMMENT' && (isGreetingOnlyMessage(content) || detectSmallTalkIntent(content).category === 'THANKS')) {
     return {
       route: MESSAGE_ROUTE.DIRECT_REPLY,

@@ -9,6 +9,7 @@ import (
 	"wechat-robot-client/interface/ai"
 	"wechat-robot-client/pkg/qdrantx"
 	"wechat-robot-client/pkg/robot"
+	"wechat-robot-client/pkg/session"
 	"wechat-robot-client/plugin"
 )
 
@@ -34,6 +35,8 @@ var RobotStartTimeout time.Duration
 
 // 机器人运行时实例
 var RobotRuntime = &robot.Robot{}
+
+var LoginSession *session.Manager
 
 var MaxToolsIterations = 25
 var Agent ai.AgentService

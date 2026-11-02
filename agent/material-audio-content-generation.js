@@ -7,6 +7,7 @@ import { normalizeMaterialKnowledgeDraft } from '../src/services/material-knowle
 import { reviewPublishContent } from '../src/services/content-compliance.js';
 import { BUSINESS_RISK_KEYWORDS } from '../src/services/decision.js';
 import { withExtractedAudio } from './material-audio-extractor.js';
+import { callLocalWhisperAsr } from './local-whisper-asr.js';
 
 const RULE_VERSION = 'audio-copy-2026.08.24.3';
 const PROMPT_VERSION = 'audio-copy-prompt-2026.08.24.3';
@@ -41,6 +42,16 @@ function cacheSet(cache, key, value) {
 function messageText(content) {
   if (Array.isArray(content)) return content.map(item => typeof item === 'string' ? item : item?.text || '').join('\n').trim();
   return String(content || '').trim();
+}
+
+function isDeepSeekUrl(baseUrl) {
+  return /(^|\.)deepseek\.(com|cn)$/i.test(new URL(baseUrl).hostname);
+}
+
+function nonThinkingOptions(baseUrl) {
+  // DeepSeek ignores Qwen's enable_thinking, leaving no answer when its
+  // reasoning exhausts the JSON-generation output budget.
+  return isDeepSeekUrl(baseUrl) ? { thinking: { type: 'disabled' } } : { enable_thinking: false };
 }
 
 function abortMessage(error, fallback) {
@@ -177,6 +188,9 @@ ${transcript}
 }
 
 export async function callQwenAsr({ audioBuffer, mimeType = 'audio/mpeg', model, apiKey, baseUrl = config.qwenBaseUrl, timeoutMs = config.audioAsrTimeoutMs, fetchImpl = globalThis.fetch }) {
+  if (isDeepSeekUrl(baseUrl)) {
+    throw Object.assign(new Error('当前 DeepSeek 接口不支持语音识别，请在 AI 配置的“音视频转文字模型”中选择 local:whisper-small'), { code: 'ASR_PROVIDER_UNSUPPORTED' });
+  }
   if (!apiKey) throw Object.assign(new Error('未配置千问 API Key'), { code: 'AI_KEY_MISSING' });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -203,6 +217,12 @@ export async function callQwenAsr({ audioBuffer, mimeType = 'audio/mpeg', model,
   }
 }
 
+export async function callMaterialAsr(options) {
+  return String(options.model || '').startsWith('local:')
+    ? callLocalWhisperAsr(options)
+    : callQwenAsr(options);
+}
+
 export async function callQwenContent({ transcript, platformCodes = [], variationHint = '信息摘要型', previousCopy = null, repairContent = null, safetyRewrite = null, model, apiKey, baseUrl = config.qwenBaseUrl, timeoutMs = config.audioContentTimeoutMs, fetchImpl = globalThis.fetch }) {
   if (!apiKey) throw Object.assign(new Error('未配置千问 API Key'), { code: 'AI_KEY_MISSING' });
   const controller = new AbortController();
@@ -215,7 +235,7 @@ export async function callQwenContent({ transcript, platformCodes = [], variatio
       body: JSON.stringify({
         model,
         temperature: previousCopy && typeof previousCopy === 'object' && (previousCopy.title || previousCopy.body) ? 0.68 : 0.45,
-        enable_thinking: false,
+        ...nonThinkingOptions(baseUrl),
         max_tokens: 2200,
         response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: repairContent !== null
@@ -277,7 +297,7 @@ export async function callQwenKnowledge({ transcript, repairContent = null, mode
       body: JSON.stringify({
         model,
         temperature: 0.2,
-        enable_thinking: false,
+        ...nonThinkingOptions(baseUrl),
         max_tokens: 8192,
         response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: repairContent === null ? knowledgePrompt(transcript) : knowledgeRepairPrompt(repairContent) }]
@@ -325,7 +345,7 @@ export async function generateMaterialCopyFromAudio({
   maxDurationSeconds = config.audioMaxDurationSeconds,
   totalTimeoutMs = config.audioTotalTimeoutMs,
   cacheMaxAgeMs = config.audioCacheMaxAgeMs,
-  invokeAsr = callQwenAsr,
+  invokeAsr = callMaterialAsr,
   invokeContent = callQwenContent,
   invokeKnowledge = callQwenKnowledge,
   knowledgeEnabled = knowledgeOnly || invokeContent === callQwenContent,
@@ -395,6 +415,7 @@ export async function generateMaterialCopyFromAudio({
             return invokeAsr({ audioBuffer: audio.buffer, mimeType: audio.mimeType, model: asrModel, apiKey, baseUrl, timeoutMs: Math.min(config.audioAsrTimeoutMs, remainingMs()) });
           }
         });
+        if (transcriptResult.local === true) transmittedBytes = 0;
         transcriptResult = { ...transcriptResult, cached: false };
         calls.asr = statusCall({ status: 'SUCCESS', model: transcriptResult.model || asrModel, usage: transcriptResult.usage, elapsedMs: transcriptResult.elapsedMs ?? Date.now() - asrStartedAt });
         cacheSet(asrCache, asrKey, transcriptResult);

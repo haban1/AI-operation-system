@@ -3,6 +3,7 @@ package support
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -19,21 +20,40 @@ import (
 
 var requestIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{16,64}$`)
 
+const MaxBroadcastImages = 3
+const MaxBroadcastImageBytes = 10 * 1024 * 1024
+const MaxBroadcastRequestBytes = 32 * 1024 * 1024
+
 func (m *Manager) Submit(id, content string, recipients []string, image []byte, confirmed bool) (model.SupportBroadcast, error) {
+	var images [][]byte
+	if len(image) > 0 {
+		images = append(images, image)
+	}
+	return m.SubmitImages(id, content, recipients, images, confirmed)
+}
+
+func (m *Manager) SubmitImages(id, content string, recipients []string, images [][]byte, confirmed bool) (model.SupportBroadcast, error) {
 	job := model.SupportBroadcast{}
 	if !confirmed || !requestIDPattern.MatchString(id) {
 		return job, errors.New("请确认发送并提供有效请求编号")
 	}
 	content = strings.TrimSpace(content)
-	if utf8.RuneCountInString(content) > 2000 || (content == "" && len(image) == 0) || len(image) > 10*1024*1024 {
-		return job, errors.New("文字最多 2000 字，图片最大 10 MB，内容不能为空")
+	if utf8.RuneCountInString(content) > 2000 || (content == "" && len(images) == 0) {
+		return job, errors.New("文字最多 2000 字，内容不能为空")
 	}
-	mime := ""
-	if len(image) > 0 {
-		mime = http.DetectContentType(image)
-		if mime != "image/jpeg" && mime != "image/png" && mime != "image/gif" && mime != "image/webp" {
-			return job, errors.New("请选择 PNG、JPEG、GIF 或 WebP 图片")
+	if len(images) > MaxBroadcastImages {
+		return job, errors.New("一次最多发送 3 张图片")
+	}
+	assets := make([]model.SupportBroadcastImage, 0, len(images))
+	for i, image := range images {
+		if len(image) == 0 || len(image) > MaxBroadcastImageBytes {
+			return job, fmt.Errorf("第 %d 张图片不能为空且不能超过 10 MB", i+1)
 		}
+		mime := http.DetectContentType(image)
+		if mime != "image/jpeg" && mime != "image/png" && mime != "image/gif" && mime != "image/webp" {
+			return job, fmt.Errorf("第 %d 张图片请选择 PNG、JPEG、GIF 或 WebP 格式", i+1)
+		}
+		assets = append(assets, model.SupportBroadcastImage{BroadcastID: id, Position: i + 1, Image: image, ImageType: mime})
 	}
 	seen := map[string]bool{}
 	ids := []string{}
@@ -52,7 +72,17 @@ func (m *Manager) Submit(id, content string, recipients []string, image []byte, 
 	hash.Write([]byte{0})
 	hash.Write(payload)
 	hash.Write([]byte{0})
-	hash.Write(image)
+	// Preserve fingerprints for old text/single-image requests; include boundaries
+	// and ordering for multi-image requests so changed content cannot reuse an ID.
+	if len(images) > 1 {
+		hash.Write([]byte("\x00multiple-images\x00"))
+	}
+	for _, image := range images {
+		if len(images) > 1 {
+			_ = binary.Write(hash, binary.BigEndian, uint64(len(image)))
+		}
+		hash.Write(image)
+	}
 	fingerprint := hex.EncodeToString(hash.Sum(nil))
 	err := m.DB.First(&job, "id = ?", id).Error
 	if err == nil {
@@ -70,8 +100,20 @@ func (m *Manager) Submit(id, content string, recipients []string, image []byte, 
 		}
 	}
 	now := time.Now().Unix()
-	job = model.SupportBroadcast{ID: id, Fingerprint: fingerprint, Content: content, Recipients: payload, Image: image, ImageType: mime, HasImage: len(image) > 0, Status: "pending", Results: []byte("[]"), CreatedAt: now, UpdatedAt: now}
-	if err = m.DB.Create(&job).Error; err != nil {
+	job = model.SupportBroadcast{ID: id, Fingerprint: fingerprint, Content: content, Recipients: payload, HasImage: len(images) > 0, ImageCount: len(images), Status: "pending", Results: []byte("[]"), CreatedAt: now, UpdatedAt: now}
+	err = m.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&job).Error; err != nil {
+			return err
+		}
+		// Separate inserts keep each database packet within the per-image limit.
+		for i := range assets {
+			if err := tx.Create(&assets[i]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		var existing model.SupportBroadcast
 		if e := m.DB.First(&existing, "id = ?", id).Error; e == nil && existing.Fingerprint == fingerprint {
 			return existing, nil
@@ -82,10 +124,11 @@ func (m *Manager) Submit(id, content string, recipients []string, image []byte, 
 }
 
 type Delivery struct {
-	Peer      string `json:"peer"`
-	TextSent  bool   `json:"text_sent"`
-	ImageSent bool   `json:"image_sent"`
-	Error     string `json:"error,omitempty"`
+	Peer       string `json:"peer"`
+	TextSent   bool   `json:"text_sent"`
+	ImageSent  bool   `json:"image_sent"`
+	ImagesSent int    `json:"images_sent"`
+	Error      string `json:"error,omitempty"`
 }
 
 func (m *Manager) RunBroadcast(ctx context.Context, id string) error {
@@ -103,6 +146,20 @@ func (m *Manager) RunBroadcast(ctx context.Context, id string) error {
 	var peers []string
 	if err := json.Unmarshal(job.Recipients, &peers); err != nil {
 		return err
+	}
+	var images []model.SupportBroadcastImage
+	if job.ImageCount > 0 {
+		if err := m.DB.Where("broadcast_id = ?", job.ID).Order("position").Find(&images).Error; err != nil {
+			return err
+		}
+		if len(images) != job.ImageCount || len(images) > MaxBroadcastImages {
+			return errors.New("群发图片不完整，已停止发送")
+		}
+	} else if job.HasImage {
+		if len(job.Image) == 0 {
+			return errors.New("群发图片缺失，已停止发送")
+		}
+		images = []model.SupportBroadcastImage{{Image: job.Image, ImageType: job.ImageType}}
 	}
 	results := []Delivery{}
 	persist := func() error {
@@ -126,12 +183,25 @@ func (m *Manager) RunBroadcast(ctx context.Context, id string) error {
 					result.TextSent = true
 				}
 			}
-			if result.Error == "" && job.HasImage {
-				if err := m.SendImage(peer, job.Image); err != nil {
-					result.Error = "图片发送失败或结果未确认，请核对微信记录"
-				} else {
-					result.ImageSent = true
+			if result.Error == "" {
+				for imageIndex, image := range images {
+					if imageIndex > 0 {
+						select {
+						case <-ctx.Done():
+						case <-time.After(m.Interval):
+						}
+					}
+					if ctx.Err() != nil {
+						result.Error = "任务已中断，请核对已发送的图片"
+						break
+					}
+					if err := m.SendImage(peer, image.Image); err != nil {
+						result.Error = fmt.Sprintf("第 %d/%d 张图片发送失败或结果未确认，请核对微信记录", imageIndex+1, len(images))
+						break
+					}
+					result.ImagesSent++
 				}
+				result.ImageSent = len(images) > 0 && result.ImagesSent == len(images)
 			}
 		}
 		if result.Error != "" {
@@ -143,6 +213,10 @@ func (m *Manager) RunBroadcast(ctx context.Context, id string) error {
 		if err := persist(); err != nil {
 			return err
 		} // Stop if results cannot be saved; never silently resend.
+		if ctx.Err() != nil {
+			job.Status = "interrupted"
+			return persist()
+		}
 		if i < len(peers)-1 {
 			select {
 			case <-ctx.Done():

@@ -585,6 +585,9 @@ func (s *MessageService) ProcessMessage(syncResp robot.SyncMessage) {
 		// (or a repeated sync batch) as a human takeover or a second incoming turn.
 		var existing int64
 		if m.MsgId != 0 && vars.DB.Model(&model.Message{}).Where("msg_id = ?", m.MsgId).Count(&existing).Error == nil && existing > 0 {
+			if err := s.msgRepo.EnrichImageContent(&m); err != nil {
+				log.Printf("[ChatImage] enrich echo: %v", err)
+			}
 			continue
 		}
 		if support.Default != nil && message.CreateTime >= now-600 {
@@ -941,6 +944,7 @@ func (s *MessageService) MsgUploadImg(toWxID string, image io.Reader) (*model.Me
 	if err != nil {
 		log.Println("入库消息失败: ", err)
 	}
+	s.saveSentImage(m.ID, imageBytes)
 	// 插入一条联系人记录，获取联系人列表接口获取不到未保存到通讯录的群聊
 	NewContactService(s.ctx).InsertOrUpdateContactActiveTime(m.FromWxID)
 
@@ -1133,12 +1137,20 @@ func (s *MessageService) sendImageByNormalDownload(toWxID string, imageURL strin
 
 // 分片发送图片信息
 func (s *MessageService) SendImageMessageStream(ctx context.Context, req dto.SendImageMessageRequest, file io.Reader, fileHeader *multipart.FileHeader) (*model.Message, error) {
+	chunk, err := io.ReadAll(file)
+	if err != nil {
+		return nil, fmt.Errorf("读取图片分片失败: %w", err)
+	}
+	key := fmt.Sprintf("%x", sha256.Sum256([]byte(req.ToWxid+"\x00"+req.ClientImgId)))
+	if err := s.msgRepo.SaveImageChunk(key, req.ChunkIndex*vars.UploadImageChunkSize, req.FileSize, chunk); err != nil {
+		log.Printf("[ChatImage] retain upload chunk: %v", err)
+	}
 	message, err := vars.RobotRuntime.SendImageMessageStream(robot.SendImageMessageStreamRequest{
 		ToWxid:      req.ToWxid,
 		ClientImgId: req.ClientImgId,
 		TotalLen:    req.FileSize,
 		StartPos:    req.ChunkIndex * vars.UploadImageChunkSize,
-	}, file, fileHeader)
+	}, bytes.NewReader(chunk), fileHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -1165,6 +1177,15 @@ func (s *MessageService) SendImageMessageStream(ctx context.Context, req dto.Sen
 	err = s.msgRepo.Create(&m)
 	if err != nil {
 		log.Println("入库消息失败: ", err)
+	}
+	// Successful delivery must not be retried when history persistence fails.
+	if data, imageErr := s.msgRepo.AssembleImageChunks(key, req.FileSize); imageErr == nil {
+		s.saveSentImage(m.ID, data)
+	} else {
+		log.Printf("[ChatImage] assemble message %d: %v", m.ID, imageErr)
+	}
+	if imageErr := s.msgRepo.DeleteImageChunks(key); imageErr != nil {
+		log.Printf("[ChatImage] clear upload: %v", imageErr)
 	}
 	// 插入一条联系人记录，获取联系人列表接口获取不到未保存到通讯录的群聊
 	NewContactService(s.ctx).InsertOrUpdateContactActiveTime(m.FromWxID)
@@ -1966,7 +1987,7 @@ func (s *MessageService) SendCDNImg(toWxID string, content string) error {
 		MsgId:              message.Newmsgid,
 		ClientMsgId:        message.Msgid,
 		Type:               model.MsgTypeImage,
-		Content:            "",
+		Content:            content,
 		DisplayFullContent: "机器人发送了一张图片",
 		MessageSource:      message.MsgSource,
 		FromWxID:           toWxID,

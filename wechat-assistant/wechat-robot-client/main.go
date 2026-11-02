@@ -52,7 +52,9 @@ func main() {
 	shutdownManager.Register(momentplan.Default)
 	vars.CronManager = common_cron.NewCronManager()
 	vars.CronManager.Clear()
-	vars.CronManager.Start()
+	if vars.RobotRuntime.Status == model.RobotStatusOnline {
+		vars.CronManager.Start()
+	}
 	// 注册全局配置变更回调：定时任务
 	vars.SettingsObserver.Register("定时任务", func(settings *model.GlobalSettings) error {
 		vars.CronManager.Clear()
@@ -90,6 +92,8 @@ func main() {
 	shutdownManager.Register(vars.RobotRuntime)
 	shutdownManager.Register(vars.CronManager)
 	shutdownManager.Register(vars.Agent)
+	vars.LoginSession.Start(30 * time.Second)
+	shutdownManager.Register(vars.LoginSession)
 	// 开始监听停止信号
 	shutdownManager.Start()
 	// 启动服务

@@ -9,6 +9,7 @@ type ChatRoomMemberListRequest struct {
 	ID         int64  `form:"id" json:"id"  binding:"required"`
 	ChatRoomID string `form:"chat_room_id" json:"chat_room_id" binding:"required"`
 	Keyword    string `form:"keyword" json:"keyword"`
+	Membership string `form:"membership" json:"membership" binding:"omitempty,oneof=current left all"`
 }
 
 type ChatRoomMemberRequest struct {

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"wechat-robot-client/dto"
 	"wechat-robot-client/model"
+	"wechat-robot-client/pkg/robot"
 	"wechat-robot-client/repository"
 	"wechat-robot-client/vars"
 )
@@ -34,7 +36,24 @@ func (a *AttachDownloadService) DownloadImage(messageID int64) ([]byte, string, 
 	if message.Type != model.MsgTypeImage {
 		return nil, "", "", errors.New("消息类型错误")
 	}
-	return vars.RobotRuntime.DownloadImage(*message)
+	data, cacheErr := a.msgRepo.GetImage(messageID)
+	if cacheErr != nil {
+		log.Printf("[ChatImage] read cache %d: %v", messageID, cacheErr)
+	}
+	if len(data) > 0 {
+		mime, ext := (&robot.Robot{}).DetectImageType(data)
+		if ext != "" {
+			return data, mime, ext, nil
+		}
+	}
+	data, mime, ext, err := vars.RobotRuntime.DownloadImageContext(a.ctx, *message)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if err := a.msgRepo.SaveImage(messageID, data); err != nil {
+		log.Printf("[ChatImage] cache message %d: %v", messageID, err)
+	}
+	return data, mime, ext, nil
 }
 
 func (a *AttachDownloadService) DownloadVoice(req dto.AttachDownloadRequest) ([]byte, string, string, error) {

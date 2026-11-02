@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
+from zipfile import ZipFile
 
 import pymupdf
 import pytest
@@ -61,3 +63,30 @@ def test_blank_pdf_requires_ocr_and_fails_explicitly(tmp_path: Path):
     with pytest.raises(DocumentParseError) as caught:
         parse_document(path)
     assert caught.value.code == "SCANNED_DOCUMENT_UNSUPPORTED"
+
+
+def test_xlsx_reads_cells_beyond_incorrect_declared_dimensions(tmp_path: Path):
+    original = tmp_path / "original.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "FAQ"
+    sheet.append(["标准问题", "标准答案", "关键词"])
+    sheet.append(["在哪里办理？", "到政务窗口办理。", "政务,窗口"])
+    sheet.append(["什么时候办理？", "工作日上午办理。", "时间"])
+    workbook.save(original)
+    workbook.close()
+
+    incorrect = tmp_path / "incorrect-dimensions.xlsx"
+    with ZipFile(original) as source, ZipFile(incorrect, "w") as target:
+        for item in source.infolist():
+            content = source.read(item.filename)
+            if item.filename == "xl/worksheets/sheet1.xml":
+                content, count = re.subn(rb'<dimension ref="[^"]+"\s*/>', b'<dimension ref="A1"/>', content)
+                assert count == 1
+            target.writestr(item, content)
+
+    parsed = parse_document(incorrect)
+    assert len(parsed.elements) == 2
+    assert "政务窗口" in parsed.elements[0].text
+    assert "工作日上午" in parsed.elements[1].text
+    assert parsed.elements[1].location == {"sheet": "FAQ", "row": 3}

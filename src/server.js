@@ -23,6 +23,7 @@ import { handleModelGateway } from './services/model-gateway.js';
 import { getAiSignalIntegration } from './services/ai-signal-integration.js';
 import { createAiSignalProxy, isAiSignalProxyPath } from './services/ai-signal-proxy.js';
 import { getCreativeWorkbenchStatus } from './services/creative-workbench.js';
+import { proxyAiStudio } from './services/ai-studio-proxy.js';
 import { createContentLibrary, ContentLibraryError } from './services/content-library.js';
 import { createContentLibrarySeedLoader } from './services/content-library-seeds.js';
 import { createStudioOutputLibrary, createStudioOutputSource } from './services/content-library-studio.js';
@@ -51,6 +52,10 @@ import { isRepeatedCommentOccurrence, repeatedExternalId, sameStableCommentIdent
 import { buildMessageProcessingIdentity } from './services/message-processing-identity.js';
 import { buildReplyIdempotencyKey, isSameDouyinCommentSemanticCandidate } from './services/comment-identity.js';
 import { checkLocalAgentHealth, ensureLocalAgentOnline, shutdownLocalAgent } from './services/local-agent-process.js';
+import { checkBrowserAgentHealth, usesBrowserAgent } from './services/browser-agent.js';
+import { isPublishSecurityChallenge, manualSecurityWaitResult } from './services/publish-manual-verification.js';
+import { resolveJobMaterial } from './services/agent-material-handoff.js';
+import { validateMaterialUpload } from './services/material-upload.js';
 import { isConfirmedLoginExpired, buildLoginExpiredNotification } from './services/login-alert.js';
 import { normalizeContentOrigin } from './services/content-origin.js';
 import { hasReliablePublishEvidence } from './services/publish-attestation.js';
@@ -391,6 +396,11 @@ function nextPublishReviewDelayMs(submittedAt) {
     : PUBLISH_REVIEW_STEADY_INTERVAL_MS;
 }
 function operationsEnabled() { return getMasterSwitch().enabled; }
+function manualPublishWaitPlatforms(deviceId = config.deviceId) {
+  return rows(`SELECT DISTINCT t.platform_code FROM publish_targets t JOIN accounts a ON a.id=t.account_id
+    WHERE a.device_id=? AND t.status='NEEDS_CONFIRMATION'
+      AND json_extract(t.result,'$.manualSecurityVerificationRequired')=1`, deviceId).map(item => item.platform_code);
+}
 let localAgentWatchdogBusy = false;
 let lastLocalAgentWatchdogError = '';
 let lastLocalAgentWatchdogErrorAt = 0;
@@ -423,7 +433,7 @@ function startLocalAgentWatchdog() {
 async function refreshLocalAgentPlatformControl() {
   if (!config.localAgentAutoStart) return { notified: false, reason: 'LOCAL_AGENT_AUTO_START_DISABLED' };
   try {
-    const response = await fetch(`http://127.0.0.1:${config.agentPort}/control/refresh`, {
+    const response = await fetch(`${config.browserAgentUrl || `http://127.0.0.1:${config.agentPort}`}/control/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(config.agentToken ? { 'X-Agent-Token': config.agentToken } : {}) },
       body: '{}',
@@ -458,21 +468,31 @@ function localAgentProxyPath(pathname) {
 function localAgentProxyRouteAllowed(method, agentPath) {
   return localAgentProxyJsonRoutes.some(route => route.method === method && route.pattern.test(agentPath));
 }
-function localAgentStatus(health) {
+function localAgentStatus(materialHealth, browserHealth = null) {
+  const health = browserHealth || materialHealth;
   return {
-    managed: config.localAgentAutoStart,
+    managed: !browserHealth && config.localAgentAutoStart,
+    executionHost: browserHealth ? 'Windows Chrome' : '本机',
+    rpaMode: health.health?.rpaMode || config.rpaMode,
+    materialsOnline: materialHealth.online,
     online: health.online,
     reachable: health.reachable,
     deviceId: health.health?.deviceId || null,
     expectedDeviceId: config.deviceId,
     version: health.health?.version || null,
+    materialUploadMaxBytes: config.materialUploadMaxBytes,
     masterSwitchEnabled: health.health?.masterSwitchEnabled === true,
     bindingVerified: health.bindingMatches !== false,
     message: health.message
   };
 }
-async function ensureLocalAgentAvailableForProxy() {
+async function ensureLocalAgentAvailableForProxy(agentPath = '') {
   if (!operationsEnabled()) throw httpError(409, 'OPERATIONS_PAUSED', '全局运行已暂停，请先开启总开关');
+  if (usesBrowserAgent(agentPath)) {
+    const health = await checkBrowserAgentHealth();
+    if (!health.online) throw httpError(503, 'BROWSER_AGENT_OFFLINE', `${health.message}，请在运营电脑启动 Windows 浏览器执行端`);
+    return health;
+  }
   if (config.localAgentAutoStart) await ensureLocalAgentOnline();
   const health = await checkLocalAgentHealth();
   if (!health.online) throw httpError(503, 'LOCAL_AGENT_OFFLINE', health.message);
@@ -480,19 +500,21 @@ async function ensureLocalAgentAvailableForProxy() {
 }
 async function proxyLocalAgentJson(req, res, url, agentPath) {
   if (!localAgentProxyRouteAllowed(req.method, agentPath)) return fail(res, 404, 'Local Agent 代理接口不存在', null, 'LOCAL_AGENT_PROXY_ROUTE_NOT_ALLOWED');
-  try { await ensureLocalAgentAvailableForProxy(); }
+  try { await ensureLocalAgentAvailableForProxy(agentPath); }
   catch (error) { return fail(res, Number(error.statusCode) || 503, error.message, error.detail || null, error.code || 'LOCAL_AGENT_OFFLINE'); }
   const payload = req.method === 'GET' ? null : await body(req);
   let response;
   try {
-    response = await fetch(`http://127.0.0.1:${config.agentPort}${agentPath}${url.search}`, {
+    const baseUrl = usesBrowserAgent(agentPath) ? config.browserAgentUrl : `http://127.0.0.1:${config.agentPort}`;
+    response = await fetch(`${baseUrl}${agentPath}${url.search}`, {
       method: req.method,
       headers: {
         ...(payload === null ? {} : { 'Content-Type': 'application/json' }),
         ...(config.agentToken ? { 'X-Agent-Token': config.agentToken } : {})
       },
       ...(payload === null ? {} : { body: JSON.stringify(payload) }),
-      signal: AbortSignal.timeout(120_000)
+      signal: AbortSignal.timeout(['/audio-content-generation', '/material-content-generation'].includes(agentPath)
+        ? Math.max(120_000, config.audioTotalTimeoutMs + 10_000) : 120_000)
     });
   } catch (error) {
     return fail(res, 502, 'Local Agent 连接失败，请确认总开关已开启', error.message, 'LOCAL_AGENT_PROXY_FAILED');
@@ -533,6 +555,37 @@ async function proxyLocalAgentMaterial(req, res, url, agentPath) {
     else res.destroy(error);
   });
   upstream.end();
+}
+async function proxyLocalAgentUpload(req, res, url) {
+  try {
+    validateMaterialUpload(req, url, config.materialUploadMaxBytes);
+    await ensureLocalAgentAvailableForProxy();
+  } catch (error) {
+    req.resume();
+    return fail(res, error.statusCode || 503, error.message, null, error.code || 'LOCAL_AGENT_OFFLINE');
+  }
+  const upstream = http.request({
+    host: '127.0.0.1', port: config.agentPort, method: 'POST', path: `/upload-material${url.search}`,
+    headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': req.headers['content-length'],
+      ...(config.agentToken ? { 'X-Agent-Token': config.agentToken } : {}) }
+  }, response => {
+    res.writeHead(response.statusCode || 502, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    response.on('error', () => res.destroy());
+    response.pipe(res);
+    // An early rejection must stop forwarding but still allow its JSON error to reach the browser.
+    if (!req.readableEnded) { req.unpipe(upstream); req.resume(); }
+  });
+  upstream.setTimeout(120_000, () => upstream.destroy(new Error('upload timeout')));
+  upstream.on('error', () => {
+    req.unpipe(upstream);
+    if (!req.destroyed) req.resume();
+    if (res.destroyed) return;
+    if (!res.headersSent) fail(res, 502, '素材上传连接中断，请重新选择文件', null, 'MATERIAL_UPLOAD_CONNECTION_FAILED');
+    else res.destroy();
+  });
+  req.on('aborted', () => upstream.destroy());
+  res.on('close', () => { if (!res.writableFinished) upstream.destroy(); });
+  req.pipe(upstream);
 }
 function getPlatformRuntime() {
   const masterEnabled = operationsEnabled();
@@ -2932,7 +2985,18 @@ function reportPublishPlatformIsolation({ phase, payload = {}, target = {}, resu
 
 function applyReviewResult(payload, result, outerStatus, { sourceJobId = null } = {}) {
   const target = row('SELECT * FROM publish_targets WHERE id=?', payload.targetId); if (!target) return;
-  const resultObject = result && typeof result === 'object' ? result : {};
+  const storedResult = json(target.result, {});
+  const reviewResult = result && typeof result === 'object' ? result : {};
+  const resultObject = storedResult.manualSubmissionConfirmed === true ? {
+    ...reviewResult,
+    manualSubmissionConfirmed: true,
+    manualSecurityVerificationRequired: false,
+    manuallyConfirmed: reviewResult.reviewStatus === 'PUBLISHED',
+    manualPublishedAt: storedResult.manualPublishedAt,
+    handledBy: storedResult.handledBy,
+    handledAt: storedResult.handledAt,
+    manualAction: reviewResult.reviewStatus === 'PUBLISHED' ? 'PUBLISHED_VERIFIED_ON_PLATFORM' : 'PUBLISHED_PENDING_VERIFICATION'
+  } : reviewResult;
   const identityValidation = validatePublishTargetIdentity(payload, target);
   if (!identityValidation.ok) {
     reportPublishPlatformIsolation({ phase: 'VERIFY_REQUEST_IDENTITY', payload, target, result: resultObject, validation: identityValidation });
@@ -3058,6 +3122,24 @@ function applyPublishCompletion(job, payload, result, outerStatus, stamp, jobId)
     return;
   }
   if (publishTargetHasManualPublishedLock(target)) {
+    updateTaskAggregate(target.task_id);
+    return;
+  }
+  if (json(target.result, {}).manualSubmissionConfirmed === true) return;
+  if (isPublishSecurityChallenge(resultObject)) {
+    const attempted = resultObject.submitAttempted === true || target.submit_lock === 'LOCKED' || Boolean(target.submit_attempted_at);
+    const waiting = manualSecurityWaitResult(resultObject, attempted);
+    run(`UPDATE publish_targets SET status='NEEDS_CONFIRMATION',result=?,review_status='UNKNOWN',review_message=?,
+      publish_attempt_state=?,submit_lock=CASE WHEN ? THEN 'LOCKED' ELSE submit_lock END,
+      submit_attempted_at=CASE WHEN ? THEN COALESCE(submit_attempted_at,?) ELSE submit_attempted_at END,
+      updated_at=? WHERE id=?`, JSON.stringify(waiting), waiting.message, attempted ? 'SUBMIT_ATTEMPTED_UNCONFIRMED' : 'DRAFT_BLOCKED', attempted ? 1 : 0, attempted ? 1 : 0, stamp, stamp, target.id);
+    if (jobId > 0) run("UPDATE agent_jobs SET status='NEEDS_CONFIRMATION',result=? WHERE id=?", JSON.stringify(waiting), jobId);
+    cancelQueuedPublishVerificationJobs(target.id, { reason: 'WAITING_MANUAL_SECURITY_VERIFICATION' });
+    for (const activeIssue of rows(`SELECT id FROM issues WHERE related_type='PUBLISH_TARGET' AND related_id=? AND category IN ('PUBLISH','PUBLISH_REVIEW') AND status IN ('OPEN','DIAGNOSING','DIAGNOSED','RETRYING')`, String(target.id))) {
+      run("UPDATE issues SET status='RESOLVED',resolution_type='MANUAL_HANDLED',resolution=?,resolved_at=?,updated_at=? WHERE id=?", waiting.message, stamp, stamp, activeIssue.id);
+      releaseIssueBlocks(activeIssue.id, { releasedBy: 'SYSTEM', reason: waiting.message });
+      run("UPDATE agent_jobs SET status='CANCELLED',completed_at=?,result=? WHERE job_type='DIAGNOSE_ISSUE' AND status='QUEUED' AND CAST(json_extract(payload,'$.issueId') AS INTEGER)=?", stamp, JSON.stringify({ message: waiting.message }), activeIssue.id);
+    }
     updateTaskAggregate(target.task_id);
     return;
   }
@@ -3218,32 +3300,52 @@ function applyPublishCompletion(job, payload, result, outerStatus, stamp, jobId)
 function markPublishTargetManualPublished(targetId, data = {}) {
   const target = row('SELECT * FROM publish_targets WHERE id=?', Number(targetId));
   if (!target) return null;
+  const account = row('SELECT device_id,profile_name FROM accounts WHERE id=?', target.account_id);
+  if (!account?.device_id) throw httpError(409, 'PUBLISH_DEVICE_MISSING', '发布账号没有绑定执行电脑');
+  const task = row('SELECT * FROM publish_tasks WHERE id=?', target.task_id);
   const stamp = now();
   const handledBy = String(data.handledBy || '运营人员').trim().slice(0, 100) || '运营人员';
-  const message = String(data.message || '用户确认已在平台草稿/发布页面人工发布').trim().slice(0, 1000);
+  const message = '人工已确认完成平台发布，正在自动核验发布结果';
   const previousResult = json(target.result, {});
   const effectiveResult = {
     ...previousResult,
-    manuallyConfirmed: true,
+    stage: 'manual_published_pending_verification',
+    manuallyConfirmed: false,
+    manualSubmissionConfirmed: true,
+    manualSecurityVerificationRequired: false,
     manualActionRequired: false,
-    manualAction: 'PUBLISHED_ON_PLATFORM',
+    verificationRequired: true,
+    manualAction: 'PUBLISHED_PENDING_VERIFICATION',
     handledBy,
     handledAt: stamp,
+    manualPublishedAt: previousResult.manualPublishedAt || data.manualPublishedAt || stamp,
+    submissionStatus: 'SUBMITTED',
+    reviewStatus: 'UNKNOWN',
+    submitAttempted: true,
     message
   };
   db.exec('BEGIN IMMEDIATE');
   try {
-    run(`UPDATE publish_targets SET status='PUBLISHED',submission_status='SUBMITTED',review_status='PUBLISHED',publish_attempt_state='PUBLISHED',submit_lock='LOCKED',submit_authorized_at=COALESCE(submit_authorized_at,?),submit_attempted_at=COALESCE(submit_attempted_at,?),submit_attempt_count=MAX(submit_attempt_count,1),submit_lock_reason='MANUAL_PLATFORM_PUBLISH_CONFIRMED',submitted_at=COALESCE(submitted_at,?),reviewed_at=?,last_checked_at=?,review_message=?,result=?,updated_at=? WHERE id=?`, stamp, stamp, stamp, stamp, stamp, message, JSON.stringify(effectiveResult), stamp, Number(targetId));
+    run(`UPDATE publish_targets SET status='SUBMITTED',submission_status='SUBMITTED',review_status='UNKNOWN',publish_attempt_state='SUBMITTED',submit_lock='LOCKED',submit_authorized_at=COALESCE(submit_authorized_at,?),submit_attempted_at=COALESCE(submit_attempted_at,?),submit_attempt_count=MAX(submit_attempt_count,1),submit_lock_reason='MANUAL_PLATFORM_PUBLISH_PENDING_VERIFICATION',submitted_at=COALESCE(submitted_at,?),reviewed_at=NULL,review_message=?,result=?,updated_at=? WHERE id=?`, stamp, stamp, stamp, message, JSON.stringify(effectiveResult), stamp, Number(targetId));
     run(`UPDATE agent_jobs SET status='CANCELLED',completed_at=?,lease_expires_at=NULL,result=?
       WHERE status='QUEUED' AND job_type IN ('PUBLISH','VERIFY_PUBLISH')
-        AND CAST(json_extract(payload,'$.targetId') AS INTEGER)=?`, stamp, JSON.stringify({ message: '用户已确认平台侧人工发布，取消排队任务并禁止自动重投', handledBy, handledAt: stamp }), Number(targetId));
+        AND CAST(json_extract(payload,'$.targetId') AS INTEGER)=?`, stamp, JSON.stringify({ message: '人工已提交，取消旧排队任务，仅重新安排只读核验', handledBy, handledAt: stamp }), Number(targetId));
     const activeIssues = rows(`SELECT id FROM issues WHERE related_type='PUBLISH_TARGET' AND related_id=? AND status IN ('OPEN','DIAGNOSING','DIAGNOSED','RETRYING')`, String(targetId));
     for (const activeIssue of activeIssues) {
       run(`UPDATE issues SET status='RESOLVED',resolution_type='MANUAL_HANDLED',resolution=?,assignee=?,resolved_by=?,resolved_at=?,updated_at=? WHERE id=?`, message, handledBy, handledBy, stamp, stamp, activeIssue.id);
       releaseIssueBlocks(activeIssue.id, { releasedBy: handledBy, reason: message });
-      run("UPDATE agent_jobs SET status='CANCELLED',completed_at=?,result=? WHERE job_type='DIAGNOSE_ISSUE' AND status='QUEUED' AND CAST(json_extract(payload,'$.issueId') AS INTEGER)=?", stamp, JSON.stringify({ message: '发布问题已人工处理，取消排队中的只读诊断' }), activeIssue.id);
-      run("UPDATE issue_diagnoses SET status='CANCELLED',error_message=?,completed_at=?,updated_at=? WHERE issue_id=? AND status='QUEUED'", '发布问题已人工处理', stamp, stamp, activeIssue.id);
+      run("UPDATE agent_jobs SET status='CANCELLED',completed_at=?,result=? WHERE job_type='DIAGNOSE_ISSUE' AND status='QUEUED' AND CAST(json_extract(payload,'$.issueId') AS INTEGER)=?", stamp, JSON.stringify({ message: '人工已提交，等待发布结果核验' }), activeIssue.id);
+      run("UPDATE issue_diagnoses SET status='CANCELLED',error_message=?,completed_at=?,updated_at=? WHERE issue_id=? AND status='QUEUED'", message, stamp, stamp, activeIssue.id);
     }
+    createJob(account.device_id, 'VERIFY_PUBLISH', {
+      taskId: target.task_id, targetId: target.id, platformCode: target.platform_code, accountId: target.account_id,
+      profileName: account.profile_name, title: task.title, body: task.body || '',
+      platformPostId: target.platform_post_id || null, platformUrl: target.platform_url || null,
+      submittedAt: effectiveResult.manualPublishedAt, taskCreatedAt: task.created_at,
+      submissionStatus: 'SUBMITTED', submissionConfirmed: true, reviewAttempt: 0,
+      verificationPolicyId: publishVerificationPolicy(target.platform_code)?.verificationPolicyId || null,
+      verificationSource: 'MANUAL_PUBLISHED_CONFIRMATION', manualRequested: true
+    }, { idempotencyKey: `verify:target:${target.id}:manual-submitted`, availableAt: stamp });
     updateTaskAggregate(target.task_id);
     db.exec('COMMIT');
   } catch (error) {
@@ -3251,6 +3353,28 @@ function markPublishTargetManualPublished(targetId, data = {}) {
     throw error;
   }
   return row('SELECT * FROM publish_targets WHERE id=?', Number(targetId));
+}
+
+function migrateManualPublishVerification() {
+  let waiting = 0;
+  let verifying = 0;
+  for (const target of rows("SELECT t.*,a.device_id FROM publish_targets t JOIN accounts a ON a.id=t.account_id WHERE t.status IN ('FAILED','NEEDS_CONFIRMATION')")) {
+    const result = json(target.result, {});
+    if (!isPublishSecurityChallenge(result) || (target.status === 'NEEDS_CONFIRMATION' && result.manualSecurityVerificationRequired === true)) continue;
+    applyPublishCompletion({ device_id: target.device_id }, { taskId: target.task_id, targetId: target.id, accountId: target.account_id, platformCode: target.platform_code }, result, 'NEEDS_CONFIRMATION', now(), -1);
+    run(`UPDATE agent_jobs SET status='NEEDS_CONFIRMATION',result=? WHERE job_type='PUBLISH' AND status='FAILED'
+      AND CAST(json_extract(payload,'$.targetId') AS INTEGER)=?`, row('SELECT result FROM publish_targets WHERE id=?', target.id).result, target.id);
+    waiting += 1;
+  }
+  // Older versions treated an operator's confirmation as proof of publication.
+  // Reconcile only that explicit legacy marker; never enqueue another PUBLISH.
+  for (const target of rows(`SELECT id,result,submitted_at FROM publish_targets WHERE status='PUBLISHED'
+    AND json_extract(result,'$.manuallyConfirmed')=1 AND json_extract(result,'$.manualAction')='PUBLISHED_ON_PLATFORM'`)) {
+    const result = json(target.result, {});
+    markPublishTargetManualPublished(target.id, { handledBy: result.handledBy || '运营人员', manualPublishedAt: target.submitted_at || result.handledAt });
+    verifying += 1;
+  }
+  if (waiting || verifying) console.log(`[publish] 人工验证状态升级：${waiting} 条等待人工验证，${verifying} 条人工确认转平台核验`);
 }
 
 function messageNoteCandidates(platformCode, accountId) {
@@ -3718,6 +3842,7 @@ async function api(req, res, url) {
   if (pathname.startsWith('/api/agent/')) {
     if (!requireAgentToken(req, res)) return;
   } else if (!requireAdminSession(req, res)) return;
+  if (pathname.startsWith('/api/ai-studio/')) return proxyAiStudio(req, res, url, { baseUrl: config.aiStudioInternalUrl, token: config.aiStudioToken });
   if (['/api/studio/outputs', '/api/studio/materials', '/api/studio/outputs/confirm'].includes(pathname)) {
     const session = requireAdminSession(req, res);
     if (!session) return;
@@ -3818,10 +3943,11 @@ async function api(req, res, url) {
   }
   if (req.method === 'GET' && pathname === '/api/local-agent/health') {
     const health = await checkLocalAgentHealth();
-    return ok(res, { localAgent: localAgentStatus(health) });
+    return ok(res, { localAgent: localAgentStatus(health, await checkBrowserAgentHealth()) });
   }
   const proxiedAgentPath = localAgentProxyPath(pathname);
   if (proxiedAgentPath) {
+    if (req.method === 'POST' && proxiedAgentPath === '/upload-material') return proxyLocalAgentUpload(req, res, url);
     if (proxiedAgentPath.startsWith('/material-preview/')) return proxyLocalAgentMaterial(req, res, url, proxiedAgentPath);
     return proxyLocalAgentJson(req, res, url, proxiedAgentPath);
   }
@@ -3838,7 +3964,7 @@ async function api(req, res, url) {
     const aiSettings = getAiSettingsSummary();
     const messageCollection = { ...getMessageCollectionSettings(), enabled: config.autoCollectEnabled, nextCollectionAt: nextAutomaticMessageCollectionAt };
     const localAgentHealth = await checkLocalAgentHealth();
-    return ok(res, { platforms: getPlatformRuntime(), devices: rows('SELECT * FROM devices ORDER BY id'), accounts: getAccounts(), stats, localAgent: localAgentStatus(localAgentHealth), config: { qwenMode: aiSettings.mode, aiConfigured: aiSettings.configured, autoReplyThreshold: config.autoReplyThreshold, rpaMode: config.rpaMode, localAgentBaseUrl: '/api/local-agent', audioContentGenerationEnabled: config.audioContentGenerationEnabled, audioContentAutoTrigger: config.audioContentAutoTrigger, autoCollectEnabled: config.autoCollectEnabled, messageCollectMinIntervalMs: messageCollection.minMs, messageCollectMaxIntervalMs: messageCollection.maxMs, messageCollection, loginStatusPoll: { enabled: config.loginStatusPollEnabled, intervalMs: config.loginStatusPollIntervalMs, logoutConfirmations: config.loginStatusLogoutConfirmations, confirmDelayMs: config.loginStatusConfirmDelayMs }, masterSwitch: getMasterSwitch(), activePlatformCodes, plannedPlatformCodes: config.plannedPlatformCodes } });
+    return ok(res, { platforms: getPlatformRuntime(), devices: rows('SELECT * FROM devices ORDER BY id'), accounts: getAccounts(), stats, localAgent: localAgentStatus(localAgentHealth, await checkBrowserAgentHealth()), config: { qwenMode: aiSettings.mode, aiConfigured: aiSettings.configured, autoReplyThreshold: config.autoReplyThreshold, rpaMode: config.rpaMode, localAgentBaseUrl: '/api/local-agent', audioContentGenerationEnabled: config.audioContentGenerationEnabled, audioContentAutoTrigger: config.audioContentAutoTrigger, autoCollectEnabled: config.autoCollectEnabled, messageCollectMinIntervalMs: messageCollection.minMs, messageCollectMaxIntervalMs: messageCollection.maxMs, messageCollection, loginStatusPoll: { enabled: config.loginStatusPollEnabled, intervalMs: config.loginStatusPollIntervalMs, logoutConfirmations: config.loginStatusLogoutConfirmations, confirmDelayMs: config.loginStatusConfirmDelayMs }, masterSwitch: getMasterSwitch(), activePlatformCodes, plannedPlatformCodes: config.plannedPlatformCodes } });
   }
   if (req.method === 'GET' && pathname === '/api/operations-dashboard') {
     const rangeParam = url.searchParams.get('range') === '30d' ? 30 : 7;
@@ -3887,7 +4013,7 @@ async function api(req, res, url) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(config.agentToken ? { 'X-Agent-Token': config.agentToken } : {}) },
         body: JSON.stringify({ materialPath: draft.materialPath, materialSha256: draft.materialSha256, platformCodes: [], force: true, knowledgeOnly: true, generationNonce: crypto.randomUUID() }),
-        signal: AbortSignal.timeout(120_000)
+        signal: AbortSignal.timeout(Math.max(120_000, config.audioTotalTimeoutMs + 10_000))
       });
     } catch (error) {
       throw httpError(502, 'LOCAL_AGENT_PROXY_FAILED', '本地服务连接失败，暂时无法重新生成知识草稿', error.message);
@@ -4102,7 +4228,7 @@ async function api(req, res, url) {
     }
   }
   if (req.method === 'GET' && pathname === '/api/agent/platform-runtime') {
-    return ok(res, { platforms: getPlatformRuntime(), masterSwitch: getMasterSwitch() });
+    return ok(res, { platforms: getPlatformRuntime(), masterSwitch: getMasterSwitch(), manualPublishWaitPlatforms: manualPublishWaitPlatforms() });
   }
   const smartReplyMatch = pathname.match(/^\/api\/platforms\/([a-z_]+)\/smart-reply$/);
   if (req.method === 'GET' && smartReplyMatch) {
@@ -4540,6 +4666,12 @@ async function api(req, res, url) {
       const task = getTask(target.task_id);
       return ok(res, { target: task?.targets.find(item => Number(item.id) === Number(id)) || target, idempotent: true });
     }
+    if (json(target.result, {}).manualSubmissionConfirmed === true) {
+      const task = getTask(target.task_id);
+      return ok(res, { target: task?.targets.find(item => Number(item.id) === Number(id)) || target, idempotent: true });
+    }
+    const activePublish = row("SELECT id FROM agent_jobs WHERE job_type='PUBLISH' AND status='RUNNING' AND CAST(json_extract(payload,'$.targetId') AS INTEGER)=?", id);
+    if (activePublish) return fail(res, 409, '自动发布仍在执行，请等待它停止后再确认人工发布');
     if (!['FAILED','NEEDS_CONFIRMATION','REVIEWING','SYNCING','SUBMITTED'].includes(target.status)) {
       return fail(res, 409, '当前状态不允许人工标记为已发布；请先确认自动发布流程已停止');
     }
@@ -5185,12 +5317,31 @@ async function api(req, res, url) {
     applyPublishCompletion({ device_id: target.device_id }, { taskId: target.task_id, targetId: target.id, platformCode: target.platform_code, accountId: target.account_id, profileName: data.profileName || null, title: target.title }, result, outerStatus, now(), -1);
     return ok(res, { target: row('SELECT * FROM publish_targets WHERE id=?', id) });
   }
+  const jobMaterialMatch = pathname.match(/^\/api\/agent\/jobs\/(\d+)\/material$/);
+  if (req.method === 'GET' && jobMaterialMatch) {
+    if (!config.agentToken) return fail(res, 503, '素材交接必须配置 Agent 共享密钥', null, 'AGENT_TOKEN_REQUIRED');
+    if (!operationsEnabled()) return fail(res, 409, '全局运行已暂停', null, 'OPERATIONS_PAUSED');
+    try {
+      const material = await resolveJobMaterial({
+        job: row('SELECT * FROM agent_jobs WHERE id=?', Number(jobMaterialMatch[1])),
+        deviceId: url.searchParams.get('deviceId'),
+        roots: [config.materialUploadDir, path.join(config.contentLibraryDir, 'media'), path.join(ROOT, 'sample-material')]
+      });
+      res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': material.size,
+        'X-Material-Sha256': material.sha256, 'Cache-Control': 'no-store' });
+      const stream = fs.createReadStream(material.path);
+      res.on('close', () => stream.destroy());
+      stream.on('error', () => res.destroy());
+      stream.pipe(res);
+      return;
+    } catch (error) { return fail(res, error.statusCode || 500, error.message, null, error.code || 'MATERIAL_HANDOFF_FAILED'); }
+  }
   if (req.method === 'POST' && pathname === '/api/agent/heartbeat') {
     const data = await body(req);
     const device = row('SELECT * FROM devices WHERE id=?', data.deviceId);
     if (!device) return fail(res, 404, '\u8bbe\u5907\u4e0d\u5b58\u5728');
     run("UPDATE devices SET status='ONLINE',agent_version=?,last_heartbeat=?,browser_control_json=COALESCE(?,browser_control_json) WHERE id=?", data.version || 'unknown', now(), data.browserControl ? JSON.stringify(data.browserControl) : null, data.deviceId);
-    return ok(res, { serverTime: now(), platforms: getPlatformRuntime(), masterSwitch: getMasterSwitch() });
+    return ok(res, { serverTime: now(), platforms: getPlatformRuntime(), masterSwitch: getMasterSwitch(), manualPublishWaitPlatforms: manualPublishWaitPlatforms(data.deviceId) });
   }
   if (req.method === 'POST' && pathname === '/api/agent/jobs/claim') {
     const data = await body(req);
@@ -5221,7 +5372,11 @@ async function api(req, res, url) {
     const queueLaneFilterSql = requestedQueueLanes.length
       ? ` AND ${effectiveQueueLaneSql} IN (${requestedQueueLanes.map(() => '?').join(',')})`
       : '';
-    const runnableSql = ` AND j.job_type <> 'PUBLISH_STATUS_CHECK' AND (
+    const runnableSql = ` AND j.job_type <> 'PUBLISH_STATUS_CHECK'
+    AND NOT EXISTS (SELECT 1 FROM publish_targets waiting JOIN accounts waiting_account ON waiting_account.id=waiting.account_id
+      WHERE waiting_account.device_id=j.device_id AND waiting.platform_code=json_extract(j.payload,'$.platformCode')
+      AND waiting.status='NEEDS_CONFIRMATION' AND json_extract(waiting.result,'$.manualSecurityVerificationRequired')=1)
+    AND (
       j.job_type <> 'REPLY' OR COALESCE((
         SELECT smart_reply_setting.encrypted_value FROM system_settings smart_reply_setting
         WHERE smart_reply_setting.setting_key='smart_reply.' || json_extract(j.payload,'$.platformCode') || '.enabled'
@@ -5531,6 +5686,17 @@ async function api(req, res, url) {
     if (job.job_type === 'COLLECT_MESSAGES') {
       try {
         db.exec('BEGIN IMMEDIATE');
+        // A user can disable the account while its browser scan is finishing.
+        // Treat that late completion as cancellation, not a persistence fault
+        // that permanently blocks the account when it is enabled again.
+        const collectionAccount = row('SELECT enabled FROM accounts WHERE id=? AND platform_code=?', Number(payload.accountId), payload.platformCode);
+        if (collectionAccount && !collectionAccount.enabled) {
+          const cancelledResult = { ...result, ignored: true, ignoreReason: 'ACCOUNT_DISABLED_DURING_COLLECTION', originalCompletionStatus: outerStatus,
+            message: '采集期间账号已停用，本次结果不入库、不启动回复；重新启用后可重新采集' };
+          run("UPDATE agent_jobs SET status='CANCELLED',result=?,completed_at=?,lease_expires_at=NULL WHERE id=?", JSON.stringify(cancelledResult), stamp, id);
+          db.exec('COMMIT');
+          return ok(res, { job: row('SELECT * FROM agent_jobs WHERE id=?', id), manualPublishWaitPlatforms: manualPublishWaitPlatforms(job.device_id) });
+        }
         const collectedMessages = Array.isArray(result.messages) ? result.messages : [];
         for (const message of collectedMessages) {
           // Every collected message is persisted without starting reply work.
@@ -5808,7 +5974,7 @@ async function api(req, res, url) {
         issue({ source: 'RPA', category: 'MANUAL_REPLY_DETECTION', title: `${payload.platformCode} \u4eba工回复检测失败`, detail: result.message || 'RPA \u8fd4回失败', relatedType: 'MESSAGE', relatedId: payload.messageId, screenshotPath: result.screenshotPath, retryable: true });
       }
     }
-    return ok(res);
+    return ok(res, { manualPublishWaitPlatforms: manualPublishWaitPlatforms(job.device_id) });
   }
   return fail(res, 404, '接口不存在');
 }
@@ -5898,6 +6064,11 @@ const server = http.createServer(async (req, res) => {
       }
     }
     if (req.method === 'OPTIONS') return send(res, 204, '');
+    if (['GET', 'HEAD'].includes(req.method) && config.aiSignalStudioInternalUrl
+        && ['/ai-studio', '/ai-studio/', '/ai-studio/index.html'].includes(url.pathname)) {
+      res.writeHead(302, { Location: '/integrations/ai-signal/', 'Cache-Control': 'no-store' });
+      return res.end();
+    }
     if (isAiSignalProxyPath(url.pathname)) return await proxyAiSignal(req, res, url);
     if (url.pathname === '/video-workbench' || url.pathname.startsWith('/video-workbench/')) {
       if (url.pathname === '/video-workbench') { res.writeHead(302, { Location: '/video-workbench/' }); return res.end(); }
@@ -5912,6 +6083,7 @@ const server = http.createServer(async (req, res) => {
     return fail(res, status, status >= 500 ? '服务器处理失败' : error.message, status >= 500 ? null : error.detail, code);
   }
 });
+migrateManualPublishVerification();
 if (!operationsEnabled()) run("UPDATE devices SET status='OFFLINE' WHERE id=?", config.deviceId);
 server.on('error', error => { stopMiniProgramWorkers(); serverInstanceLock.release(); console.error(`[cloud-web] 启动失败：${error.message}`); });
 server.listen(config.port, config.host, () => {
@@ -6014,4 +6186,3 @@ async function shutdownServer(signal) {
 process.on('exit', () => { stopMiniProgramWorkers(); serverInstanceLock.release(); });
 process.on('SIGINT', () => { shutdownServer('SIGINT').then(() => process.exit(0)).catch(error => { console.error(error); process.exit(1); }); });
 process.on('SIGTERM', () => { shutdownServer('SIGTERM').then(() => process.exit(0)).catch(error => { console.error(error); process.exit(1); }); });
-

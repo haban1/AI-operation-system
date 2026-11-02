@@ -29,10 +29,19 @@ type SupportBroadcast struct {
 	Image        []byte         `gorm:"type:longblob" json:"-"`
 	ImageType    string         `gorm:"size:64" json:"-"`
 	HasImage     bool           `json:"has_image"`
+	ImageCount   int            `gorm:"not null;default:0" json:"image_count"`
 	Status       string         `gorm:"size:24;index" json:"status"`
 	Results      datatypes.JSON `json:"results"`
 	SuccessCount int            `json:"success_count"`
 	FailedCount  int            `json:"failed_count"`
 	CreatedAt    int64          `json:"created_at"`
 	UpdatedAt    int64          `json:"updated_at"`
+}
+
+// Keep legacy Image/ImageType on SupportBroadcast for existing single-image jobs.
+type SupportBroadcastImage struct {
+	BroadcastID string `gorm:"primaryKey;size:64" json:"-"`
+	Position    int    `gorm:"primaryKey;autoIncrement:false" json:"-"`
+	Image       []byte `gorm:"type:longblob" json:"-"`
+	ImageType   string `gorm:"size:64" json:"-"`
 }

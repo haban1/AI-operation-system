@@ -221,6 +221,7 @@ func FriendDeleteDoc() {}
 // @Param id query int true "机器人实例ID"
 // @Param chat_room_id query string true "群ID"
 // @Param keyword query string false "关键词"
+// @Param membership query string false "成员状态" Enums(current, left, all)
 // @Param page_index query int false "页码"
 // @Param page_size query int false "每页数量"
 // @Success 200 {object} dto.Response[dto.ListResponse[dto.ChatRoomMember]]

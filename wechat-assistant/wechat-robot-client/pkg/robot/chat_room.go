@@ -17,7 +17,7 @@ type NewChatroomData struct {
 }
 
 type ChatRoomMemberDetail struct {
-	BaseResponse
+	BaseResponse     `json:"BaseResponse"`
 	ChatroomUserName string          `json:"ChatroomUserName"`
 	ServerVersion    int64           `json:"ServerVersion"`
 	NewChatroomData  NewChatroomData `json:"NewChatroomData"`

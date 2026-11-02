@@ -39,17 +39,30 @@ def new_experiment(previous=(),seed=None):
 
 
 def brief_schema():
-    fields=['name','opening','story_arc','visual_plan','narration_direction','ending','creative_prompt','tradeoff']
+    fields={'name':'本轮创作方案的简短名称',
+            'opening':'开头提出的具体问题或场景',
+            'story_arc':'用一段文字说明叙事推进：开头、中段例子或解释、转折与收束',
+            'visual_plan':'用一段文字说明各阶段使用的画面和现有模板',
+            'narration_direction':'旁白的口吻、节奏和表达方式',
+            'ending':'结尾如何回答开头，以及可执行的建议',
+            'creative_prompt':'供下一步写稿使用的本轮详细创作指令',
+            'tradeoff':'本方案的取舍与来源局限'}
     return {'type':'object','additionalProperties':False,'properties':{
-        k:{'type':'string','minLength':1,'maxLength':1000 if k=='creative_prompt' else 350} for k in fields},'required':fields}
+        k:{'type':'string','description':description,'minLength':1,
+           'maxLength':24 if k=='name' else 1000 if k=='creative_prompt' else 350}
+        for k,description in fields.items()},'required':list(fields)}
 
 
 def validate_brief(value):
-    for key in brief_schema()['required']:
-        text=value.get(key) if isinstance(value,dict) else None
-        if not isinstance(text,str) or not text.strip() or len(text)>(1000 if key=='creative_prompt' else 350):
-            raise ValueError('创作方案字段不正确：'+key)
-    if len(value['name'])>24:raise ValueError('创作方案名称最多24字')
+    if not isinstance(value,dict):raise ValueError('创作方案必须是 JSON 对象')
+    for key,rules in brief_schema()['properties'].items():
+        prefix='创作方案字段不正确：'+key+'，'
+        if key not in value:raise ValueError(prefix+'缺少此字段，必须提供字符串')
+        text=value[key]
+        if not isinstance(text,str):raise ValueError(prefix+'必须是字符串，不能使用数组、对象或其他类型')
+        if not text.strip():raise ValueError(prefix+'内容不能为空')
+        limit=rules['maxLength']
+        if len(text)>limit:raise ValueError(prefix+f'当前{len(text)}字，最多{limit}字，请压缩为一段文字')
     return value
 
 
@@ -73,7 +86,8 @@ name最多24字；creative_prompt是你为本轮重新写的详细创作指令�
         try:return validate_brief(json.loads(re.sub(r'^```(?:json)?\s*|\s*```$','',raw.strip())))
         except (ValueError,TypeError,KeyError) as error:
             if attempt:raise ValueError('创作方案自动修复后仍不合格：'+str(error)) from None
-            prompt.update(previous_output=raw,validation_error=str(error),repair='保留题材和随机约束，修复格式后返回完整方案。')
+            prompt.update(previous_output=raw,validation_error=str(error),
+                          repair='保留题材、事实边界和随机约束，按 JSON Schema 修复字段类型、缺失字段与长度后返回完整方案。所有字段必须是字符串。')
 
 
 def brief_instructions(brief,assignment):

@@ -1,7 +1,7 @@
 const routes = {
-  automatic: { title: "自动化成片", product: "AI Signal Studio", number: "01", url: "", notice: "选题、制作与挑选都在下方工作区完成。切换线路会保留当前页面。" },
+  automatic: { title: "自动化成片", product: "AI Signal Studio", number: "01", url: "", notice: "选题研究、多风格创作与成片对比。文稿模型沿用天河配置，切换线路会保留当前页面。" },
   editing: { title: "素材智剪", product: "OpenChatCut", number: "02", url: "", notice: "上传实拍素材，在原工作区用自然语言剪辑、预览与导出。切换线路会保留当前工程页面。" },
-  creation: { title: "AIGC 创作", product: "Toonflow", number: "03", url: "", notice: "文案与文生图已接入。图片请选择「GPT Image 2 · 公司文生图」，尺寸与比例使用自动；参考图编辑、视频生成尚待接入。" },
+  creation: { title: "AIGC 创作", product: "Toonflow", number: "03", url: "", notice: "文字创作沿用天河主模型。图片、视频和语音生成需在本工作区配置相应服务。" },
 };
 const pickerMode = new URLSearchParams(location.search).get("picker") === "1";
 document.body.classList.toggle("libraryPicker", pickerMode);
@@ -148,6 +148,9 @@ byId("refreshStatus").addEventListener("click", refreshStatus);
 byId("retryConnection").addEventListener("click", refreshStatus);
 document.querySelector(".skipLink").addEventListener("click", (event) => { event.preventDefault(); byId("main").focus(); });
 window.addEventListener("hashchange", navigate);
+window.addEventListener("message", event => {
+  if (event.origin === location.origin && event.source === frames.get('automatic')?.contentWindow && event.data?.type === 'ai-studio:open-library') location.hash = 'library';
+});
 window.addEventListener("keydown", (event) => { if (event.key === "Escape" && document.body.classList.contains("focusMode")) { document.body.classList.remove("focusMode"); updateFocusButton(); } });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshStatus(); });
 document.querySelectorAll("[data-connection]").forEach((element) => setServiceLink(element.parentElement.querySelector("a"), ""));

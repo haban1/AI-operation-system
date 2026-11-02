@@ -25,7 +25,10 @@ func (cr *ChatRoom) SyncChatRoomMember(c *gin.Context) {
 		resp.ToErrorResponse(errors.New("参数错误"))
 		return
 	}
-	service.NewChatRoomService(c).SyncChatRoomMember(req.ChatRoomID)
+	if err := service.NewChatRoomService(c.Request.Context()).RefreshChatRoomMembers(req.ChatRoomID); err != nil {
+		resp.ToErrorResponse(err)
+		return
+	}
 	resp.ToResponse(nil)
 }
 

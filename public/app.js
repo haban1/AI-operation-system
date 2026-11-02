@@ -50,7 +50,7 @@ const ragReleaseBadgeCache=new Map();
 const state={publishSchedules:[],page:'dashboard',dashboardRange:'7d',dashboardPlatform:'all',operationsDashboard:null,auth:null,appStarted:false,bootstrap:null,precheck:null,compliance:null,trafficPrediction:{status:'IDLE',result:null,error:null,requestToken:null,platformCodes:[]},contentGeneration:{status:'IDLE',stage:null,sourceType:null,materialSha256:null,result:null,error:null,titleDirty:false,bodyDirty:false,requestToken:null,applied:false,needsManualApply:false},knowledgeView:'rag',ragUploadStage:'IDLE',ragCurrentDocumentId:null,ragCurrentDocumentVersion:null,knowledgeCategory:null,knowledgeSubcategory:null,knowledgeImportPreview:null,knowledgeImportStage:'IDLE',knowledgeImportFailedStep:null,knowledgeCategoryData:null,knowledgeImportSelected:[],knowledgeImportExpanded:[],knowledgeImportDirty:[],knowledgeImportFilter:'ALL',knowledgeCreateExpanded:false,publishHistoryPage:1,materialPreviewUrl:null,wecomCategory:'ALL',settingsConfigPanel:null,messageView:'COMMENT',messageAccountId:null,miniProgramFilter:'ALL',miniProgramConversationId:null,miniProgramPendingActions:new Set(),taskPlatform:'ALL',taskStatus:'ALL',retryDraft:null,retrySourceTaskId:null,xiaozhiOptions:null,xiaozhiSession:null,xiaozhiChat:[],xiaozhiSettings:{platformCode:'douyin',messageType:'PRIVATE_MESSAGE',script:'auto',contextEnabled:true,scope:'pre_release',importBatchId:null,selectedDocumentId:null,selectedDocumentVersion:null}};
 const $=s=>document.querySelector(s); const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const cleanText=v=>String(v??'').replace(/[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~_]+)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g,'').replace(/\s{3,}/g,' ').trim();
-const fmt=v=>v?new Date(v).toLocaleString('zh-CN',{hour12:false}):'—';
+const fmt=v=>{if(!v)return '—';const date=new Date(v);return Number.isNaN(date.getTime())?String(v).replace(/^发布于\s*/,''):date.toLocaleString('zh-CN',{hour12:false})};
 function fmtTaskPublishTime(value){if(!value)return '—';const date=new Date(value);if(Number.isNaN(date.getTime()))return '—';const pad=number=>String(number).padStart(2,'0');return `${date.getFullYear()}年${pad(date.getMonth()+1)}月${pad(date.getDate())}日 ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`}
 const STATUS_LABELS = Object.freeze({
   // 任务、发布与审核
@@ -58,7 +58,7 @@ const STATUS_LABELS = Object.freeze({
   SUBMITTED:'已提交', REVIEWING:'审核中', PUBLISHED:'已发布', PUBLISHED_ON_PLATFORM:'平台已发布',
   REJECTED:'审核失败', SUCCESS:'执行成功', FAILED:'失败', PARTIAL_SUCCESS:'部分采集完成', PARTIAL_FAILED:'部分失败',
   RECOVERED:'已恢复', AUTO_RECOVERED:'已自动恢复', RECOVERED_BY_RETRY:'已补发成功',
-  NEEDS_CONFIRMATION:'待人工确认', UNKNOWN:'待复核', NOT_SUBMITTED:'未提交',
+  WAITING_MANUAL_SECURITY:'待人工安全验证发布', NEEDS_CONFIRMATION:'待人工确认', UNKNOWN:'待复核', NOT_SUBMITTED:'未提交',
   NOT_ATTEMPTED:'未尝试', DRAFT_BLOCKED:'草稿阻塞', DRAFT_ONLY:'仅有草稿',
   SUBMITTING:'正在提交', SUBMIT_ATTEMPTED_UNCONFIRMED:'提交结果待核对',
   SUBMIT_RESULT_UNCONFIRMED:'提交结果待核对', AUTOMATIC_UNCONFIRMED_SUBMIT:'自动提交结果待核对',
@@ -896,12 +896,13 @@ async function renderPublish({pageGeneration=pageRenderGeneration}={}){
     <div class="grid cols-2 publish-grid">
       <div class="publish-column publish-main-column">
         <div class="panel" style="margin-top:0">
-        <div class="panel-head"><div><h2>1. 选择本地素材与文案</h2><p>素材留在RPA电脑，选择后自动识别视频格式，并按所选平台分别预检。</p></div></div>
+        <div class="panel-head"><div><h2>1. 选择本地素材与文案</h2><p>从电脑选择图片或视频，上传后自动预览、识别格式，并按所选平台分别预检。</p></div></div>
         <div class="section-actions library-publish-actions"><button type="button" class="btn secondary" id="pickFromContentLibrary">从素材库选择</button></div>
         <label>本地素材</label>
-        <label class="field full local-material-path-field"><span>本机素材路径（文件选择器不可用时可直接粘贴）</span><input id="materialPath" name="materialPath" type="text" placeholder="例如 D:\素材\video.mp4" autocomplete="off" required></label>
+        <input id="materialFile" type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.mov" aria-label="选择图片或视频" hidden>
+        <label class="field full local-material-path-field"><span>素材路径（上传后自动填写，也可填写运行设备上已有的路径）</span><input id="materialPath" name="materialPath" type="text" placeholder="选择文件后自动填写" autocomplete="off" required></label>
         <div id="materialPreview" class="material-preview material-preview-empty material-picker" role="button" tabindex="0" aria-label="选择本地素材">
-          <div class="material-picker-placeholder"><span class="material-picker-icon" aria-hidden="true">＋</span><b>点击选择本地素材</b><span>支持 JPG、PNG、WEBP、MP4、MOV</span><small>素材保留在本机，选择后自动预览并检测格式</small></div>
+          <div class="material-picker-placeholder"><span class="material-picker-icon" aria-hidden="true">＋</span><b>点击选择本地素材</b><span>支持 JPG、PNG、WEBP、MP4、MOV</span><small>上传到当前系统后自动预览并检测格式，原文件保留在电脑上</small></div>
         </div>
         <div id="precheckBox" class="notice material-check"><b>素材状态：等待上传</b><br>上传后仅展示视频格式与所选平台适配状态。</div>
         <div class="section-actions audio-copy-actions"><button type="button" class="btn secondary" id="generateAudioCopy">AI 生成标题和文案</button><button type="button" class="btn secondary" id="applyAudioCopy" hidden>使用 AI 结果</button></div>
@@ -979,30 +980,45 @@ async function renderPublish({pageGeneration=pageRenderGeneration}={}){
   resetAudioContentGeneration();
   const materialInput=$('#materialPath');
   const materialPicker=$('#materialPreview');
+  const materialFile=$('#materialFile');
   $('#pickFromContentLibrary').onclick=()=>openContentLibraryPicker({onSelect:publishContentLibraryItem,onUnauthorized:()=>showLoginScreen('登录已过期，请重新登录')});
   let materialPickerBusy=false;
-  const openMaterialPicker=async()=>{
+  const openMaterialPicker=()=>{
     if(materialPickerBusy)return;
+    materialFile.value='';
+    materialFile.click();
+  };
+  materialFile.addEventListener('change',async()=>{
+    const file=materialFile.files?.[0];
+    if(!file||materialPickerBusy)return;
+    const maxBytes=state.bootstrap?.localAgent?.materialUploadMaxBytes||2*1024**3;
+    if(!/\.(jpe?g|png|webp|mp4|mov)$/i.test(file.name)){toast('支持 JPG、PNG、WEBP、MP4、MOV 格式',true);return}
+    if(!file.size||file.size>maxBytes){toast(!file.size?'不能上传空文件':`单个素材不能超过 ${Math.round(maxBytes/1024**2)} MB`,true);return}
     materialPickerBusy=true;
+    materialInput.readOnly=true;
+    materialInput.value='';
+    publishPrecheckRequestGeneration+=1;
+    state.precheck=null;state.materialPreviewUrl=null;resetAudioContentGeneration();invalidateCompliance();
     materialPicker.classList.add('is-picking');
     materialPicker.setAttribute('aria-busy','true');
-    toast('正在打开本地文件选择窗口，请在弹窗中选择素材');
+    $('#precheckBox').className='notice material-check info';
+    $('#precheckBox').innerHTML=`<b>素材状态：正在上传…</b><br>${esc(file.name)} · 上传完成后自动检测，请稍候。`;
     try{
-      const d=await agent('/pick-file',{method:'POST',body:'{}'});
+      const d=await agent(`/upload-material?filename=${encodeURIComponent(file.name)}`,{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file});
       if(!ownsPage()||!materialInput.isConnected)return;
-      if(d.cancelled){toast('已取消选择文件');return}
       materialInput.value=d.materialPath;
-      state.precheck=null;state.materialPreviewUrl=null;resetAudioContentGeneration();invalidateCompliance();
       $('#precheckBox').className='notice material-check info';
-      $('#precheckBox').innerHTML='<b>素材状态：正在自动检测…</b><br>正在识别视频格式并准备平台适配检测。';
+      $('#precheckBox').innerHTML='<b>素材状态：正在自动检测…</b><br>上传完成，正在检测格式与平台适配状态。';
       await runPrecheck(true,{pageGeneration});
     }catch(e){if(ownsPage()&&materialInput.isConnected){showMaterialCheckError(e.message);toast(e.message,true)}}
     finally{
       materialPickerBusy=false;
+      materialInput.readOnly=false;
+      materialFile.value='';
       materialPicker.classList.remove('is-picking');
       materialPicker.removeAttribute('aria-busy');
     }
-  };
+  });
   materialPicker.addEventListener('click',event=>{if(!event.target.closest('video'))openMaterialPicker()});
   materialPicker.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openMaterialPicker()}});
   const platformChecks=()=>[...document.querySelectorAll('.platform-check:not(:disabled)')];
@@ -1126,7 +1142,7 @@ function renderMaterialPrecheck(precheck,previewUrl,platformCodes=[]){
   if(!box)return;
   const overall=String(precheck.overall||'PENDING').toUpperCase();
   const tone=!hasPlatformScope?'info':overall==='PASSED'?'ok':overall==='BLOCKED'?'blocked':'warn';
-  const label=!hasPlatformScope?'视频格式已识别，待选择平台':overall==='PASSED'?'平台适配检测通过':overall==='WARNING'?'平台适配需人工确认':'平台适配未通过';
+  const label=!hasPlatformScope?'素材格式已识别，待选择平台':overall==='PASSED'?'平台适配检测通过':overall==='WARNING'?'平台适配需人工确认':'平台适配未通过';
   const stateBadge=hasPlatformScope?badge(overall):'<span class="badge pending">待选平台</span>';
   const rawFormat=String(m.format||m.extension||'').replace(/^\./,'').trim();
   const formatLabel=rawFormat?rawFormat.toUpperCase():'未知格式';
@@ -1578,6 +1594,8 @@ function taskFailureMessage(task){
 }
 function taskDisplayStatus(task,platformScoped=false){
   if(task.retryRecovery?.recovered||task.displayStatus==='RECOVERED_BY_RETRY')return 'RECOVERED_BY_RETRY';
+  const pendingSecurity=(task.targets||[]).some(target=>target.status==='NEEDS_CONFIRMATION'&&taskTargetResult(target).manualSecurityVerificationRequired===true);
+  if(pendingSecurity&&!(task.targets||[]).some(target=>['FAILED','REJECTED'].includes(target.status)))return 'WAITING_MANUAL_SECURITY';
   if(!platformScoped)return task.displayStatus||task.status;
   const statuses=(task.targets||[]).map(target=>target.status);
   if(statuses.length&&statuses.every(status=>['PUBLISHED','SUCCESS'].includes(status)))return statuses.every(status=>status==='PUBLISHED')?'PUBLISHED':'SUCCESS';
@@ -1594,6 +1612,7 @@ function canAutoRetryTarget(target){
   return ['FAILED','REJECTED'].includes(target.status)&&result.manualActionRequired!==true&&target.submit_lock!=='LOCKED'&&!target.submit_attempted_at&&!terminalAttemptStates.includes(target.publish_attempt_state);
 }
 function targetSubmitRisk(target){
+  if(taskTargetResult(target).manualSecurityVerificationRequired===true)return '请在原平台完成安全验证并发布，系统等待你的发布确认。';
   if(target.publish_attempt_state==='UPLOAD_NOT_STARTED')return '平台没有真正启动上传，也没有生成草稿；可直接重新发送，不会造成重复发布';
   if(target.publish_attempt_state==='UPLOAD_FAILED')return '视频尚未提交平台，上传过程中出现网络异常；检查网络后可重新发送，不会造成重复发布';
   if(target.publish_attempt_state==='SUBMIT_ATTEMPTED_UNCONFIRMED')return '已提交平台，正在确认发布结果；为防止重复发布，暂时禁止再次投稿';
@@ -1623,15 +1642,16 @@ function bilibiliDraftActionState(target){
 function publishVerificationState(target){
   const result=taskTargetResult(target);
   const terminal=['PUBLISHED','REJECTED'].includes(target.status)||['PUBLISHED','REJECTED'].includes(target.publish_attempt_state);
-  const canVerify=!terminal&&Boolean(result.verificationRequired===true||target.submission_status==='SUBMITTED'||target.submit_lock==='LOCKED'||['DRAFT_BLOCKED','SUBMITTING','SUBMIT_ATTEMPTED_UNCONFIRMED','SUBMITTED','REVIEWING','UNKNOWN'].includes(target.publish_attempt_state)||['SUBMITTED','REVIEWING','SYNCING','NEEDS_CONFIRMATION'].includes(target.status));
+  const canVerify=!terminal&&result.manualSecurityVerificationRequired!==true&&Boolean(result.verificationRequired===true||target.submission_status==='SUBMITTED'||target.submit_lock==='LOCKED'||['DRAFT_BLOCKED','SUBMITTING','SUBMIT_ATTEMPTED_UNCONFIRMED','SUBMITTED','REVIEWING','UNKNOWN'].includes(target.publish_attempt_state)||['SUBMITTED','REVIEWING','SYNCING','NEEDS_CONFIRMATION'].includes(target.status));
   const jobStatus=String(target.verification_job_status||'').toUpperCase();
   const source=String(target.verification_source||'').toUpperCase();
+  const manualVerification=['MANUAL','MANUAL_PUBLISHED_CONFIRMATION'].includes(source);
   let scheduleLabel='';
   if(jobStatus==='RUNNING')scheduleLabel='正在核验平台状态';
-  else if(jobStatus==='QUEUED'&&source==='MANUAL')scheduleLabel='人工核验已排队，等待当前平台操作完成';
+  else if(jobStatus==='QUEUED'&&manualVerification)scheduleLabel='人工确认后的核验已排队，等待当前平台操作完成';
   else if(jobStatus==='QUEUED'&&target.next_verification_at)scheduleLabel=`下次自动核验：${fmt(target.next_verification_at)}`;
   else if(target.last_checked_at)scheduleLabel=`上次核验：${fmt(target.last_checked_at)}`;
-  const buttonLabel=jobStatus==='RUNNING'?'正在核验…':jobStatus==='QUEUED'&&source==='MANUAL'?'人工核验已排队':'立即查询平台状态';
+  const buttonLabel=jobStatus==='RUNNING'?'正在核验…':jobStatus==='QUEUED'&&manualVerification?'人工核验已排队':'立即查询平台状态';
   return {canVerify,scheduleLabel,buttonLabel,jobStatus,source};
 }
 function bilibiliManagementBlockReason(target){
@@ -1663,13 +1683,15 @@ function manualPublishFallbackState(target){
   const required=!uploadFailed&&!terminal&&Boolean(result.manualActionRequired===true||target.publish_attempt_state==='DRAFT_BLOCKED'||target.publish_attempt_state==='SUBMIT_ATTEMPTED_UNCONFIRMED'||(['FAILED','NEEDS_CONFIRMATION'].includes(target.status)&&notSubmitted));
   const bilibiliBlock=required?bilibiliManagementBlockReason(target):null;
   let label=''; let detail='';
-  if(bilibiliBlock){label=bilibiliBlock.label;detail=bilibiliBlock.detail;}
+  if(required&&result.manualSecurityVerificationRequired===true){label='待人工安全验证发布';detail='在原平台完成安全验证并发布后，点击“我已发布，开始核验”。平台核验通过后才会显示已发布。';}
+  else if(result.manualSubmissionConfirmed===true){label=terminal?(target.status==='PUBLISHED'?'人工发布已通过平台核验':'平台审核未通过'):'已确认人工发布，正在自动核验平台结果';}
+  else if(bilibiliBlock){label=bilibiliBlock.label;detail=bilibiliBlock.detail;}
   else if(required&&target.publish_attempt_state==='SUBMIT_ATTEMPTED_UNCONFIRMED')label='已提交平台，但状态尚未确认；请先查询平台状态，如平台已发布可人工确认';
   else if(required&&result.draftSaved===true)label='自动发布未成功，草稿已保存，需要人工处理';
   else if(required&&(result.draftPreservedInBrowser===true||result.draftSaved===true||result.draftExists===true))label='自动发布未成功，草稿已确认保留，需要人工处理';
   else if(required&&target.publish_attempt_state==='DRAFT_BLOCKED')label='自动发布未成功，当前没有确认到草稿，需要重新准备后再发送';
   else if(required)label='自动发布未成功，需要人工处理';
-  return {required,canOpen:required,canConfirm:required,label,detail,reason:bilibiliBlock?.reason||null};
+  return {required,canOpen:required,canConfirm:required&&result.manualSubmissionConfirmed!==true,label,detail,reason:bilibiliBlock?.reason||null};
 }
 function taskTargetDetails(task){
   return (task.targets||[]).map(target=>{
@@ -1683,10 +1705,10 @@ function taskTargetDetails(task){
       draft.canResume?`<button type="button" class="btn task-target-action resume-bilibili-draft" data-task-id="${task.id}" data-target-id="${target.id}">继续系统草稿</button>`:'',
       verification.canVerify?`<button type="button" class="btn secondary task-target-action verify-publish-target" data-target-id="${target.id}" ${verification.jobStatus==='RUNNING'?'disabled':''}>${esc(verification.buttonLabel)}</button>`:'',
       manual.canOpen?`<button type="button" class="btn secondary task-target-action open-manual-publish" data-platform="${esc(target.platform_code)}" data-target-id="${target.id}">打开平台处理</button>`:'',
-      manual.canConfirm?`<button type="button" class="btn success task-target-action confirm-manual-published" data-target-id="${target.id}">人工已发布</button>`:'' ]
+      manual.canConfirm?`<button type="button" class="btn success task-target-action confirm-manual-published" data-target-id="${target.id}">我已发布，开始核验</button>`:'' ]
       .filter(Boolean).join('');
     const actionLabel=manual.label||draft.label;
-    const executionLabel=recovered?`已补发成功（原记录：${statusName(target.status)}）`:statusName(target.status);
+    const executionLabel=taskTargetResult(target).manualSecurityVerificationRequired===true?'待人工安全验证发布':recovered?`已补发成功（原记录：${statusName(target.status)}）`:statusName(target.status);
     const recoveryLabel=recovered?`<strong class="task-recovered-state">已通过补发任务 #${recovery.retryTaskId} 发布成功${recovery.recoveredAt?`　确认时间：${fmt(recovery.recoveredAt)}`:''}</strong>`:'';
     return `<div class="task-target-detail ${recovered?'is-recovered':targetSubmitNoticeClass(target)}"><b>${esc(target.platform_name||platformName(target.platform_code))} · ${esc(target.account_name||target.profile_name||'—')}</b><span>执行：${esc(executionLabel)}　投稿阶段：${esc(statusName(target.publish_attempt_state||'NOT_ATTEMPTED'))}　投稿锁：${esc(statusName(target.submit_lock||'UNLOCKED'))}　尝试次数：${Number(target.submit_attempt_count||0)}</span>${recoveryLabel}${verification.scheduleLabel?`<small class="task-verification-state">${esc(verification.scheduleLabel)}${target.last_checked_at&&verification.jobStatus?`　上次核验：${esc(fmt(target.last_checked_at))}`:''}</small>`:''}${actionLabel?`<strong class="task-draft-state">${esc(actionLabel)}</strong>`:''}${manual.detail?`<small class="task-manual-detail">${esc(manual.detail)}</small>`:''}${risk?`<em>${esc(risk)}</em>`:''}${actions?`<div class="task-target-actions">${actions}</div>`:''}</div>`;
   }).join('');
@@ -1720,17 +1742,17 @@ async function openManualPublish(platformCode,button){
   if(button){button.disabled=true;button.textContent='正在打开…'}
   try{
     await agent(`/platforms/${platformCode}/open-manual-action`,{method:'POST',body:'{}'});
-    toast(`${platformName(platformCode)}已打开；请核对本次内容，在平台侧完成发布后再点击“人工已发布”`);
+    toast(`${platformName(platformCode)}已打开；请核对本次内容，在平台侧完成验证及发布后再点击“我已发布，开始核验”`);
   }catch(error){toast(error.message,true)}finally{if(button&&document.body.contains(button)){button.disabled=false;button.textContent=originalText}}
 }
 async function confirmManualPublished(targetId,button){
-  const confirmed=window.confirm('请只在已经进入对应平台，并确认本次内容已实际发布后点击。\n\n确认后 Web 将标记为已发布，锁定该目标并永久禁止自动重投。');
+  const confirmed=window.confirm('请只在已经进入对应平台，并确认本次内容已实际发布后点击。\n\n确认后系统会锁定本次任务并自动核验平台结果；核验通过后才显示已发布，不会再次投稿。');
   if(!confirmed)return;
-  const originalText=button?.textContent||'人工已发布';
+  const originalText=button?.textContent||'我已发布，开始核验';
   if(button){button.disabled=true;button.textContent='正在确认…'}
   try{
     await api(`/api/publish/targets/${targetId}/manual-published`,{method:'POST',body:JSON.stringify({handledBy:'运营人员'})});
-    toast('已标记为平台侧人工发布，已禁止自动重投');
+    toast('已确认人工提交，正在自动核验平台结果');
     await renderTasks();
   }catch(error){toast(error.message,true)}finally{if(button&&document.body.contains(button)){button.disabled=false;button.textContent=originalText}}
 }
@@ -1738,6 +1760,7 @@ async function confirmManualPublished(targetId,button){
 function taskVisualState(task,platformScoped=false){
   const status=taskDisplayStatus(task,platformScoped);
   if(['PUBLISHED','SUCCESS','RECOVERED_BY_RETRY'].includes(status))return {key:'SUCCESS',tone:'success',label:status==='RECOVERED_BY_RETRY'?'补发恢复完成':'执行闭环完成',detail:status==='RECOVERED_BY_RETRY'?'异常目标已通过补发恢复':'发布链路已完成，可查看平台结果',status};
+  if(status==='WAITING_MANUAL_SECURITY')return {key:'REVIEW',tone:'review',label:'待人工安全验证发布',detail:'完成平台验证并发布后，请确认开始结果核验',status};
   if(['FAILED','PARTIAL_FAILED','REJECTED'].includes(status))return {key:'FAILED',tone:'failed',label:status==='PARTIAL_FAILED'?'部分目标异常':'发布链路异常',detail:'保留失败审计，可按安全策略重新发送',status};
   if(['SUBMITTED','REVIEWING','SYNCING','NEEDS_CONFIRMATION','UNKNOWN'].includes(status))return {key:'REVIEW',tone:'review',label:'等待结果确认',detail:'内容已进入平台侧，正在核验最终状态',status};
   return {key:'ACTIVE',tone:'running',label:status==='QUEUED'?'等待执行':'发布执行中',detail:status==='QUEUED'?'任务已入列，等待平台执行资源':'自动化发布链路正在实时推进',status};
@@ -1747,6 +1770,7 @@ function taskProgressModel(task,platformScoped=false){
   const stages=['任务入列','内容校验','平台队列','自动执行','结果核验'];
   let current=1;
   if(visual.key==='SUCCESS')current=stages.length;
+  else if(visual.status==='WAITING_MANUAL_SECURITY'){current=4;stages[3]='人工安全验证';}
   else if(visual.key==='REVIEW')current=stages.length;
   else if(visual.key==='FAILED'){
     const targetStates=(task.targets||[]).flatMap(target=>[target.status,target.publish_attempt_state,target.submission_status]);
@@ -3193,12 +3217,12 @@ async function renderWecom(){
         <label class="settings-field"><span class="settings-field-label">对话模型</span><input name="model" value="${esc(ai.model||'')}" required placeholder="例如 qwen3.7-plus"></label>
         <label class="settings-field"><span class="settings-field-label">视觉 / OCR 模型</span><input name="visionModel" value="${esc(ai.visionModel||'')}" required placeholder="例如 qwen3.5-ocr"></label>
         <details class="full"><summary>专用模型（按需配置）</summary><div class="form-grid settings-form">
-          <label class="settings-field"><span class="settings-field-label">音视频转文字模型</span><input name="asrModel" value="${esc(ai.modelOverrides?.asrModel||'')}" placeholder="例如 qwen3-asr-flash"></label>
+          <label class="settings-field"><span class="settings-field-label">音视频转文字模型</span><input name="asrModel" value="${esc(ai.modelOverrides?.asrModel||'')}" placeholder="${esc(ai.asrModel||'local:whisper-small')}"><small>本地识别填写 local:whisper-small，无需语音 API Key。DeepSeek 接口不支持千问语音识别。</small></label>
           <label class="settings-field"><span class="settings-field-label">音视频文案模型</span><input name="contentModel" value="${esc(ai.modelOverrides?.contentModel||'')}" placeholder="留空跟随对话模型"></label>
           <label class="settings-field"><span class="settings-field-label">图片文案模型</span><input name="imageContentModel" value="${esc(ai.modelOverrides?.imageContentModel||'')}" placeholder="留空跟随对话模型"></label>
           <label class="settings-field"><span class="settings-field-label">素材潜力预测模型</span><input name="trafficPredictionModel" value="${esc(ai.modelOverrides?.trafficPredictionModel||'')}" placeholder="留空跟随对话模型"></label>
           <label class="settings-field"><span class="settings-field-label">微信知识库向量模型</span><input name="embeddingModel" value="${esc(ai.embeddingModel||'')}" placeholder="local:BAAI/bge-small-zh-v1.5"></label>
-          <p class="full muted">微信原生知识库默认使用 local:BAAI/bge-small-zh-v1.5（本地 512 维向量）。改用其他向量模型时需同步机器人向量维度并重建索引。其他专用模型共用上方接口和密钥，请填写服务商实际支持的模型。</p>
+          <p class="full muted">微信原生知识库默认使用 local:BAAI/bge-small-zh-v1.5（本地 512 维向量）。改用其他向量模型时需同步机器人向量维度并重建索引。local: 模型在本机运行；在线专用模型共用上方接口和密钥，请填写服务商实际支持的模型。</p>
         </div></details>
         <div class="full button-row settings-form-actions"><button class="btn" type="submit">保存 AI 配置</button><button class="btn secondary" type="button" id="aiConnectionTest" ${ai.mode==='online'&&!ai.configured?'disabled':''}>测试 AI 连接</button><button class="btn danger" type="button" id="aiKeyClear" ${ai.source==='DATABASE'?'':'disabled'}>清除 AI Key</button></div>
       </form>
@@ -3398,18 +3422,23 @@ function renderPlatformRuntimePage(){
     const taskRunning=runtime.task_execution_state==='RUNNING';
     const accountEnabled=account?.enabled!==0;
     const issueBlocked=runtime.task_blocked_reason==='ACTIVE_ISSUE_BLOCK'||Number(runtime.active_block_count||0)>0;
-    const stateText=taskRunning?'可执行':platformRunning&&issueBlocked?'已开启 · 问题阻断':!accountEnabled?'账号已停用':'已停止';
-    const detail=taskRunning?'平台开关和运行条件均已通过，可执行发布、采集和回复。':platformRunning&&issueBlocked?'平台已开启，但关联问题正在阻断对应范围；请到问题汇总进行人工处置。':!accountEnabled?'账号未启用，平台保持 STOPPED；不会启动浏览器、Profile 或登录检查。':'平台已停止；不领取任务，不打开浏览器/Profile，不执行登录检查或采集。';
+    const loginReady=account?.login_status==='READY'&&isLocalAgentOnline();
+    const stateText=taskRunning?(loginReady?'可执行':'登录待确认'):platformRunning&&issueBlocked?'已开启 · 问题阻断':!accountEnabled?'账号已停用':'已停止';
+    const detail=taskRunning?(loginReady?'已确认平台账号登录，可按已启用的功能执行任务。':'平台已开启，请先打开专用 Chrome 并登录，再检查登录状态。'):platformRunning&&issueBlocked?'平台已开启，但关联问题正在阻断对应范围；请到问题汇总进行人工处置。':!accountEnabled?'账号未启用，平台保持 STOPPED；不会启动浏览器、Profile 或登录检查。':'平台已停止；不领取任务，不打开浏览器/Profile，不执行登录检查或采集。';
     const smartReplyEnabled=runtime.smart_reply_enabled===true;
     const smartReplyRunning=runtime.smart_reply_effective_state==='RUNNING';
     const smartReplyText=smartReplyRunning?'\u8fd0\u884c\u4e2d':smartReplyEnabled?'\u5df2\u5f00\u542f \u00b7 \u5f85\u5e73\u53f0\u53ef\u6267\u884c':'\u5df2\u5173\u95ed';
     const smartReplyDetail=smartReplyRunning?'评论和私信将采集后按知识库自动回复。':smartReplyEnabled?'配置已保存；平台停止或存在关联问题阻断时不会领取回复任务。':'消息保留等待，不生成或领取自动回复任务。';
-    return `<article class="platform-runtime-card ${platformRunning?'is-running':'is-stopped'}"><div class="platform-runtime-heading"><div><b>${esc(platform.name)}</b>${platform.acceptanceNote?`<span class="badge warning">${esc(platform.acceptanceNote)}</span>`:''}<span class="badge ${taskRunning?'running':platformRunning?(issueBlocked?'warning':'running'):'stopped'}">${stateText}</span></div><button type="button" class="platform-runtime-toggle ${desiredRunning?'is-on':'is-off'}" data-platform="${platform.code}" data-enable="${desiredRunning?'false':'true'}" aria-pressed="${desiredRunning?'true':'false'}" ${!desiredRunning&&!accountEnabled?'disabled title="\u8bf7\u5148\u542f\u7528\u8d26\u53f7\uff1b\u542f\u7528\u8d26\u53f7\u672c\u8eab\u4e0d\u4f1a\u5524\u9192 Local Agent"':''}><span class="runtime-switch-track"><i></i></span><strong>${desiredRunning?'\u505c\u6b62\u5e73\u53f0':'\u5f00\u542f\u5e73\u53f0'}</strong></button></div><p>${detail}</p><div class="button-row"><button type="button" class="btn ${accountEnabled?'danger':'secondary'} platform-account-toggle" data-account="${account?.id||''}" data-enable="${accountEnabled?'false':'true'}" ${account?'':'disabled'}>${accountEnabled?'\u505c\u7528\u8d26\u53f7':'\u542f\u7528\u8d26\u53f7\uff08\u4e0d\u5524\u9192\uff09'}</button>${accountEnabled&&!desiredRunning?'<small class="muted">\u4e0b\u4e00\u6b65\uff1a\u663e\u5f0f\u5f00\u542f\u5e73\u53f0</small>':''}</div><div class="smart-reply-control ${smartReplyRunning?'is-running':smartReplyEnabled?'is-waiting':'is-stopped'}"><div><b>\u667a\u80fd\u56de\u590d \u00b7 ${smartReplyText}</b><small>${smartReplyDetail}</small></div><button type="button" class="btn ${smartReplyEnabled?'danger':'secondary'} platform-smart-reply-toggle" data-platform="${platform.code}" data-enable="${smartReplyEnabled?'false':'true'}">${smartReplyEnabled?'\u5173\u95ed\u667a\u80fd\u56de\u590d':'\u5f00\u542f\u667a\u80fd\u56de\u590d'}</button></div><div class="platform-runtime-metrics"><span>\u542f\u7528\u8d26\u53f7 <b>${Number(runtime.enabled_account_count||0)}</b></span><span>\u5f85\u6267\u884c <b>${Number(runtime.queued_job_count||0)}</b></span><span>\u8fd0\u884c\u4e2d <b>${Number(runtime.running_job_count||0)}</b></span></div>${issueBlocked?'<div class="section-actions"><button type="button" class="btn secondary" data-go="issues">处理关联问题</button></div>':''}<div class="muted">\u8d26\u53f7\uff1a${esc(account?.display_name||'\u672a\u914d\u7f6e')} \u00b7 Profile\uff1a${esc(account?.profile_name||'\u672a\u914d\u7f6e')}</div>${runtime.runtime_updated_at?`<small>\u6700\u540e\u8c03\u6574\uff1a${fmt(runtime.runtime_updated_at)}${runtime.runtime_updated_by?' \u00b7 '+esc(runtime.runtime_updated_by):''}</small>`:''}</article>`;
+    return `<article class="platform-runtime-card ${platformRunning?'is-running':'is-stopped'}"><div class="platform-runtime-heading"><div><b>${esc(platform.name)}</b>${platform.acceptanceNote?`<span class="badge warning">${esc(platform.acceptanceNote)}</span>`:''}<span class="badge ${taskRunning?'running':platformRunning?(issueBlocked?'warning':'running'):'stopped'}">${stateText}</span></div><button type="button" class="platform-runtime-toggle ${desiredRunning?'is-on':'is-off'}" data-platform="${platform.code}" data-enable="${desiredRunning?'false':'true'}" aria-pressed="${desiredRunning?'true':'false'}" ${!desiredRunning&&!accountEnabled?'disabled title="\u8bf7\u5148\u542f\u7528\u8d26\u53f7\uff1b\u542f\u7528\u8d26\u53f7\u672c\u8eab\u4e0d\u4f1a\u5524\u9192 Local Agent"':''}><span class="runtime-switch-track"><i></i></span><strong>${desiredRunning?'\u505c\u6b62\u5e73\u53f0':'\u5f00\u542f\u5e73\u53f0'}</strong></button></div><p>${detail}</p><div class="button-row"><button type="button" class="btn ${accountEnabled?'danger':'secondary'} platform-account-toggle" data-account="${account?.id||''}" data-enable="${accountEnabled?'false':'true'}" ${account?'':'disabled'}>${accountEnabled?'\u505c\u7528\u8d26\u53f7':'\u542f\u7528\u8d26\u53f7\uff08\u4e0d\u5524\u9192\uff09'}</button>${accountEnabled&&!desiredRunning?'<small class="muted">\u4e0b\u4e00\u6b65\uff1a\u663e\u5f0f\u5f00\u542f\u5e73\u53f0</small>':''}</div><div class="smart-reply-control ${smartReplyRunning?'is-running':smartReplyEnabled?'is-waiting':'is-stopped'}"><div><b>\u667a\u80fd\u56de\u590d \u00b7 ${smartReplyText}</b><small>${smartReplyDetail}</small></div><button type="button" class="btn ${smartReplyEnabled?'danger':'secondary'} platform-smart-reply-toggle" data-platform="${platform.code}" data-enable="${smartReplyEnabled?'false':'true'}">${smartReplyEnabled?'\u5173\u95ed\u667a\u80fd\u56de\u590d':'\u5f00\u542f\u667a\u80fd\u56de\u590d'}</button></div><div class="platform-runtime-metrics"><span>\u542f\u7528\u8d26\u53f7 <b>${Number(runtime.enabled_account_count||0)}</b></span><span>\u5f85\u6267\u884c <b>${Number(runtime.queued_job_count||0)}</b></span><span>\u8fd0\u884c\u4e2d <b>${Number(runtime.running_job_count||0)}</b></span></div>${issueBlocked?'<div class="section-actions"><button type="button" class="btn secondary" data-go="issues">处理关联问题</button></div>':''}<div class="muted">\u8d26\u53f7\uff1a${esc(account?.display_name||'\u672a\u914d\u7f6e')} \u00b7 Profile\uff1a${esc(account?.profile_name||'\u672a\u914d\u7f6e')}</div><div class="section-actions"><span class="badge">登录状态：${esc(account?.login_status||'UNKNOWN')}</span><button class="btn success platform-login-action" data-platform="${platform.code}" data-action="open-login" ${platformRunning?'':'disabled'}>打开 Chrome 登录 / 切换</button><button class="btn secondary platform-login-action" data-platform="${platform.code}" data-action="check-login" ${platformRunning?'':'disabled'}>检查登录</button></div>${runtime.runtime_updated_at?`<small>\u6700\u540e\u8c03\u6574\uff1a${fmt(runtime.runtime_updated_at)}${runtime.runtime_updated_by?' \u00b7 '+esc(runtime.runtime_updated_by):''}</small>`:''}</article>`;
   }).join('');
   $('#content').innerHTML=`<section class="platform-runtime-page-head"><div><span class="panel-kicker">PLATFORM RUNTIME CONTROL</span><h2>\u4e94\u5e73\u53f0\u8fd0\u884c\u63a7\u5236 \u00b7 \u8d26\u53f7\u4e0e\u667a\u80fd\u56de\u590d\u7ba1\u7406</h2><p>\u5c0f\u7ea2\u4e66\u3001\u6296\u97f3\u3001\u89c6\u9891\u53f7\u3001B\u7ad9\u3001\u5fae\u535a\u5747\u53ef\u72ec\u7acb\u542f\u505c\u3002\u8d26\u53f7\u542f\u7528\u4e0d\u4f1a\u5524\u9192 Local Agent\uff1b\u53ea\u6709\u663e\u5f0f\u5f00\u542f\u5e73\u53f0\u540e\u624d\u5141\u8bb8\u767b\u5f55\u548c\u4efb\u52a1\u6267\u884c\u3002</p></div><span class="runtime-summary">${runnableCount}/${activeCodes.length} \u53ef\u6267\u884c \u00b7 ${openedCount}/${activeCodes.length} \u5df2\u5f00\u542f</span></section><div class="notice warn"><b>\u5b89\u5168\u5173\u95ed\u8bed\u4e49\uff1a</b>STOPPED \u5e73\u53f0\u4e0d\u9886\u53d6\u4efb\u52a1\u3001\u4e0d\u767b\u5f55\u68c0\u67e5\u3001\u4e0d\u91c7\u96c6\u3001\u4e0d\u521b\u5efa\u6216\u6253\u5f00 Chrome/Profile\uff1b\u505c\u6b62\u65f6\u901a\u77e5 Local Agent \u5173\u95ed\u5df2\u6709 Browser Context\u3002</div><div class="panel platform-runtime-panel"><div class="panel-head"><div><h2>\u5e73\u53f0\u8fd0\u884c\u5f00\u5173</h2><p>\u4e94\u4e2a\u5df2\u63a5\u5165\u5e73\u53f0\u5747\u652f\u6301\u8d26\u53f7\u542f\u505c\u3001\u5e73\u53f0\u542f\u505c\u548c\u667a\u80fd\u56de\u590d\u72ec\u7acb\u63a7\u5236\u3002</p></div><div class="button-row"><button type="button" class="btn" id="enableAllPlatforms" title="\u5c06\u4e0b\u65b9\u4e94\u4e2a\u5e73\u53f0\u7684\u8d26\u53f7\u4e0e\u5e73\u53f0\u8fd0\u884c\u5f00\u5173\u7edf\u4e00\u5207\u6362\u4e3a\u5f00\u542f" ${allPlatformsEnabled?'disabled':''}>\u4e00\u952e\u5f00\u542f\u5168\u90e8\u5e73\u53f0</button><button type="button" class="btn success" id="openSelectedPlatforms" title="\u53ea\u6253\u5f00\u4e0b\u65b9\u5df2\u542f\u7528\u8d26\u53f7\u4e14\u8fd0\u884c\u5f00\u5173\u4e3a RUNNING \u7684\u5e73\u53f0\uff1b\u672a\u542f\u7528\u5e73\u53f0\u4e0d\u4f1a\u88ab\u5524\u9192" ${openedCount?'':'disabled'}>\u4e00\u952e\u6253\u5f00\u6240\u9009\u5e73\u53f0</button><button type="button" class="btn danger" id="stopAllPlatforms" ${desiredRunningCount?'':'disabled'}>\u505c\u6b62\u5168\u90e8\u5e73\u53f0</button><button type="button" class="btn secondary" data-go="issues">\u95ee\u9898\u6c47\u603b</button></div></div><div class="platform-runtime-grid">${runtimeCards}</div></div>`;
   document.querySelectorAll('.platform-runtime-toggle').forEach(button=>button.onclick=()=>togglePlatformRuntime(button.dataset.platform,button.dataset.enable==='true',button));
   document.querySelectorAll('.platform-account-toggle').forEach(button=>button.onclick=()=>togglePlatformAccount(Number(button.dataset.account),button.dataset.enable==='true',button));
   document.querySelectorAll('.platform-smart-reply-toggle').forEach(button=>button.onclick=()=>togglePlatformSmartReply(button.dataset.platform,button.dataset.enable==='true',button));
+  const realMode=state.bootstrap?.config?.rpaMode==='five_platform_assisted';
+  const browserOnline=isLocalAgentOnline();
+  $('#content').insertAdjacentHTML('afterbegin', '<div class="notice '+(realMode&&browserOnline?'':'warn')+'"><b>'+ (realMode?'真实账号模式':'模拟模式')+'</b> · '+(browserOnline?'浏览器执行端已连接':'浏览器执行端未连接')+'<p>点击平台的“打开 Chrome 登录 / 切换”，在运营电脑弹出的独立 Chrome 窗口中扫码或登录。完成后点击“检查登录”。登录会保存在该平台的专用浏览器中；切换账号时先在平台内退出，再登录新账号。内网访问也会在这台运营电脑上打开 Chrome。</p></div>');
+  document.querySelectorAll('.platform-login-action').forEach(button=>button.onclick=()=>openPlatformAccountLogin(button));
   const enableAll=$('#enableAllPlatforms');if(enableAll)enableAll.onclick=()=>startAllPlatforms(enableAll);
   const openSelected=$('#openSelectedPlatforms');if(openSelected)openSelected.onclick=()=>batchPlatformAction('open',openSelected);
   const stopAll=$('#stopAllPlatforms');if(stopAll)stopAll.onclick=()=>stopAllPlatforms(stopAll);
@@ -3573,18 +3602,22 @@ let messageCountdownTimer=null;
 let taskRefreshInFlight=false;
 let messageRefreshInFlight=false;
 let messageRefreshSignatureValue='';
+function messageFormHasEditingFocus(){
+  const active=document.activeElement;
+  return active&&(active.isContentEditable||['INPUT','TEXTAREA'].includes(active.tagName))&&$('#content')?.contains(active);
+}
 async function refreshTasksFromTimer(){
   if(state.page!=='tasks'||document.hidden||taskRefreshInFlight||document.querySelector('.confirm-overlay'))return;
   taskRefreshInFlight=true;
   try{await renderTasks()}catch{}finally{taskRefreshInFlight=false}
 }
 async function refreshMessagesFromTimer(){
-  const active=document.activeElement;
-  const editing=active&&['INPUT','TEXTAREA','SELECT'].includes(active.tagName)&&$('#content')?.contains(active);
-  if(state.page!=='messages'||document.hidden||messageRefreshInFlight||editing||document.querySelector('.confirm-overlay'))return;
+  if(state.page!=='messages'||document.hidden||messageRefreshInFlight||messageFormHasEditingFocus()||document.querySelector('.confirm-overlay'))return;
+  const pageOwner=capturePageOwner();
   messageRefreshInFlight=true;
   try{
     const data=await api(`/api/messages?t=${Date.now()}`);
+    if(!ownsPageOwner(pageOwner)||messageFormHasEditingFocus()||document.querySelector('.confirm-overlay'))return;
     const signature=messageRefreshSignature(data);
     if(signature!==messageRefreshSignatureValue)await renderMessages(data);
   }catch{}finally{messageRefreshInFlight=false}
@@ -3980,4 +4013,15 @@ initializeApp();
 
 
 
-
+async function openPlatformAccountLogin(button){
+  const original=button.textContent;
+  button.disabled=true;button.textContent='处理中…';
+  try{
+    const result=await agent('/platforms/'+button.dataset.platform+'/'+button.dataset.action,{method:'POST',body:'{}'});
+    await refreshBootstrap();
+    renderPlatformRuntimePage();
+    renderLoginBadge(button.dataset.platform,result.status,'platformStatus-');
+    toast(result.status?.message||'请在运营电脑的 Chrome 中完成登录');
+  }catch(error){toast(error.message,true)}
+  finally{button.disabled=false;button.textContent=original}
+}

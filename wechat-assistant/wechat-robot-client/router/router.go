@@ -80,6 +80,8 @@ func RegisterRouter(r *gin.Engine) error {
 	api.POST("/robot/support/settings", supportCtl.Settings)
 	api.POST("/robot/support/reception", supportCtl.Reception)
 	api.POST("/robot/support/broadcasts", supportCtl.Broadcast)
+	api.GET("/robot/support/broadcasts/detail", supportCtl.BroadcastDetail)
+	api.GET("/robot/support/broadcasts/image", supportCtl.BroadcastImage)
 	api.POST("/probe", probeCtl.Probe)
 
 	// 登录相关接口

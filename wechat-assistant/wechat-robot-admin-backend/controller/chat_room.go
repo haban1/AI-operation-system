@@ -28,7 +28,10 @@ func (ct *ChatRoom) SyncChatRoomMembers(c *gin.Context) {
 		resp.ToErrorResponse(errors.New("参数错误"))
 		return
 	}
-	service.NewChatRoomService(c).SyncChatRoomMembers(robot, req.ChatRoomID)
+	if err := service.NewChatRoomService(c.Request.Context()).SyncChatRoomMembers(robot, req.ChatRoomID); err != nil {
+		resp.ToErrorResponse(err)
+		return
+	}
 	resp.ToResponse(nil)
 }
 

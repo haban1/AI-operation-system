@@ -118,6 +118,8 @@ func RegisterRouter(r *gin.Engine) error {
 		support.POST("/settings", controller.SupportProxy)
 		support.POST("/reception", controller.SupportProxy)
 		support.POST("/broadcasts", controller.SupportProxy)
+		support.GET("/broadcasts/detail", controller.SupportProxy)
+		support.GET("/broadcasts/image", controller.SupportProxy)
 	}
 
 	{

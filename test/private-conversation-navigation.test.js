@@ -110,6 +110,89 @@ test('Douyin MAIN reply reuses the verified open chat even when it covers the li
   assert.equal(await page.evaluate(() => window.backClicks), 0);
 });
 
+async function addLayeredDouyinHeaders(page, adapter) {
+  adapter.spec.privateConversationHeaderSelectors = ['.RightPanelHeadertitle', '.StackLayoutStackChatHeadertitle'];
+  await page.locator('body').evaluate(body => {
+    const panelTitle = document.createElement('div');
+    panelTitle.className = 'RightPanelHeadertitle';
+    panelTitle.textContent = '消息';
+    panelTitle.style.cssText = 'position:fixed;left:500px;top:10px';
+    body.append(panelTitle);
+    const chatTitle = document.querySelector('.chat-title');
+    chatTitle.classList.add('StackLayoutStackChatHeadertitle');
+    chatTitle.style.cssText = 'display:inline-block;width:180px;margin:10px 0 180px 12px';
+  });
+}
+
+test('Douyin open-chat recovery distinguishes the chat title from the outer message panel title', { skip: !chromePath }, async t => {
+  const { page, adapter } = await fixture(t);
+  await addLayeredDouyinHeaders(page, adapter);
+  const header = await adapter.readOpenDouyinConversationHeader(page);
+  assert.equal(header.ok, true, header.reason);
+  assert.equal(header.headerName, 'alice');
+});
+
+test('Douyin back navigation uses the inner chat header when the outer message title is also visible', { skip: !chromePath }, async t => {
+  const { page, adapter } = await fixture(t);
+  await addLayeredDouyinHeaders(page, adapter);
+  const result = await adapter.clickPrivateConversationBackByGeometry(page);
+  assert.equal(result.clicked, true, result.reason);
+  assert.equal(await page.evaluate(() => window.backClicks), 1);
+  assert.equal(await page.locator('#chat').isVisible(), false);
+});
+
+test('Douyin still rejects conflicting inner chat titles', { skip: !chromePath }, async t => {
+  const { page, adapter } = await fixture(t);
+  await addLayeredDouyinHeaders(page, adapter);
+  await page.locator('body').evaluate(body => {
+    const other = document.createElement('div');
+    other.className = 'StackLayoutStackChatHeadertitle';
+    other.textContent = 'bob';
+    body.append(other);
+  });
+  const header = await adapter.readOpenDouyinConversationHeader(page);
+  assert.equal(header.ok, false);
+  assert.equal(header.reason, 'OPEN_CONVERSATION_HEADER_AMBIGUOUS');
+});
+
+async function addDouyinStreakDecoration(page) {
+  await page.locator('#chat').evaluate(chat => {
+    chat.classList.add('StackLayoutStackChatHeader');
+    const title = chat.querySelector('.chat-title');
+    const wrapper = document.createElement('span');
+    wrapper.className = 'StackLayoutStackChatHeadertitleWrapper';
+    title.replaceWith(wrapper);
+    wrapper.append(title);
+    const decoration = document.createElement('span');
+    decoration.className = 'commonStreakbackGround';
+    decoration.textContent = '重燃中 1/3';
+    decoration.style.cssText = 'display:inline-block;width:70px;height:20px';
+    wrapper.append(decoration);
+  });
+}
+
+test('Douyin uses the exact chat title instead of a wrapper containing the streak label', { skip: !chromePath }, async t => {
+  const { page, adapter } = await fixture(t);
+  await addLayeredDouyinHeaders(page, adapter);
+  adapter.spec.privateConversationHeaderSelectors.push('[class*="StackLayoutStackChatHeadertitle"]');
+  await addDouyinStreakDecoration(page);
+  const header = await adapter.readOpenDouyinConversationHeader(page);
+  assert.equal(header.ok, true, header.reason);
+  assert.equal(header.headerName, 'alice');
+});
+
+test('Douyin returns to the list without clicking the streak background as a back button', { skip: !chromePath }, async t => {
+  const { page, adapter } = await fixture(t);
+  await addLayeredDouyinHeaders(page, adapter);
+  adapter.spec.privateConversationHeaderSelectors.push('[class*="StackLayoutStackChatHeadertitle"]');
+  adapter.spec.privateConversationBackSelectors = new DouyinAssistedRpaAdapter({ logsDir: adapter.logsDir, profileDir: path.join(adapter.logsDir, 'defaults-profile') }).spec.privateConversationBackSelectors;
+  await addDouyinStreakDecoration(page);
+  const result = await adapter.restorePrivateInboxOverview(page);
+  assert.equal(result.restored, true, result.reason);
+  assert.equal(result.method, 'conversation-back');
+  assert.equal(await page.evaluate(() => window.backClicks), 1);
+});
+
 test('private reply preserves an already verified inbox instead of reloading its active chat', { skip: !chromePath }, async t => {
   const { page, adapter } = await fixture(t);
   let navigations = 0;

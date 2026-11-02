@@ -15,6 +15,113 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+"/support/broadcasts/detail": {
+        "get": {
+            "security": [
+                {
+                    "ApiTokenAuth": []
+                }
+            ],
+            "tags": [
+                "Support"
+            ],
+            "summary": "查看群发记录详情",
+            "produces": [
+                "application/json"
+            ],
+            "parameters": [
+                {
+                    "name": "id",
+                    "in": "query",
+                    "type": "integer",
+                    "required": true,
+                    "description": "机器人实例 ID"
+                },
+                {
+                    "name": "broadcast_id",
+                    "in": "query",
+                    "type": "string",
+                    "required": true,
+                    "description": "群发任务编号"
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "OK",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "type": "integer"
+                            },
+                            "message": {
+                                "type": "string"
+                            },
+                            "data": {
+                                "$ref": "#/definitions/SupportBroadcastDetail"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "/support/broadcasts/image": {
+        "get": {
+            "security": [
+                {
+                    "ApiTokenAuth": []
+                }
+            ],
+            "tags": [
+                "Support"
+            ],
+            "summary": "查看群发记录原始图片",
+            "produces": [
+                "image/png",
+                "image/jpeg",
+                "image/gif",
+                "image/webp"
+            ],
+            "parameters": [
+                {
+                    "name": "id",
+                    "in": "query",
+                    "type": "integer",
+                    "required": true,
+                    "description": "机器人实例 ID"
+                },
+                {
+                    "name": "broadcast_id",
+                    "in": "query",
+                    "type": "string",
+                    "required": true,
+                    "description": "群发任务编号"
+                },
+                {
+                    "name": "position",
+                    "in": "query",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3,
+                    "required": true,
+                    "description": "图片顺序，从 1 开始"
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "原始图片",
+                    "schema": {
+                        "type": "file"
+                    }
+                },
+                "404": {
+                    "description": "图片不存在"
+                }
+            }
+        }
+    },
+
 "/moments/plans": {
         "get": {
             "tags": [
@@ -712,6 +819,17 @@ const docTemplate = `{
                         "name": "keyword",
                         "in": "query"
                     },
+            {
+              "type": "string",
+              "description": "成员状态：current 当前成员，left 已退群，all 全部",
+              "name": "membership",
+              "in": "query",
+              "enum": [
+                "current",
+                "left",
+                "all"
+              ]
+            },
                     {
                         "type": "integer",
                         "description": "页码",
@@ -6304,6 +6422,99 @@ const docTemplate = `{
         }
     },
     "definitions": {
+"SupportDelivery": {
+        "type": "object",
+        "properties": {
+            "peer": {
+                "type": "string"
+            },
+            "text_sent": {
+                "type": "boolean"
+            },
+            "image_sent": {
+                "type": "boolean"
+            },
+            "error": {
+                "type": "string"
+            },
+            "images_sent": {
+                "type": "integer",
+                "description": "已确认发送成功的图片数量"
+            }
+        }
+    },
+
+"SupportBroadcastDetail": {
+        "type": "object",
+        "properties": {
+            "job": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "content": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "has_image": {
+                        "type": "boolean"
+                    },
+                    "recipients": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "results": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/SupportDelivery"
+                        }
+                    },
+                    "success_count": {
+                        "type": "integer"
+                    },
+                    "failed_count": {
+                        "type": "integer"
+                    },
+                    "created_at": {
+                        "type": "integer"
+                    },
+                    "image_count": {
+                        "type": "integer",
+                        "description": "图片数量，旧单图记录可根据 has_image 判断"
+                    },
+                    "updated_at": {
+                        "type": "integer"
+                    }
+                }
+            },
+            "friends": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "wechat_id": {
+                            "type": "string"
+                        },
+                        "nickname": {
+                            "type": "string"
+                        },
+                        "remark": {
+                            "type": "string"
+                        },
+                        "avatar": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        }
+    },
+
 "MomentPlanContent": {
         "type": "object",
         "required": [

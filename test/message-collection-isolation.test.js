@@ -77,6 +77,20 @@ test('只有完整列表验证后才判定 SOURCE_GONE，否则延后', async ()
   assert.equal(isolatedCollectionFailure('COMMENT', new Error('net::ERR_TIMED_OUT')).sourceState, 'DEFERRED_PAGE_UNAVAILABLE');
 });
 
+for (const directStop of [false, true]) {
+  test(`平台停止造成的采集异常交回 Worker 延后，不写为评论同步失败（${directStop ? '显式取消' : '浏览器被关闭'}）`, async () => {
+    const adapter = Object.create(AssistedPlatformRpaAdapter.prototype);
+    adapter.platformCode = 'douyin';
+    adapter.spec = { name: '抖音', commentUrl: 'https://example.test/comments' };
+    adapter.getPage = async () => mockEvidencePage();
+    const stop = Object.assign(new Error('platform stopped'), { code: 'PLATFORM_OPERATION_CANCELLED' });
+    adapter.prepareMessagePage = async () => { throw directStop ? stop : new Error('page.goto: Target page, context or browser has been closed'); };
+    adapter.assertRuntimeAllowed = async () => { throw stop; };
+    adapter.evidence = async () => { throw new Error('取消的采集不能持久化为失败结果'); };
+    await assert.rejects(adapter.collectMessages({ types: ['COMMENT'] }), error => error === stop);
+  });
+}
+
 test('列表到底只有二次稳定且无 loading/load-more 才能确认完整，宽泛容器不能证明完整', async () => {
   const adapter = Object.create(AssistedPlatformRpaAdapter.prototype);
   adapter.spec = { commentScrollSelectors: [] };

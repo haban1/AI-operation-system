@@ -1,0 +1,162 @@
+# Use with compose.yaml and compose.wechat.yaml. Ports are local to this PC.
+services:
+  ai-studio:
+    profiles: [legacy-studio]
+    image: tianhe-ai-studio:local-20261026
+    build:
+      context: ./platforms/ai-signal-studio
+      dockerfile: ../../deploy/workbench/ai-studio.Dockerfile
+    init: true
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 2g
+    pids_limit: 128
+    stop_grace_period: 20s
+    env_file:
+      - path: .env.ai-studio
+        required: false
+    environment:
+      TIANHE_MODEL_BASE_URL: http://web:3100/api/model/v1
+    volumes:
+      - ./runtime/workbench/ai-studio:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8892/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 6
+  signal:
+    image: tianhe-signal:brief-schema-20261030
+    build:
+      context: ./engines/ai-signal-studio
+    init: true
+    restart: unless-stopped
+    cpus: 4
+    mem_limit: 4g
+    shm_size: 512m
+    env_file: .env.signal
+    environment:
+      SIGNAL_HOST: 0.0.0.0
+      SIGNAL_PORT: "8892"
+      SIGNAL_BASE_PATH: /integrations/ai-signal
+      SIGNAL_CONFIG_DIR: /app/runtime-config
+    volumes:
+      - ./runtime/workbench/signal/runs:/app/runs
+      - ./runtime/workbench/signal/data:/app/data
+      - ./runtime/workbench/signal/config:/app/runtime-config
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import json,urllib.request; d=json.load(urllib.request.urlopen('http://127.0.0.1:8892/api/health',timeout=3)); assert d.get('ok') and d.get('service') == 'AI Signal Studio'"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+    stop_grace_period: 30s
+  openchatcut:
+    image: tianhe-openchatcut:7fa4b79-tianhe2
+    build:
+      context: ./platforms/OpenChatCut
+      dockerfile: ../../deploy/workbench/openchatcut.Dockerfile
+      additional_contexts:
+        workbench: ./deploy/workbench
+    init: true
+    restart: unless-stopped
+    shm_size: 512m
+    ports:
+      - "127.0.0.1:5199:5200"
+    volumes:
+      - ./runtime/workbench/openchatcut:/data
+      - ./runtime/workbench/openchatcut/home:/home/node/.openchatcut
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:5200/',{headers:{Host:'127.0.0.1:5199'}},r=>{r.resume();if(r.statusCode!==200)process.exit(1)}).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 6
+  toonflow:
+    image: tianhe-toonflow:30139c9
+    build:
+      context: ./platforms/Toonflow
+      dockerfile: ../../deploy/workbench/toonflow.Dockerfile
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:13000:3000"
+    volumes:
+      - ./runtime/workbench/toonflow:/app/data
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 6
+  web:
+    image: tianhe-web:f0174d9-logo-20261029
+    shm_size: 512m
+    env_file:
+      - path: .env.video-studio
+        required: false
+        format: raw
+    environment:
+      QWEN_ASR_MODEL: local:whisper-small
+      RPA_MODE: five_platform_assisted
+      AGENT_ROLE: materials
+      AUTO_COLLECT_ENABLED: "true"
+      BROWSER_AGENT_URL: http://host.docker.internal:17831
+      LOCAL_ASR_EXECUTABLE: /usr/local/bin/whisper-cli
+      LOCAL_ASR_MODEL_PATH: /models/whisper/ggml-small-q5_1.bin
+      LOCAL_ASR_THREADS: "4"
+      AI_ASR_TIMEOUT_MS: "180000"
+      AI_AUDIO_TOTAL_TIMEOUT_MS: "290000"
+      AI_SIGNAL_STUDIO_URL: /integrations/ai-signal/
+      AI_SIGNAL_STUDIO_INTERNAL_URL: http://signal:8892
+      AI_SIGNAL_STUDIO_HEALTH_URL: http://signal:8892/api/health
+      AI_STUDIO_INTERNAL_URL: http://ai-studio:8892
+      CONTENT_LIBRARY_SIGNAL_ROOT: /sources/ai-signal
+      VIDEO_EDITING_URL: http://127.0.0.1:5199/
+      VIDEO_EDITING_HEALTH_URL: http://openchatcut:5200/
+      AIGC_CREATION_URL: http://127.0.0.1:13000/
+      AIGC_CREATION_HEALTH_URL: http://toonflow:3000/
+      CONTENT_LIBRARY_DIR: /app/data/content-library
+      CONTENT_LIBRARY_EDITING_ROOT: /sources/openchatcut
+      CONTENT_LIBRARY_CREATION_ROOT: /sources/toonflow
+    volumes:
+      - type: bind
+        source: ./runtime/workbench/openchatcut/home/asr-models/ggml
+        target: /models/whisper
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ./runtime/workbench/signal/runs
+        target: /sources/ai-signal/runs
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ./runtime/workbench/signal/data
+        target: /sources/ai-signal/data
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ./runtime/workbench/openchatcut/project-store-v1.sqlite3
+        target: /sources/openchatcut/project-store-v1.sqlite3
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ./runtime/workbench/openchatcut/project-store-v1.sqlite3-wal
+        target: /sources/openchatcut/project-store-v1.sqlite3-wal
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ./runtime/workbench/openchatcut/project-store-v1.sqlite3-shm
+        target: /sources/openchatcut/project-store-v1.sqlite3-shm
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ./runtime/workbench/openchatcut/media/uploads
+        target: /sources/openchatcut/media/uploads
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: ./runtime/workbench/toonflow/workspaces
+        target: /sources/toonflow
+        read_only: true
+        bind: { create_host_path: false }

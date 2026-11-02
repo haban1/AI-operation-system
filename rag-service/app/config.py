@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     embedding_provider: str = "fastembed"
     embedding_model: str = "BAAI/bge-small-zh-v1.5"
+    embedding_batch_size: int = Field(default=8, ge=1, le=64)
     reranker_provider: str = "fastembed"
     reranker_model: str = "BAAI/bge-reranker-base"
     allow_model_fallback: bool = True

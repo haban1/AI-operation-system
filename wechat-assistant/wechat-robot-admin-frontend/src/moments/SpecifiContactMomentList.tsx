@@ -1,8 +1,7 @@
 import { useMemoizedFn, useRequest, useSetState } from 'ahooks';
-import { App, Avatar, Col, Drawer, List, Row, Skeleton, Spin } from 'antd';
+import { Alert, Avatar, Button, Col, Drawer, Empty, List, Row, Spin } from 'antd';
 import dayjs from 'dayjs';
-import React from 'react';
-import InfiniteScroll from 'react-infinite-scroll-component';
+import React, { useRef } from 'react';
 import type * as Api from '@/api/wechat-robot/wechat-robot';
 import type { DtoSnsObject as SnsObject } from '@/api/wechat-robot/wechat-robot';
 import { DefaultAvatar } from '@/constant';
@@ -21,89 +20,75 @@ interface IProps {
 }
 
 interface IState {
-	done?: boolean;
-	frist_page_md5?: string;
-	max_id?: string;
-	current_md5?: string;
-	current_id?: string;
-	moments?: SnsObject[];
+	done: boolean;
+	frist_page_md5: string;
+	max_id: string;
+	moments: SnsObject[];
+	tips: string[];
 }
 
 const SpecifiContactMomentList = (props: IProps) => {
-	const { message } = App.useApp();
-
 	// frist_page_md5 单词拼写原本是协议拼错了
-	const [prevState, setPrevState] = useSetState<IState>({ frist_page_md5: '', max_id: '0', moments: [] });
+	const [prevState, setPrevState] = useSetState<IState>({
+		done: false,
+		frist_page_md5: '',
+		max_id: '0',
+		moments: [],
+		tips: [],
+	});
 	const [momentDetailState, setMomentDetailState] = useSetState<{ open: boolean; momentId?: string }>({ open: false });
-
-	// 记录一下朋友圈ID，避免重复了
-	const momentIds = new Set<string>();
+	const busy = useRef(false);
 
 	const {
-		data,
-		runAsync: loadMoreData,
+		run: loadPage,
 		loading: getLoading,
+		error,
+		params,
 	} = useRequest(
-		async (md5?: string, id?: string) => {
-			const resp = await window.wechatRobotClient.moments.getDetailList({
-				id: props.robotId,
-				Towxid: props.contactId!,
-				Fristpagemd5: md5 !== undefined ? md5 : prevState.frist_page_md5,
-				Maxid: id !== undefined ? id : prevState.max_id,
-			});
-			if (resp.data.data?.ObjectList?.length) {
-				const nextState: IState = { moments: [...(prevState.moments || [])] };
-				// 处理朋友圈数据
-				resp.data.data.ObjectList.forEach(item => {
-					if (momentIds.has(item.IdStr!)) {
-						const targetIndex = nextState.moments!.findIndex(m => m.IdStr === item.IdStr);
-						if (targetIndex !== -1) {
-							nextState.moments![targetIndex] = item; // 更新已有的朋友圈
-						} else {
-							nextState.moments!.push(item);
-						}
-					} else {
-						nextState.moments!.push(item);
-						momentIds.add(item.IdStr!);
-					}
+		async (reset = false) => {
+			if (busy.current) return;
+			busy.current = true;
+			try {
+				const cursor = reset ? '0' : prevState.max_id;
+				const resp = await window.wechatRobotClient.moments.getDetailList({
+					id: props.robotId,
+					Towxid: props.contactId!,
+					Fristpagemd5: reset ? '' : prevState.frist_page_md5,
+					Maxid: cursor,
 				});
-
-				const len = resp.data.data.ObjectList.length;
-				nextState.current_id = id !== undefined ? id : nextState.max_id;
-				nextState.current_md5 = md5 !== undefined ? md5 : nextState.frist_page_md5;
-				if (resp.data.data?.FristPageMd5) {
-					nextState.frist_page_md5 = resp.data.data.FristPageMd5;
-				}
-				if (resp.data.data?.ObjectList?.length) {
-					nextState.max_id = resp.data.data.ObjectList[len - 1].IdStr!;
-				}
-				if (len < 10) {
-					nextState.done = true; // 没有更多数据了
-				} else {
-					nextState.done = false; // 还有更多数据
-				}
-
-				setPrevState(nextState);
-			} else {
-				setPrevState({ done: true });
+				const page = resp.data.data;
+				if (!page) throw new Error('朋友圈数据加载失败，请重试');
+				const items = (page.ObjectList || []).filter(item => !!item?.IdStr);
+				const moments = new Map((reset ? [] : prevState.moments).map(item => [item.IdStr!, item]));
+				items.forEach(item => moments.set(item.IdStr!, item));
+				const nextCursor = items[items.length - 1]?.IdStr;
+				setPrevState({
+					moments: [...moments.values()],
+					max_id: nextCursor || cursor,
+					frist_page_md5: page.FristPageMd5 || (reset ? '' : prevState.frist_page_md5),
+					done: !nextCursor || nextCursor === cursor,
+					tips: [...new Set([...(reset ? [] : prevState.tips), ...(page.RetTips || []).filter(tip => tip.trim())])],
+				});
+			} finally {
+				busy.current = false;
 			}
-			return resp.data.data;
 		},
-		{
-			manual: false,
-			onError: reason => {
-				message.error(reason.message);
-			},
-		},
+		{ manual: false },
 	);
 
 	const onDetailRefresh = useMemoizedFn(() => {
-		loadMoreData('', '0');
+		if (!busy.current) loadPage(true);
+	});
+	const onLoadMore = useMemoizedFn(() => {
+		if (!busy.current) loadPage(false);
+	});
+	const onRetry = useMemoizedFn(() => {
+		if (!busy.current) loadPage(params[0]);
 	});
 
-	const onDetailClose = () => {
+	const onDetailClose = useMemoizedFn(() => {
 		setMomentDetailState({ open: false, momentId: undefined });
-	};
+	});
 
 	return (
 		<Drawer
@@ -128,9 +113,42 @@ const SpecifiContactMomentList = (props: IProps) => {
 			open={props.open}
 			onClose={props.onClose}
 			footer={null}
+			extra={
+				<Button
+					loading={getLoading}
+					onClick={onDetailRefresh}
+				>
+					刷新
+				</Button>
+			}
 		>
 			<Container>
-				{!data && getLoading ? (
+				{prevState.tips.length > 0 && (
+					<Alert
+						type="info"
+						showIcon
+						title={prevState.tips.join('；')}
+						style={{ marginBottom: 12 }}
+					/>
+				)}
+				{error && (
+					<Alert
+						type="error"
+						showIcon
+						title="朋友圈加载失败"
+						description={error.message}
+						action={
+							<Button
+								loading={getLoading}
+								onClick={onRetry}
+							>
+								重试
+							</Button>
+						}
+						style={{ marginBottom: 12 }}
+					/>
+				)}
+				{!prevState.moments.length && getLoading ? (
 					<Spin spinning={getLoading} />
 				) : (
 					<div
@@ -144,92 +162,90 @@ const SpecifiContactMomentList = (props: IProps) => {
 							marginRight: 2,
 						}}
 					>
-						<InfiniteScroll
-							dataLength={prevState.moments?.length || 0}
-							next={loadMoreData}
-							hasMore={!prevState.done}
-							loader={
-								<div style={{ padding: '0 8px' }}>
-									<Skeleton
-										avatar
-										paragraph={{ rows: 1 }}
-										active
-									/>
-								</div>
-							}
-							endMessage={null}
-							scrollableTarget="specifi-moments-list"
-						>
-							<List
-								rowKey="IdStr"
-								itemLayout="horizontal"
-								split={false}
-								dataSource={prevState.moments || []}
-								renderItem={item => {
-									const media = item.TimelineObject?.ContentObject?.MediaList?.Media;
-									const momentLocation = item.TimelineObject?.Location;
+						<List
+							rowKey="IdStr"
+							itemLayout="horizontal"
+							split={false}
+							dataSource={prevState.moments || []}
+							locale={{ emptyText: error ? '暂时无法加载朋友圈，请重试' : <Empty description="暂无可见的朋友圈" /> }}
+							renderItem={item => {
+								const media = item.TimelineObject?.ContentObject?.MediaList?.Media;
+								const momentLocation = item.TimelineObject?.Location;
 
-									return (
-										<List.Item
-											onClick={() => {
-												setMomentDetailState({ open: true, momentId: item.IdStr! });
-											}}
+								return (
+									<List.Item
+										onClick={() => {
+											setMomentDetailState({ open: true, momentId: item.IdStr! });
+										}}
+									>
+										<Row
+											align="top"
+											wrap={false}
+											style={{ padding: '0 16px' }}
+											gutter={[8, 8]}
 										>
-											<Row
-												align="top"
-												wrap={false}
-												style={{ padding: '0 16px' }}
-												gutter={[8, 8]}
-											>
-												<Col flex="0 0 125px">
-													<p style={{ margin: 0 }}>
-														<b>{dayjs(item.CreateTime! * 1000).format('YYYY年M月D日')}</b>
-													</p>
-													<p style={{ margin: 0 }}>
-														<span style={{ fontSize: 12, color: '#3a3a3a' }}>
-															{dayjs(item.CreateTime! * 1000).format('HH:mm')}
+											<Col flex="0 0 125px">
+												<p style={{ margin: 0 }}>
+													<b>{dayjs(item.CreateTime! * 1000).format('YYYY年M月D日')}</b>
+												</p>
+												<p style={{ margin: 0 }}>
+													<span style={{ fontSize: 12, color: '#3a3a3a' }}>
+														{dayjs(item.CreateTime! * 1000).format('HH:mm')}
+													</span>
+												</p>
+												{(momentLocation?.PoiName || momentLocation?.City || momentLocation?.PoiAddress) && (
+													<p style={{ marginTop: 16 }}>
+														<span className="moment-location">
+															{momentLocation?.PoiName || momentLocation?.City || momentLocation?.PoiAddress}
 														</span>
 													</p>
-													{(momentLocation?.PoiName || momentLocation?.City || momentLocation?.PoiAddress) && (
-														<p style={{ marginTop: 16 }}>
-															<span className="moment-location">
-																{momentLocation?.PoiName || momentLocation?.City || momentLocation?.PoiAddress}
-															</span>
-														</p>
-													)}
-												</Col>
-												<Col
-													flex="0 0 528px"
-													style={{ backgroundColor: '#eeeeee' }}
-													onClick={ev => ev.stopPropagation()}
-												>
-													{Array.isArray(media) ? (
-														<>
-															{media.length === 1 && Number(media[0].Type) === 6 ? (
-																<MediaVideo
-																	dataSource={media[0]}
-																	videoDownloadUrl={`/api/v1/moments/down-media?id=${props.robotId}&url=${encodeURIComponent(media[0]!.URL!.Value!)}`}
-																/>
-															) : (
-																<MediaList
-																	className="moment-media-list"
-																	dataSource={media}
-																/>
-															)}
-														</>
-													) : null}
-												</Col>
-												<Col flex="1 1 auto">
-													{!!item.TimelineObject?.ContentDesc && (
-														<pre className="moment-content">{item.TimelineObject.ContentDesc}</pre>
-													)}
-												</Col>
-											</Row>
-										</List.Item>
-									);
-								}}
-							/>
-						</InfiniteScroll>
+												)}
+											</Col>
+											<Col
+												flex="0 0 528px"
+												style={{ backgroundColor: '#eeeeee' }}
+												onClick={ev => ev.stopPropagation()}
+											>
+												{Array.isArray(media) ? (
+													<>
+														{media.length === 1 && Number(media[0].Type) === 6 ? (
+															<MediaVideo
+																dataSource={media[0]}
+																videoDownloadUrl={`/api/v1/moments/down-media?id=${props.robotId}&url=${encodeURIComponent(media[0]!.URL!.Value!)}`}
+															/>
+														) : (
+															<MediaList
+																className="moment-media-list"
+																dataSource={media}
+															/>
+														)}
+													</>
+												) : null}
+											</Col>
+											<Col flex="1 1 auto">
+												{!!item.TimelineObject?.ContentDesc && (
+													<pre className="moment-content">{item.TimelineObject.ContentDesc}</pre>
+												)}
+											</Col>
+										</Row>
+									</List.Item>
+								);
+							}}
+						/>
+						{!error && prevState.moments.length > 0 && (
+							<div style={{ padding: 16, textAlign: 'center' }}>
+								{prevState.done ? (
+									'已显示全部可见的朋友圈'
+								) : (
+									<Button
+										loading={getLoading}
+										onClick={onLoadMore}
+									>
+										加载更多
+									</Button>
+								)}
+							</div>
+						)}
 						{momentDetailState.open && (
 							<SpecifiContactMomentDetail
 								open={momentDetailState.open}
