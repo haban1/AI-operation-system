@@ -48,11 +48,33 @@ test('model gateway fails closed and does not expose settings or call upstream',
   assert.equal(g.calls.length, 0);
 });
 
+test('model discovery requires authentication and only returns configured role aliases', async t => {
+  const g = await gateway(t);
+  const headers = { Authorization: 'Bearer internal-secret' };
+  assert.equal((await fetch(g.base + 'models')).status, 401);
+  const response = await fetch(g.base + 'models', { headers });
+  assert.equal(response.status, 200);
+  const catalog = await response.json();
+  assert.equal(catalog.object, 'list');
+  assert.ok(catalog.data.some(m => m.id === 'tianhe-workbench-chat'));
+  assert.ok(catalog.data.some(m => m.id === 'tianhe-workbench-vision'));
+  assert.ok(!catalog.data.some(m => m.id === 'tianhe-robot-embedding'));
+  assert.ok(catalog.data.every(m => m.object === 'model' && m.owned_by === 'tianhe'));
+  assert.doesNotMatch(JSON.stringify(catalog), /secret|provider\.test|chat-a|vision-a/);
+  g.set({ visionModel: '' });
+  assert.ok(!(await (await fetch(g.base + 'models', { headers })).json()).data.some(m => m.id.endsWith('-vision')));
+  g.set({ apiKey: '' });
+  assert.equal((await (await fetch(g.base + 'models', { headers })).json()).error.code, 'AI_KEY_MISSING');
+  g.set({ mode: 'mock' });
+  assert.equal((await (await fetch(g.base + 'models', { headers })).json()).error.code, 'AI_MODE_DISABLED');
+  assert.equal(g.calls.length, 0, 'Discovery must not call the upstream provider');
+});
+
 test('all chat consumers follow new settings on the next request and preserve native tools', async t => {
   const g = await gateway(t);
   const tools = [{ type: 'function', function: { name: 'search_knowledge', parameters: { type: 'object' } } }];
   const messages = [{ role: 'tool', tool_call_id: 'call-1', content: 'evidence' }];
-  for (const model of ['tianhe-wechat-chat', 'tianhe-rag-chat', 'tianhe-robot-chat']) {
+  for (const model of ['tianhe-wechat-chat', 'tianhe-rag-chat', 'tianhe-robot-chat', 'tianhe-workbench-chat']) {
     assert.equal((await g.request({ model, messages, tools, tool_choice: 'auto' })).status, 200);
     assert.equal(g.calls.at(-1).payload.model, 'chat-a');
     assert.deepEqual(g.calls.at(-1).payload.tools, tools);
@@ -65,6 +87,9 @@ test('all chat consumers follow new settings on the next request and preserve na
   assert.equal(g.calls.at(-1).url, 'https://other.test/v1/chat/completions');
   await g.request({ model: 'tianhe-robot-vision', messages });
   assert.equal(g.calls.at(-1).payload.model, 'vision-b');
+  await g.request({ model: 'tianhe-workbench-vision', messages });
+  assert.equal(g.calls.at(-1).payload.model, 'vision-b');
+  assert.equal(g.logs.at(-1).sourceModule, 'creative-workbench');
   assert.ok(g.logs.some(entry => entry.sourceModule === 'rag-generation' && entry.usage.prompt_tokens === 3));
   assert.ok(!JSON.stringify(g.logs).includes('secret'));
 });

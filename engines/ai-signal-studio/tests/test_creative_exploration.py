@@ -56,6 +56,28 @@ class CreativeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'仍不合格'):creative.plan_creative_brief(a,{}, {'llm':{}})
         self.assertEqual(call.call_count,2)
 
+    def test_story_arc_type_error_is_repaired_with_specific_instructions(self):
+        a=creative.new_experiment(seed='repair-story')['agents'][0]
+        invalid=example_brief();invalid['story_arc']=['开头提出问题','中段解释机制','结尾回应']
+        with patch.object(creative,'generate',side_effect=[json.dumps(invalid),json.dumps(example_brief())]) as call:
+            result=creative.plan_creative_brief(a,{'repo':'hugohe3/ppt-master'}, {'llm':{}})
+        self.assertEqual(result['story_arc'],example_brief()['story_arc'])
+        repair=json.loads(call.call_args.args[2])
+        self.assertIn('story_arc',repair['validation_error'])
+        self.assertIn('必须是字符串',repair['validation_error'])
+        self.assertEqual(json.loads(repair['previous_output'])['story_arc'],invalid['story_arc'])
+        self.assertEqual(repair['evidence']['repo'],'hugohe3/ppt-master')
+
+    def test_brief_validation_explains_missing_empty_and_overlong_fields(self):
+        for value,reason in [(None,'必须是字符串'),('', '内容不能为空'),('字'*351,'当前351字，最多350字')]:
+            with self.subTest(reason=reason):
+                invalid=example_brief();invalid['story_arc']=value
+                with self.assertRaisesRegex(ValueError,'story_arc.*'+reason):creative.validate_brief(invalid)
+        invalid=example_brief();del invalid['story_arc']
+        with self.assertRaisesRegex(ValueError,'story_arc.*缺少此字段'):creative.validate_brief(invalid)
+        invalid=example_brief();invalid['name']='字'*25
+        with self.assertRaisesRegex(ValueError,'name.*当前25字，最多24字'):creative.validate_brief(invalid)
+
     def test_github_fetch_uses_proxy_aware_reader_and_keeps_raw_readme_accept(self):
         with patch('collect.read_public',return_value=('README','https://api.github.com','text/plain')) as read:
             self.assertEqual(fetch('https://api.github.com/repos/example/repo/readme','application/vnd.github.raw+json'),'README')

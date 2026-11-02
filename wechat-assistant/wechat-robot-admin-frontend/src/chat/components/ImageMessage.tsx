@@ -8,10 +8,10 @@ import {
 	ZoomInOutlined,
 	ZoomOutOutlined,
 } from '@ant-design/icons';
-import { Image, Space } from 'antd';
-import React from 'react';
+import { useMemoizedFn } from 'ahooks';
+import { Button, Image, Space } from 'antd';
+import React, { useState } from 'react';
 import type * as Api from '@/api/wechat-robot/wechat-robot';
-import { ImageFallback } from '@/constant';
 import { useAttachDownload } from '@/hooks';
 
 interface IProps {
@@ -21,12 +21,49 @@ interface IProps {
 
 const ImageMessage = (props: IProps) => {
 	const { onAttachDownload: onDownload } = useAttachDownload('image', props.robotId, props.message.id!);
+	const [failed, setFailed] = useState(false);
+	const [useSavedImage, setUseSavedImage] = useState(false);
+	const [attempt, setAttempt] = useState(0);
+	const onError = useMemoizedFn(() => {
+		if (props.message.attachment_url && !useSavedImage) {
+			setUseSavedImage(true);
+			return;
+		}
+		setFailed(true);
+	});
+	const onRetry = useMemoizedFn(() => {
+		setAttempt(value => value + 1);
+		setFailed(false);
+	});
 
 	const url =
-		props.message.attachment_url || `/api/v1/chat/image/download?id=${props.robotId}&message_id=${props.message.id}`;
+		(!useSavedImage && props.message.attachment_url) ||
+		`/api/v1/chat/image/download?id=${props.robotId}&message_id=${props.message.id}&retry=${attempt}`;
+
+	if (failed) {
+		return (
+			<Space
+				orientation="vertical"
+				size={0}
+				role="status"
+			>
+				<span>图片暂时无法加载，可能未保存或已过期。</span>
+				<Button
+					type="link"
+					size="small"
+					onClick={onRetry}
+				>
+					重新加载图片
+				</Button>
+			</Space>
+		);
+	}
 
 	return (
 		<Image
+			key={`${url}-${attempt}`}
+			placeholder
+			onError={onError}
 			styles={{
 				image: {
 					maxHeight: 300,
@@ -75,7 +112,6 @@ const ImageMessage = (props: IProps) => {
 					</Space>
 				),
 			}}
-			fallback={ImageFallback}
 		/>
 	);
 };

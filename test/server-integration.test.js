@@ -1722,22 +1722,31 @@ test('submit lock permanently prevents automatic repost and allows read-only rec
   const manualPublished = await request(base, `/api/publish/targets/${manualTargetId}/manual-published`, { method: 'POST', body: JSON.stringify({ handledBy: 'integration-operator' }) });
   assert.equal(manualPublished.response.status, 200, JSON.stringify(manualPublished.data));
   const manualTarget = db.prepare('SELECT * FROM publish_targets WHERE id=?').get(manualTargetId);
-  assert.equal(manualTarget.status, 'PUBLISHED');
+  assert.equal(manualTarget.status, 'SUBMITTED');
   assert.equal(manualTarget.submission_status, 'SUBMITTED');
-  assert.equal(manualTarget.review_status, 'PUBLISHED');
-  assert.equal(manualTarget.publish_attempt_state, 'PUBLISHED');
+  assert.equal(manualTarget.review_status, 'UNKNOWN');
+  assert.equal(manualTarget.publish_attempt_state, 'SUBMITTED');
   assert.equal(manualTarget.submit_lock, 'LOCKED');
   assert.ok(Number(manualTarget.submit_attempt_count) >= 1);
-  assert.equal(manualTarget.submit_lock_reason, 'MANUAL_PLATFORM_PUBLISH_CONFIRMED');
-  assert.equal(JSON.parse(manualTarget.result).manuallyConfirmed, true);
+  assert.equal(manualTarget.submit_lock_reason, 'MANUAL_PLATFORM_PUBLISH_PENDING_VERIFICATION');
+  assert.equal(JSON.parse(manualTarget.result).manuallyConfirmed, false);
+  assert.equal(JSON.parse(manualTarget.result).manualSubmissionConfirmed, true);
   assert.equal(db.prepare('SELECT status FROM agent_jobs WHERE id=?').get(queuedManualPublishId).status, 'CANCELLED');
   assert.equal(db.prepare('SELECT status FROM agent_jobs WHERE id=?').get(queuedManualVerifyId).status, 'CANCELLED');
-  assert.equal(db.prepare('SELECT status FROM publish_tasks WHERE id=?').get(manualTaskId).status, 'PUBLISHED');
+  assert.equal(db.prepare('SELECT status FROM publish_tasks WHERE id=?').get(manualTaskId).status, 'SUBMITTED');
+  const manualVerification = db.prepare("SELECT * FROM agent_jobs WHERE job_type='VERIFY_PUBLISH' AND status='QUEUED' AND CAST(json_extract(payload,'$.targetId') AS INTEGER)=?").all(manualTargetId);
+  assert.equal(manualVerification.length, 1);
+  const duplicateConfirmation = await request(base, `/api/publish/targets/${manualTargetId}/manual-published`, { method: 'POST', body: '{}' });
+  assert.equal(duplicateConfirmation.data.idempotent, true);
 
   const blockedManualRetry = await request(base, `/api/agent/publish-targets/${manualTargetId}/acquire-submit-lock`, { method: 'POST', body: JSON.stringify({ deviceId: account.device_id, taskId: manualTaskId, targetId: manualTargetId, accountId: account.id, platformCode: 'bilibili', draftFingerprint: manualFingerprint, reason: 'MUST_NOT_REPOST' }) });
   assert.equal(blockedManualRetry.response.status, 409);
   assert.equal(blockedManualRetry.data.detail.code, 'SUBMIT_ALREADY_LOCKED');
 
+  db.prepare("UPDATE agent_jobs SET status='RUNNING' WHERE id=?").run(manualVerification[0].id);
+  const verifiedManual = await request(base, `/api/agent/jobs/${manualVerification[0].id}/complete`, { method: 'POST', body: JSON.stringify({ status: 'SUCCESS', result: { reviewStatus: 'PUBLISHED', platformPostId: 'BV1ManualPub1', platformUrl: 'https://www.bilibili.com/video/BV1ManualPub1/', message: '平台作品列表已确认发布' } }) });
+  assert.equal(verifiedManual.response.status, 200, JSON.stringify(verifiedManual.data));
+  assert.equal(db.prepare('SELECT status FROM publish_targets WHERE id=?').get(manualTargetId).status, 'PUBLISHED');
   const staleReview = await request(base, `/api/publish/targets/${manualTargetId}/review`, { method: 'POST', body: JSON.stringify({ reviewStatus: 'UNKNOWN', message: 'stale automated review' }) });
   assert.equal(staleReview.response.status, 200);
   assert.equal(db.prepare('SELECT status FROM publish_targets WHERE id=?').get(manualTargetId).status, 'PUBLISHED');

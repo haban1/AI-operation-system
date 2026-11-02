@@ -34,7 +34,7 @@ func (a *AttachDownload) DownloadImage(c *gin.Context) {
 		})
 		return
 	}
-	imageData, contentType, extension, err := service.NewAttachDownloadService(c).DownloadImage(req.MessageID)
+	imageData, contentType, extension, err := service.NewAttachDownloadService(c.Request.Context()).DownloadImage(req.MessageID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"message": err.Error(),
@@ -44,9 +44,11 @@ func (a *AttachDownload) DownloadImage(c *gin.Context) {
 
 	// 设置响应头
 	c.Header("Content-Type", contentType)
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%d%s\"", req.MessageID, extension))
+	c.Header("Content-Disposition", fmt.Sprintf("inline; filename=\"%d%s\"", req.MessageID, extension))
 	c.Header("Content-Length", fmt.Sprintf("%d", len(imageData)))
 
+	c.Header("Cache-Control", "private, max-age=86400")
+	c.Header("X-Content-Type-Options", "nosniff")
 	// 将图片数据写入响应
 	c.Writer.WriteHeader(http.StatusOK)
 	_, err = c.Writer.Write(imageData)

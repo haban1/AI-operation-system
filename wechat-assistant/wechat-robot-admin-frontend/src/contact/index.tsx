@@ -33,6 +33,7 @@ import type * as Api from '@/api/wechat-robot/wechat-robot';
 import { DtoContactType } from '@/api/wechat-robot/wechat-robot';
 import ChatHistory from '@/chat';
 import ChatRoomMember from '@/chat-room/ChatRoomMember';
+import Conversation from '@/chat/conversation';
 import SendMessage from '@/components/send-message';
 import { DefaultAvatar } from '@/constant';
 import FemaleFilled from '@/icons/FemaleFilled';
@@ -87,6 +88,7 @@ const Contact = (props: IProps) => {
 	const [friendAction, setFriendAction] = useSetState<IFriendActionState>({});
 	const [groupMemberState, setGroupMemberState] = useState<{ open?: boolean; chatRoom?: IContact }>({});
 	const [sendMessageState, setSendMessageState] = useState<{ open?: boolean; contact?: IContact }>({});
+	const [conversationContact, setConversationContact] = useState<IContact>();
 	const [friendSettingsState, setFriendSettingsState] = useState<{ open?: boolean; contact?: IContact }>({});
 	const [chatRoomSettingsState, setChatRoomSettingsState] = useState<{ open?: boolean; chatRoom?: IContact }>({});
 	const [chatHistoryState, setChatHistoryState] = useState<{ open?: boolean; contact?: IContact; title?: ReactNode }>(
@@ -104,6 +106,7 @@ const Contact = (props: IProps) => {
 	const onSendMessageClose = useMemoizedFn(() => {
 		setSendMessageState({ open: false });
 	});
+	const onConversationClose = useMemoizedFn(() => setConversationContact(undefined));
 
 	const onFriendSettingsClose = useMemoizedFn(() => {
 		setFriendSettingsState({ open: false });
@@ -368,6 +371,14 @@ const Contact = (props: IProps) => {
 									}
 								/>
 								<Space.Compact style={{ marginRight: 3 }}>
+									<Button
+										type="primary"
+										icon={<WechatOutlined />}
+										disabled={!item.wechat_id}
+										onClick={() => setConversationContact(item)}
+									>
+										聊天
+									</Button>
 									{item.type === 'friend' || item.type === 'official_account' ? (
 										<Button
 											type="default"
@@ -527,6 +538,14 @@ const Contact = (props: IProps) => {
 					robot={props.robot}
 					chatRoom={groupMemberState.chatRoom!}
 					onClose={onGroupMemberClose}
+				/>
+			)}
+			{conversationContact && (
+				<Conversation
+					robotId={props.robotId}
+					robot={props.robot}
+					contact={conversationContact}
+					onClose={onConversationClose}
 				/>
 			)}
 			{chatHistoryState.open && (

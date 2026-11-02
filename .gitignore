@@ -92,6 +92,10 @@ UNTRACKED_FILES_*.txt
 
 # Machine-specific workbench source mounts
 compose.local.yaml
+
+# Pinned external engine sources are restored by scripts/setup-workbench.ps1.
+/platforms/OpenChatCut/
+/platforms/Toonflow/
 compose.outputs.local.yaml
 
 # Deployable video-studio UI and bridge sources; private data stays ignored.

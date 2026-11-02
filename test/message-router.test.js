@@ -26,6 +26,20 @@ test('comments including greetings require a knowledge lookup before replying', 
   }
 });
 
+test('Douyin pure social comments receive natural replies while questions remain grounded', () => {
+  for (const content of ['学到了', '学到了[666][666][666]', '谢谢！', '不错', '涨知识了', '你好', '哈哈']) {
+    const result = routeIncomingMessage({ message: { platform_code: 'douyin', content, message_type: 'COMMENT' } });
+    assert.equal(result.route, MESSAGE_ROUTE.DIRECT_REPLY, content);
+    assert.equal(result.reasonCode, 'COMMENT_SOCIAL_REPLY');
+    assert.equal(result.allowRag, false);
+    assert.ok(result.replyText);
+  }
+  for (const content of ['学到了，社区几点开放？', '谢谢，怎么报名', '不错，多少钱', '这个结论是真的吗', '今天的天气', '学到了吗？', '谢谢[怎么报名]', '不错[赞]，多少钱']) {
+    assert.equal(routeIncomingMessage({ message: { platform_code: 'douyin', content, message_type: 'COMMENT' } }).route, MESSAGE_ROUTE.RAG_QUERY, content);
+  }
+  assert.equal(routeIncomingMessage({ message: { platform_code: 'douyin', content: '学到了', message_type: 'COMMENT' }, conversation: { handling_mode: 'HUMAN_MANAGED' } }).route, MESSAGE_ROUTE.HUMAN_HANDOFF);
+});
+
 test('常见问候和感谢的标点变体不进入业务引导，附带业务问题仍查询 RAG', () => {
   for (const content of ['你好？', '在吗？', '早上好', '您好～', '哈喽，你好呀', '谢谢您']) {
     const result = routeIncomingMessage({ message: { content, message_type: 'PRIVATE_MESSAGE' } });

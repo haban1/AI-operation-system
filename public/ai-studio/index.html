@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI Studio 本地版 · 自动化成片</title>
+  <link rel="stylesheet" href="./style.css"><script src="./app.js" defer></script>
+</head>
+<body>
+  <header class="top"><a class="brand" href="./index.html"><span class="brandIcon">S</span><span>AI Studio <small>本地版</small></span></a><span id="modelStatus" class="badge">正在连接天河模型</span></header>
+  <main>
+    <div class="intro"><div><p class="eyebrow">从一个主题，到一条短片</p><h1>把想法，变成可分享的内容。</h1><p>AI 起草脚本，你来把关。生成字幕动效视频后，可在天河成片库继续使用。</p></div><a id="openLibrary" href="/video-workbench/index.html#library" class="linkButton">打开成片库 ↗</a></div>
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <div class="layout">
+      <section class="card create"><div class="sectionHead"><span class="step">01</span><div><h2>创作设定</h2><p>写下主题，补充你希望传达的信息。</p></div></div>
+        <form id="createForm">
+          <label for="topic">视频主题 <span class="required">*</span></label><input id="topic" name="topic" maxlength="120" required placeholder="例如：第一次参观社区，应该了解哪些服务？">
+          <label for="brief">参考内容与要求 <span class="optional">选填</span></label><textarea id="brief" name="brief" maxlength="6000" rows="6" placeholder="粘贴参考资料，说明受众、语气和重点。具体事实请提供依据。"></textarea>
+          <div class="formRow"><div><label for="ratio">画面比例</label><select id="ratio"><option value="portrait">9:16 竖屏</option><option value="landscape">16:9 横屏</option><option value="square">1:1 方形</option></select></div><div><label for="theme">视觉风格</label><select id="theme"><option value="forest">松绿 · 清晰</option><option value="ocean">海蓝 · 简洁</option><option value="sunset">暮色 · 温暖</option></select></div></div>
+          <label class="check"><input type="checkbox" id="voice"><span>添加本地普通话配音<small>本地合成，声音较机械；不勾选时生成无配音字幕视频。</small></span></label>
+          <button class="primary" id="generate" type="submit">生成脚本 <span>→</span></button><button class="secondary" id="oneClick" type="button">直接生成视频</button>
+          <p class="hint">文字模型沿用天河配置。当前生成字幕动效视频，不调用图片或视频大模型。</p>
+        </form>
+      </section>
+      <section class="card workspace"><div class="sectionHead"><span class="step">02</span><div><h2>脚本与视频</h2><p>调整表达，预览成片。</p></div><span id="projectStatus" class="badge" hidden></span></div>
+        <div id="empty" class="empty"><svg width="100" height="100" viewBox="0 0 100 100" aria-hidden="true"><rect x="17" y="8" width="66" height="84" rx="12" fill="#e7eee9"/><rect x="28" y="23" width="44" height="4" rx="2" fill="#93b1a0"/><rect x="28" y="35" width="30" height="4" rx="2" fill="#93b1a0"/><circle cx="50" cy="64" r="16" fill="#244b3d"/><path d="M46 56l12 8-12 8z" fill="#fff"/></svg><h3>下一条内容，从这里开始</h3><p>填写左侧主题，生成可编辑的分镜脚本。<br>也可以打开下方的历史项目。</p></div>
+        <div id="project" hidden><div id="jobState" class="jobState" hidden><div><strong id="phase"></strong><span id="percent"></span></div><progress id="progress" max="100" value="0"></progress><p id="jobError"></p><div class="actions"><button id="cancel" class="secondary" hidden>取消任务</button><button id="retry" class="secondary" hidden>重试任务</button></div></div>
+          <div id="preview" class="preview" hidden><video id="video" controls playsinline preload="metadata"></video><div class="downloads"><a id="downloadVideo" download>下载 MP4 ↓</a><a id="downloadScript" download>下载脚本</a><a id="downloadSubtitles" download>下载字幕</a><button id="sync" class="secondary">同步到成片库</button></div><p id="videoMeta" class="hint"></p></div>
+          <form id="scriptForm" hidden><label for="scriptTitle">视频标题</label><input id="scriptTitle" maxlength="40" required><label for="scriptSummary">内容概述</label><textarea id="scriptSummary" maxlength="400" rows="2"></textarea><div id="scenes"></div><div class="editorActions"><span id="saveState" class="hint">脚本已保存</span><button type="submit" class="secondary" id="save">保存修改</button><button type="button" class="primary" id="render">生成视频 →</button></div><p class="hint">AI 文案可能有误，请核实事实后再发布。配音较长时，镜头会自动延长。</p></form>
+        </div>
+      </section>
+    </div>
+    <section class="card history"><div class="sectionHead"><span class="step">03</span><div><h2>我的创作</h2><p>最近 100 个项目，脚本和成片保存在本机。</p></div><button id="refresh" class="textButton">刷新</button></div><div id="history" class="historyList"><p class="hint">正在读取项目…</p></div></section>
+  </main>
+  <footer>AI Studio 本地版 · 天河统一模型 · 生成后由你选择发布</footer>
+</body>
+</html>

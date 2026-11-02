@@ -18,6 +18,7 @@ func SupportProxy(c *gin.Context) {
 		return
 	}
 	suffix := ""
+	query := url.Values{}
 	switch c.FullPath() {
 	case "/api/v1/support":
 	case "/api/v1/support/settings":
@@ -26,6 +27,13 @@ func SupportProxy(c *gin.Context) {
 		suffix = "/reception"
 	case "/api/v1/support/broadcasts":
 		suffix = "/broadcasts"
+	case "/api/v1/support/broadcasts/detail", "/api/v1/support/broadcasts/image":
+		suffix = "/broadcasts/detail"
+		query.Set("broadcast_id", c.Query("broadcast_id"))
+		if c.FullPath() == "/api/v1/support/broadcasts/image" {
+			suffix = "/broadcasts/image"
+			query.Set("position", c.Query("position"))
+		}
 	default:
 		c.AbortWithStatus(404)
 		return
@@ -35,13 +43,14 @@ func SupportProxy(c *gin.Context) {
 		c.AbortWithStatus(502)
 		return
 	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 12*1024*1024)
+	// Three 10 MB images plus multipart headers and text.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32*1024*1024)
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	original := proxy.Director
 	proxy.Director = func(r *http.Request) {
 		original(r)
 		r.URL.Path = target.Path + "/support" + suffix
-		r.URL.RawQuery = ""
+		r.URL.RawQuery = query.Encode()
 		r.Header.Del("Cookie")
 		r.Header.Del("Authorization")
 	}

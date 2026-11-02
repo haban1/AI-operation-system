@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { withExtractedAudio } from '../agent/material-audio-extractor.js';
-import { callQwenAsr, callQwenContent, callQwenKnowledge, generateMaterialCopyFromAudio } from '../agent/material-audio-content-generation.js';
+import { callQwenAsr, callMaterialAsr, callQwenContent, callQwenKnowledge, generateMaterialCopyFromAudio } from '../agent/material-audio-content-generation.js';
+import { callLocalWhisperAsr, LOCAL_ASR_MODEL } from '../agent/local-whisper-asr.js';
 import { normalizeMaterialKnowledgeDraft } from '../src/services/material-knowledge-schema.js';
 import { normalizeGeneratedCopy, parseModelJson } from '../src/services/material-content-schema.js';
 
@@ -85,6 +86,88 @@ test('千问 ASR 请求使用 OpenAI 兼容的音频 data URL 结构', async () 
   assert.deepEqual(request.body.asr_options, { language: 'zh' });
   assert.equal(result.text, '这是音频转写结果。');
   assert.equal(result.usage.total_tokens, 12);
+});
+
+test('DeepSeek 不接受千问音频请求，发送前返回明确配置错误', async () => {
+  let fetched = false;
+  await assert.rejects(callQwenAsr({
+    audioBuffer: Buffer.from('audio'), model: 'qwen3-asr-flash', apiKey: 'test-key',
+    baseUrl: 'https://api.deepseek.com', fetchImpl: async () => { fetched = true; }
+  }), { code: 'ASR_PROVIDER_UNSUPPORTED' });
+  assert.equal(fetched, false);
+});
+
+test('本地 ASR 将转写交给统一文案模型，不向在线接口上传音频，并清理临时文件', async t => {
+  const modelPath = tempMaterial(t);
+  let directory;
+  let fetched = false;
+  const generation = await generateMaterialCopyFromAudio({
+    materialPath: tempMaterial(t), precheck: precheck(), mode: 'online', apiKey: 'content-key',
+    asrModel: LOCAL_ASR_MODEL, baseUrl: 'https://api.deepseek.com',
+    extractAudio: fakeExtractAudio,
+    invokeAsr: options => callMaterialAsr({ ...options, modelPath,
+      fetchImpl: async () => { fetched = true; throw new Error('must not upload audio'); },
+      execFileImpl: async (_exe, args, opts) => {
+        assert.equal(opts.windowsHide, true);
+        assert.ok(opts.timeout > 0);
+        if (args.includes('-of')) {
+          const output = args[args.indexOf('-of') + 1];
+          directory = path.dirname(output);
+          fs.writeFileSync(output + '.txt', '社区举办创业分享活动，介绍场地使用和服务安排。');
+        }
+      }
+    }),
+    invokeContent: async options => {
+      assert.match(options.transcript, /创业分享活动/);
+      assert.equal(options.baseUrl, 'https://api.deepseek.com');
+      assert.equal(options.apiKey, 'content-key');
+      return { content: successfulCopy() };
+    }
+  });
+  assert.equal(generation.status, 'SUCCESS');
+  assert.equal(generation.calls.asr.model, LOCAL_ASR_MODEL);
+  assert.equal(generation.transmittedBytes, 0);
+  assert.equal(fetched, false);
+  assert.equal(fs.existsSync(directory), false);
+});
+
+test('DeepSeek 文案及知识生成使用其原生参数关闭思考，避免推理耗尽输出额度', async () => {
+  for (const invoke of [callQwenContent, callQwenKnowledge]) {
+    let request;
+    await invoke({
+      transcript: '社区开展创业服务。', model: 'deepseek-flash', apiKey: 'content-key',
+      baseUrl: 'https://api.deepseek.com',
+      fetchImpl: async (_url, options) => {
+        request = JSON.parse(options.body);
+        return { ok: true, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: successfulCopy() } }] }) };
+      }
+    });
+    assert.deepEqual(request.thinking, { type: 'disabled' });
+    assert.equal(Object.hasOwn(request, 'enable_thinking'), false);
+    assert.equal(request.response_format.type, 'json_object');
+  }
+});
+
+test('本地 ASR 对模型缺失、组件缺失、超时和空转写给出可处理错误', async t => {
+  const modelPath = tempMaterial(t);
+  await assert.rejects(callLocalWhisperAsr({ modelPath: modelPath + '-missing' }), { code: 'LOCAL_ASR_MODEL_MISSING' });
+  await assert.rejects(callMaterialAsr({ model: 'local:invalid' }), { code: 'LOCAL_ASR_MODEL_UNSUPPORTED' });
+  for (const [failure, expected] of [
+    [{ code: 'ENOENT' }, 'LOCAL_ASR_UNAVAILABLE'],
+    [{ killed: true }, 'ASR_TIMEOUT'],
+    [null, 'ASR_EMPTY_TRANSCRIPT']
+  ]) {
+    let directory;
+    await assert.rejects(callLocalWhisperAsr({
+      audioBuffer: Buffer.from('audio'), modelPath,
+      execFileImpl: async (_exe, args) => {
+        if (args.includes('-i')) directory = path.dirname(args[args.indexOf('-i') + 1]);
+        if (failure) throw Object.assign(new Error('internal details'), failure);
+        if (args.includes('-of')) fs.writeFileSync(args[args.indexOf('-of') + 1] + '.txt', '');
+      }
+    }), { code: expected });
+    assert.equal(fs.existsSync(directory), false);
+  }
 });
 
 test('千问文案请求关闭思考并要求 JSON 对象', async () => {

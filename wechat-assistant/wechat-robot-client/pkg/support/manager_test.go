@@ -21,7 +21,7 @@ func fixture(t *testing.T) *Manager {
 	sqlDB, _ := db.DB()
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { sqlDB.Close() })
-	if err = db.AutoMigrate(&model.SupportReception{}, &model.SupportSettings{}, &model.SupportBroadcast{}); err != nil {
+	if err = db.AutoMigrate(&model.SupportReception{}, &model.SupportSettings{}, &model.SupportBroadcast{}, &model.SupportBroadcastImage{}); err != nil {
 		t.Fatal(err)
 	}
 	db.Exec("CREATE TABLE contacts (wechat_id TEXT, type TEXT, status INTEGER, deleted_at DATETIME)")

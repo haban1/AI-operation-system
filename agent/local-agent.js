@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { config, ROOT } from '../src/config.js';
 import { precheckMaterial } from './precheck.js';
+import { receiveMaterialUpload } from '../src/services/material-upload.js';
 import { recognizeMaterialText } from './material-ocr.js';
 import { reviewMaterialWithAi } from './material-ai-review.js';
 import { generateMaterialCopyFromAudio } from './material-audio-content-generation.js';
@@ -24,12 +25,18 @@ import { BusinessBrowserRouter } from './browser-control/business-router.js';
 import { isBrowserCommandNonIdempotent } from '../src/services/browser-control-policy.js';
 import { jobOperationLockMode, jobQueueLane, platformWorkerPlans } from './job-operation-lane.js';
 import { platformChannelSplitEnabled } from '../src/services/channel-job-scheduler.js';
+import { prepareRemoteJobMaterial } from './remote-job-material.js';
+import { isPublishSecurityChallenge } from '../src/services/publish-manual-verification.js';
 
 const execFileAsync = promisify(execFile);
+if (!['all', 'materials', 'browser'].includes(config.agentRole)) throw new Error('AGENT_ROLE 无效');
+if (config.agentRole === 'browser' && (!config.agentToken || config.rpaMode !== 'five_platform_assisted')) {
+  throw new Error('Windows 浏览器执行端必须使用共享密钥和 five_platform_assisted 模式');
+}
 const agentBindingId = config.agentToken ? createHash('sha256').update(`${config.deviceId || ''}\0${config.agentToken}`).digest('hex').slice(0, 24) : null;
 const verifiedEntryOverrides = {
   douyin: {
-    commentUrl: 'https://creator.douyin.com/creator-micro/data/following/comment',
+    commentUrl: 'https://creator.douyin.com/creator-micro/interactive/comment',
     messageUrl: 'https://www.douyin.com/user/self'
   },
   wechat_channels: {
@@ -97,6 +104,7 @@ const agentPlatformAllowlist = [...new Set(String(process.env.AGENT_PLATFORM_ALL
   .map(item => item.trim())
   .filter(Boolean))];
 const agentPlatformAllowlistSet = agentPlatformAllowlist.length ? new Set(agentPlatformAllowlist) : null;
+let manualPublishWaitPlatforms = new Set();
 
 async function stopPlatformsImmediately(platformCodes = []) {
   loginPollingGate.deactivate(platformCodes);
@@ -127,6 +135,7 @@ for (const [platformCode, adapter] of adapters.entries()) {
 }
 
 async function rememberPlatformControl(data = {}) {
+  if (Array.isArray(data.manualPublishWaitPlatforms)) manualPublishWaitPlatforms = new Set(data.manualPublishWaitPlatforms);
   await platformCoordinator.update({
     platforms: data.platforms || [],
     masterSwitch: data.masterSwitch || { enabled: platformCoordinator.masterSwitchEnabled }
@@ -227,7 +236,7 @@ async function heartbeat() {
 }
 
 function runnableClaimPlatformCodes() {
-  const codes = platformCoordinator.runnablePlatformCodes();
+  const codes = platformCoordinator.runnablePlatformCodes().filter(code => !manualPublishWaitPlatforms.has(code));
   return agentPlatformAllowlistSet ? codes.filter(code => agentPlatformAllowlistSet.has(code)) : codes;
 }
 
@@ -266,7 +275,9 @@ async function defer(job, runtime) {
 }
 
 async function complete(jobId, output) {
-  return cloud(`/api/agent/jobs/${jobId}/complete`, { method: 'POST', body: JSON.stringify(output) });
+  const data = await cloud(`/api/agent/jobs/${jobId}/complete`, { method: 'POST', body: JSON.stringify(output) });
+  if (Array.isArray(data.manualPublishWaitPlatforms)) manualPublishWaitPlatforms = new Set(data.manualPublishWaitPlatforms);
+  return data;
 }
 
 async function syncPlatformLoginStatus(platformCode, status) {
@@ -371,7 +382,14 @@ async function processClaimedJob(job) {
         getRuntime: code => currentPlatformRuntime(code, { refresh: true }),
         deferJob: defer,
         resolveAdapter: currentJob => currentJob?.job_type === 'BROWSER_COMMAND' ? browserController : businessBrowserRouter,
-        executeAdapter: async (adapter, currentJob) => assertRpaOutput(await adapter.execute(currentJob))
+        executeAdapter: async (adapter, currentJob) => {
+          const executableJob = config.agentRemoteMaterials
+            ? await prepareRemoteJobMaterial(currentJob, { baseUrl: config.cloudBaseUrl, token: config.agentToken,
+              deviceId: config.deviceId, cacheDir: config.agentMaterialCacheDir, maxBytes: config.materialUploadMaxBytes })
+            : currentJob;
+          if (config.agentRemoteMaterials && currentJob.job_type === 'PUBLISH') await requirePlatformRunning(platformCode);
+          return assertRpaOutput(await adapter.execute(executableJob));
+        }
       }), { lockMode: jobOperationLockMode(job) });
     } catch (error) {
       if (['PLATFORM_STOPPED', 'PLATFORM_OPERATION_CANCELLED'].includes(error.code)) {
@@ -413,6 +431,7 @@ async function processClaimedJob(job) {
       console.log(`[Agent:${job?.payload?.platformCode}] Job#${job.id} 执行前发现平台已停止，已退回排队`);
       return;
     }
+    if (job.job_type === 'PUBLISH' && isPublishSecurityChallenge(guarded.output.result)) manualPublishWaitPlatforms.add(activePlatformCode);
     await complete(job.id, guarded.output);
     console.log(`[Agent:${jobScope}] Job#${job.id} -> ${guarded.output.status}`);
   } finally {
@@ -437,10 +456,11 @@ async function platformWorkerLoop({ platformCode, name, queueLanes = null }) {
 async function controlLoop() {
   while (running) {
     try {
-      await heartbeat();
+      if (config.agentRole === 'materials') await fetchPlatformRuntime();
+      else await heartbeat();
       consecutiveCloudControlFailures = 0;
-      if (config.loginStatusPollEnabled && loginPollingGate.isDue()) {
-        const runnableCodes = platformCoordinator.runnablePlatformCodes();
+      if (config.agentRole !== 'materials' && config.loginStatusPollEnabled && loginPollingGate.isDue()) {
+        const runnableCodes = runnableClaimPlatformCodes();
         const desiredCodes = loginPollingGate.eligible(runnableCodes);
         const pollableCodes = desiredCodes.filter(platformCode => !platformHasActiveJob(platformCode));
         const skippedBusyCodes = desiredCodes.filter(platformHasActiveJob);
@@ -479,6 +499,7 @@ async function controlLoop() {
 }
 
 async function loop() {
+  if (config.agentRole === 'materials') return controlLoop();
   const workerCodes = [...adapters.keys()].filter(code => !agentPlatformAllowlistSet || agentPlatformAllowlistSet.has(code));
   const workerPlans = workerCodes.flatMap(platformCode => platformWorkerPlans(platformCode, { splitEnabled: platformChannelSplitEnabled(platformCode) }));
   console.log(`[Agent] 启动按平台/通道隔离的并行 Worker：${workerPlans.map(item => item.name).join(', ')}`);
@@ -650,6 +671,12 @@ const localServer = http.createServer(async (req, res) => {
       return reply(res, 401, { ok: false, code: 'AGENT_AUTH_REQUIRED', message: 'Local Agent \u9274\u6743\u5931\u8d25' });
     }
     if (isMaterialPreview) return streamMaterialPreview(req, res, previewMatch[1]);
+    if (config.agentRole === 'materials' && /^\/(platforms|xiaohongshu)\//.test(requestUrl.pathname)) {
+      return reply(res, 409, { ok: false, code: 'BROWSER_AGENT_REQUIRED', message: '请连接 Windows 浏览器执行端' });
+    }
+    if (config.agentRole === 'browser' && !/^\/(health|control\/|platforms\/|xiaohongshu\/)/.test(requestUrl.pathname)) {
+      return reply(res, 404, { ok: false, code: 'BROWSER_ONLY_AGENT', message: '素材处理请使用天河主程序' });
+    }
     const scopedPlatformMatch = requestUrl.pathname.match(/^\/platforms\/([a-z_]+)\/(.+)$/);
     const scopedPlatformCode = scopedPlatformMatch?.[1];
     const scopedAction = scopedPlatformMatch?.[2];
@@ -657,7 +684,7 @@ const localServer = http.createServer(async (req, res) => {
     const legacyXhsOperation = requestUrl.pathname.startsWith('/xiaohongshu/')
       && !['/xiaohongshu/status','/xiaohongshu/main-status'].includes(requestUrl.pathname);
     if (legacyXhsOperation) await requirePlatformRunning('xiaohongshu');
-    if (req.method === 'GET' && req.url === '/health') return reply(res, 200, { ok: true, deviceId: config.deviceId, bindingId: agentBindingId, version: AGENT_VERSION, rpaMode: config.rpaMode, platformAllowlist: agentPlatformAllowlist, masterSwitchEnabled: platformCoordinator.masterSwitchEnabled, browserControl: browserController.capabilities(), ocrEnabled: config.ocrEnabled, ocrMode: config.qwenMode === 'online' && config.qwenApiKey ? 'ONLINE' : 'MANUAL_FALLBACK', loginMonitor: loginMonitorStatus() });
+    if (req.method === 'GET' && req.url === '/health') return reply(res, 200, { ok: true, deviceId: config.deviceId, bindingId: agentBindingId, version: AGENT_VERSION, role: config.agentRole, runtimePlatform: process.platform, rpaMode: config.rpaMode, platformAllowlist: agentPlatformAllowlist, masterSwitchEnabled: platformCoordinator.masterSwitchEnabled, browserControl: browserController.capabilities(), ocrEnabled: config.ocrEnabled, ocrMode: config.qwenMode === 'online' && config.qwenApiKey ? 'ONLINE' : 'MANUAL_FALLBACK', loginMonitor: loginMonitorStatus() });
     if (req.method === 'POST' && req.url === '/control/shutdown') {
       const data = await readBody(req);
       running = false;
@@ -761,6 +788,11 @@ const localServer = http.createServer(async (req, res) => {
       return reply(res, 200, { ok: true, debug: await withGuardedPlatformOperation(platformCode, () => adapter.inspectStrangerInbox()) });
     }
     const platformInspectConversationMatch = req.url.match(/^\/platforms\/([a-z_]+)\/inspect-conversation$/);
+    if (req.method === 'POST' && req.url === '/platforms/douyin/inspect-comment-videos') {
+      const adapter = adapters.get('douyin');
+      const data = await readBody(req);
+      return reply(res, 200, { ok: true, debug: await withGuardedPlatformOperation('douyin', () => adapter.inspectCommentVideos(data)) });
+    }
     if (req.method === 'POST' && platformInspectConversationMatch) {
       const platformCode = platformInspectConversationMatch[1];
       const adapter = adapters.get(platformCode);
@@ -873,6 +905,17 @@ const localServer = http.createServer(async (req, res) => {
       if (typeof xiaohongshuAdapter?.inspectConversation !== 'function') throw new Error('小红书私信会话检查功能不可用');
       const data = await readBody(req);
       return reply(res, 200, { ok: true, debug: await withGuardedPlatformOperation('xiaohongshu', () => xiaohongshuAdapter.inspectConversation(data)) });
+    }
+    if (req.method === 'POST' && requestUrl.pathname === '/upload-material') {
+      try {
+        const uploaded = await receiveMaterialUpload(req, requestUrl, {
+          directory: config.materialUploadDir, maxBytes: config.materialUploadMaxBytes, inspect: precheckMaterial
+        });
+        const previewUrl = registerMaterialPreview(uploaded.materialPath, uploaded.precheck);
+        return reply(res, 200, { ok: true, ...uploaded, previewUrl });
+      } finally {
+        if (!req.readableEnded && !req.destroyed) req.resume();
+      }
     }
     if (req.method === 'POST' && req.url === '/pick-file') {
       const materialPath = await selectLocalFile();

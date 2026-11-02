@@ -130,7 +130,9 @@ class FastEmbedProvider:
         self._load()
         if self.fallback:
             return self.fallback.embed(texts)
-        return _normalize(self.model.embed(texts))
+        # FastEmbed defaults to 256 sequences, which can exhaust the local
+        # runtime's memory when a large document produces thousands of chunks.
+        return _normalize(self.model.embed(texts, batch_size=self.settings.embedding_batch_size))
 
 
 class LexicalRerankerProvider:

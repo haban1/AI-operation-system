@@ -1,35 +1,43 @@
 import { useMemoizedFn } from 'ahooks';
-import { Alert, App, Button, Card, Checkbox, Col, Empty, Input, Row, Select, Space, Tag, Typography } from 'antd';
+import { Alert, App, Button, Card, Checkbox, Col, Input, Row, Select, Space, Tag, Typography } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
+import BroadcastRecords from './BroadcastRecords';
 import type { Snapshot } from './types';
-import { friendName, timestamp } from './types';
+import { friendName } from './types';
 
 interface IProps { robotId:number; data:Snapshot; onRefresh:()=>void }
 const requestID=()=>{
  if(typeof crypto.randomUUID==='function')return crypto.randomUUID();
  return Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
 };
-const labels:Record<string,string>={pending:'等待发送',running:'发送中',completed:'已完成',partial:'部分失败',failed:'发送失败',interrupted:'结果待核对'};
 const Broadcast=(props:IProps)=>{
  const {message,modal}=App.useApp();
  const storageKey=`robot-broadcast-${props.robotId}`;
  const [pending,setPending]=useState(()=>{try{return localStorage.getItem(storageKey)||'';}catch{return '';}});
  const [recipients,setRecipients]=useState<string[]>([]);
  const [content,setContent]=useState('');
- const [image,setImage]=useState<File>();
- const [preview,setPreview]=useState('');
+ const [images,setImages]=useState<File[]>([]);
+ const [previews,setPreviews]=useState<string[]>([]);
  const [confirmed,setConfirmed]=useState(false);
  const [busy,setBusy]=useState(false);
  const submitting=useRef(false);
- useEffect(()=>{if(!image){setPreview('');return;}const url=URL.createObjectURL(image);setPreview(url);return()=>URL.revokeObjectURL(url);},[image]);
+ useEffect(()=>{const urls=images.map(file=>URL.createObjectURL(file));setPreviews(urls);return()=>urls.forEach(url=>URL.revokeObjectURL(url));},[images]);
+ const selectImages=useMemoizedFn((event:React.ChangeEvent<HTMLInputElement>)=>{
+  const files=Array.from(event.target.files||[]);event.target.value='';
+  if(!files.length)return;
+  if(images.length+files.length>3){message.error('一次最多选择 3 张图片，请先移除不需要的图片。');return;}
+  if(files.some(file=>!file.size||file.size>10*1024*1024)){message.error('每张图片不能为空且不能超过 10 MB');return;}
+  if(files.some(file=>!['image/png','image/jpeg','image/gif','image/webp'].includes(file.type))){message.error('请选择 PNG、JPEG、GIF 或 WebP 图片');return;}
+  setImages(current=>[...current,...files]);setConfirmed(false);
+ });
  const send=useMemoizedFn(()=>{
   if(pending||submitting.current)return;
-  if(!recipients.length||(!content.trim()&&!image)||!confirmed){message.warning('请选择好友、填写内容，并勾选发送确认。');return;}
-  modal.confirm({title:`确认向 ${recipients.length} 位好友群发？`,content:'发送后无法撤回整个群发任务，请核对所选好友和内容。',onOk:async()=>{
+  if(!recipients.length||(!content.trim()&&!images.length)||!confirmed){message.warning('请选择好友、填写内容，并勾选发送确认。');return;}
+  modal.confirm({title:`确认向 ${recipients.length} 位好友群发？`,content:`${images.length?`每位好友将收到 ${images.length} 张图片。`:''}发送后无法撤回整个群发任务，请核对所选好友和内容。`,onOk:async()=>{
    if(submitting.current)return;
    submitting.current=true;setBusy(true);
    const id=requestID();setPending(id);try{localStorage.setItem(storageKey,id);}catch{/* Storage may be disabled. */}
-   try{await window.wechatRobotClient.support.broadcastsCreate({id:props.robotId},{client_request_id:id,recipients:JSON.stringify(recipients),confirm_send:'true',content:content.trim(),image});message.success('群发任务已提交');}
+   try{await window.wechatRobotClient.support.broadcastsCreate({id:props.robotId},{client_request_id:id,recipients:JSON.stringify(recipients),confirm_send:'true',content:content.trim(),image:images[0],image2:images[1],image3:images[2]});message.success('群发任务已提交');}
    catch(e){message.error(`${(e as Error).message}。请先核对群发记录，不要重复提交。`);}
    finally{setBusy(false);props.onRefresh();}
   }});
@@ -44,23 +52,20 @@ const Broadcast=(props:IProps)=>{
    </Card></Col>
    <Col xs={24} lg={12}><Card title="编辑群发内容"><Space orientation="vertical" style={{width:'100%'}}>
     <Input.TextArea aria-label="群发文字" rows={6} maxLength={2000} showCount value={content} disabled={!!pending} onChange={e=>{setContent(e.target.value);setConfirmed(false);}} placeholder="输入文字，也可以只发送图片" />
-    <label>图片（最大 10 MB）<input aria-label="群发图片" type="file" accept="image/png,image/jpeg,image/gif,image/webp" disabled={!!pending} onChange={e=>{const file=e.target.files?.[0];if(file&&(file.size>10*1024*1024||!file.size)){message.error('请选择不超过 10 MB 的图片');e.target.value='';return;}setImage(file);setConfirmed(false);}} /></label>
-    {image&&<Button disabled={!!pending} onClick={()=>{setImage(undefined);setConfirmed(false);}}>移除图片</Button>}
-    <Card size="small" title="发送预览"><Typography.Paragraph style={{whiteSpace:'pre-wrap'}}>{content||'（仅图片）'}</Typography.Paragraph>{preview&&<img src={preview} alt="群发图片预览" style={{maxWidth:'100%',maxHeight:240}} />}</Card>
+    <label>图片（最多 3 张，每张最大 10 MB）<input aria-label="群发图片" type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp" disabled={!!pending||images.length>=3} onChange={selectImages} /></label>
+    <Typography.Text type="secondary">已选 {images.length}/3 张。先发送文字，再按下方顺序逐张发送图片。</Typography.Text>
+    <Card size="small" title="发送预览"><Typography.Paragraph style={{whiteSpace:'pre-wrap'}}>{content||(images.length?'（仅图片）':'（尚未填写内容）')}</Typography.Paragraph>
+     <Space wrap align="start">{images.map((file,index)=><Space key={previews[index]||index} orientation="vertical" style={{maxWidth:180}}>
+      {previews[index]&&<img src={previews[index]} alt={`群发图片预览 ${index+1}`} style={{maxWidth:'100%',height:140,objectFit:'contain'}} />}
+      <Typography.Text ellipsis title={file.name} style={{maxWidth:180}}>{index+1}. {file.name}</Typography.Text>
+      <Button size="small" disabled={!!pending} aria-label={`移除第 ${index+1} 张图片`} onClick={()=>{setImages(current=>current.filter((_,i)=>i!==index));setConfirmed(false);}}>移除图片</Button>
+     </Space>)}</Space>
+    </Card>
     <Checkbox checked={confirmed} disabled={!!pending} onChange={e=>setConfirmed(e.target.checked)}>我已核对好友和内容，确认发送</Checkbox>
     <Space><Button type="primary" loading={busy} disabled={!!pending} onClick={send}>确认群发</Button>{pending&&<Button disabled={busy} onClick={next}>开始另一条群发</Button>}</Space>
    </Space></Card></Col>
   </Row>
-  <Card title="最近群发记录" extra={<Button onClick={props.onRefresh}>刷新记录</Button>}>
-   {!props.data.broadcasts.length&&<Empty description="暂无群发记录" />}
-   {props.data.broadcasts.map(job=><Card key={job.id} size="small" style={{marginBottom:12}} title={<Space><Tag>{labels[job.status]||job.status}</Tag><span>{timestamp(job.created_at)}</span></Space>}>
-    <Typography.Paragraph style={{whiteSpace:'pre-wrap'}}>{job.content||'（图片消息）'}{job.has_image?' · 含图片':''}</Typography.Paragraph>
-    <Typography.Paragraph>已选 {job.recipients.length} 人 · 成功 {job.success_count} 人 · 失败 {job.failed_count} 人</Typography.Paragraph>
-    {job.status==='interrupted'&&<Alert type="warning" title="任务执行中断，部分发送结果可能未记录。请核对微信，不会自动重发。" />}
-    {job.results?.some(r=>r.error)&&<details><summary>查看失败详情</summary>{job.results.filter(r=>r.error).map(r=><p key={r.peer}>{r.peer}：{r.error}</p>)}</details>}
-    <Typography.Text type="secondary">任务 {job.id}{job.id===pending?' · 本次提交':''}</Typography.Text>
-   </Card>)}
-  </Card>
+  <BroadcastRecords robotId={props.robotId} jobs={props.data.broadcasts} pending={pending} onRefresh={props.onRefresh} />
  </Space>;
 };
 export default React.memo(Broadcast);

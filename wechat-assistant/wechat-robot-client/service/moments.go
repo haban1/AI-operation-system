@@ -53,15 +53,14 @@ func allowedMomentActions(settings *model.MomentSettings, mood *MomentMood) (lik
 }
 
 func (s *MomentsService) SyncMomentStart() {
-	ctx := context.Background()
-	vars.RobotRuntime.SyncMomentContext, vars.RobotRuntime.SyncMomentCancel = context.WithCancel(ctx)
+	ctx := s.ctx
 	for {
 		syncInterval := 120
 		if momentSettings, err := s.momentSettingsRepo.GetMomentSettings(); err == nil && momentSettings != nil && momentSettings.SyncInterval >= 10 {
 			syncInterval = momentSettings.SyncInterval
 		}
 		select {
-		case <-vars.RobotRuntime.SyncMomentContext.Done():
+		case <-ctx.Done():
 			return
 		case <-time.After(time.Duration(syncInterval) * time.Minute):
 			log.Println("开始同步朋友圈~")

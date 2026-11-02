@@ -1,0 +1,10 @@
+.git
+node_modules
+dist
+release
+.cache
+.env*
+!.env.example
+public/media/uploads
+public/media/asr-models
+*.log

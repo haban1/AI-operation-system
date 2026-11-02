@@ -2,8 +2,8 @@ package service
 
 import (
 	"context"
-	"log"
 	"strconv"
+	"time"
 	"wechat-robot-admin-backend/dto"
 	"wechat-robot-admin-backend/model"
 	"wechat-robot-admin-backend/pkg/appx"
@@ -21,18 +21,17 @@ func NewChatRoomService(ctx context.Context) *ChatRoomService {
 	}
 }
 
-func (sv *ChatRoomService) SyncChatRoomMembers(robot *model.Robot, chatRoomID string) {
+func (sv *ChatRoomService) SyncChatRoomMembers(robot *model.Robot, chatRoomID string) error {
 	var result dto.Response[struct{}]
-	_, err := resty.New().R().
+	_, err := resty.New().SetTimeout(30*time.Second).R().
+		SetContext(sv.ctx).
 		SetHeader("Content-Type", "application/json;chartset=utf-8").
 		SetBody(map[string]string{
 			"chat_room_id": chatRoomID,
 		}).
 		SetResult(&result).
 		Post(robot.GetBaseURL() + "/chat-room/members/sync")
-	if err = result.CheckError(err); err != nil {
-		log.Printf("同步群成员发生错误: %v", err)
-	}
+	return result.CheckError(err)
 }
 
 func (sv *ChatRoomService) GetChatRoomMembers(req dto.ChatRoomMemberListRequest, pager appx.Pager, robot *model.Robot) ([]*dto.ChatRoomMember, int64, error) {
@@ -44,6 +43,7 @@ func (sv *ChatRoomService) GetChatRoomMembers(req dto.ChatRoomMemberListRequest,
 		SetHeader("Content-Type", "application/json;chartset=utf-8").
 		SetQueryParam("chat_room_id", req.ChatRoomID).
 		SetQueryParam("keyword", req.Keyword).
+		SetQueryParam("membership", req.Membership).
 		SetQueryParam("page_index", strconv.Itoa(pager.PageIndex)).
 		SetQueryParam("page_size", strconv.Itoa(pager.PageSize)).
 		SetResult(&result).

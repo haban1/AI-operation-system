@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strconv"
+	"time"
 	"wechat-robot-admin-backend/dto"
 	"wechat-robot-admin-backend/model"
 	"wechat-robot-admin-backend/vars"
@@ -97,21 +98,28 @@ func (sv *MessageService) SendImageMessage(ctx *gin.Context, req dto.SendImageMe
 	if err = writer.Close(); err != nil {
 		return err
 	}
-	robotRequest, err := http.NewRequest("POST", robotURL, &requestBody)
+	robotRequest, err := http.NewRequestWithContext(ctx.Request.Context(), "POST", robotURL, &requestBody)
 	if err != nil {
 		return err
 	}
 	// 设置请求头
 	robotRequest.Header.Set("Content-Type", writer.FormDataContentType())
 	// 发送请求并获取响应
-	robotClient := &http.Client{}
+	robotClient := &http.Client{Timeout: 90 * time.Second}
 	robotResp, err := robotClient.Do(robotRequest)
 	if err != nil {
 		return err
 	}
 	defer robotResp.Body.Close()
 
-	return nil
+	if robotResp.StatusCode != http.StatusOK {
+		return fmt.Errorf("图片发送失败，客户端返回 HTTP %d", robotResp.StatusCode)
+	}
+	var result dto.Response[any]
+	if err := json.NewDecoder(io.LimitReader(robotResp.Body, 1024*1024)).Decode(&result); err != nil {
+		return fmt.Errorf("无法确认图片发送结果: %w", err)
+	}
+	return result.CheckError(nil)
 }
 
 func (sv *MessageService) SendVideoMessage(ctx *gin.Context, req dto.SendVideoMessageRequest, file io.Reader, header *multipart.FileHeader, robot *model.Robot) error {

@@ -1,9 +1,11 @@
 package startup
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"wechat-robot-client/model"
+	"wechat-robot-client/repository"
 	"wechat-robot-client/vars"
 
 	"gorm.io/gorm"
@@ -25,10 +27,13 @@ func autoMigrateTasks() []migrateTask {
 			models: []any{
 				&model.MomentPlan{}, &model.MomentPlanJob{}, &model.MomentPlanAsset{},
 				&model.SupportSettings{}, &model.SupportReception{}, &model.SupportBroadcast{},
+				&model.SupportBroadcastImage{},
+				&model.MessageImage{}, &model.MessageImageChunk{},
 				&model.SystemSettings{},
 				&model.GlobalSettings{},
 				&model.ChatRoomSettings{},
 				&model.ChatRoomMember{},
+				&model.ChatRoomMemberDuplicate{},
 				&model.FriendSettings{},
 				&model.KnowledgeDocument{},
 				&model.ImageKnowledgeDocument{},
@@ -128,6 +133,13 @@ func AutoMigrate() error {
 			return fmt.Errorf("%s 数据库未初始化", task.name)
 		}
 
+		if db.Migrator().HasTable(&model.ChatRoomMember{}) && !db.Migrator().HasIndex(&model.ChatRoomMember{}, repository.ChatRoomMemberIdentityIndex) {
+			count, err := repository.ConsolidateDuplicateChatRoomMembers(context.Background(), db)
+			if err != nil {
+				return fmt.Errorf("群成员重复记录合并失败: %w", err)
+			}
+			log.Printf("[群成员迁移] 已归档并合并 %d 条重复记录", count)
+		}
 		if err := db.AutoMigrate(task.models...); err != nil {
 			return fmt.Errorf("%s 数据库自动迁移失败: %w", task.name, err)
 		}

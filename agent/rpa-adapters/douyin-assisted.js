@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { isPublishSecurityChallenge } from '../../src/services/publish-manual-verification.js';
 import {
   AssistedPlatformRpaAdapter,
   clean,
@@ -55,12 +57,12 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
         privateConversationBackSelectors: [
           '[class*="StackLayoutStackChatHeader"] [aria-label*="返回"]',
           '[class*="StackLayoutStackChatHeader"] [title*="返回"]',
-          '[class*="StackLayoutStackChatHeader"] [class*="back"]',
-          '[class*="StackLayoutStackChatHeader"] [class*="Back"]',
+          '[class*="StackLayoutStackChatHeader"] [class*="back"]:not([class*="background" i])',
+          '[class*="StackLayoutStackChatHeader"] [class*="Back"]:not([class*="background" i])',
           '[class*="RightPanelHeader"] [aria-label*="返回"]',
           '[class*="RightPanelHeader"] [title*="返回"]',
-          '[class*="RightPanelHeader"] [class*="back"]',
-          '[class*="RightPanelHeader"] [class*="Back"]'
+          '[class*="RightPanelHeader"] [class*="back"]:not([class*="background" i])',
+          '[class*="RightPanelHeader"] [class*="Back"]:not([class*="background" i])'
         ],
         // 首次发现只能从真实未读红点进入；后续回复会显式关闭红点复查，改用稳定消息身份校验。
         privateRequireUnreadForReply: true,
@@ -78,7 +80,18 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       }
     });
     this.douyinPublishAttempted = false;
+    this.douyinReplyAttemptScope = new AsyncLocalStorage();
     this.douyinReplyAttempted = false;
+  }
+
+  get douyinReplyAttempted() {
+    return this.douyinReplyAttemptScope?.getStore()?.attempted ?? this.lastDouyinReplyAttempted ?? false;
+  }
+
+  set douyinReplyAttempted(value) {
+    const scope = this.douyinReplyAttemptScope?.getStore();
+    if (scope) scope.attempted = value;
+    else this.lastDouyinReplyAttempted = value;
   }
 
   async execute(job) {
@@ -97,6 +110,9 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       }
       return this.collectTargetedRecoveryConversations(payload, targetedRecovery);
     }
+    // Comment and private workers run concurrently. A comment-only scan must
+    // never replace the private worker's pending open-conversation recovery.
+    if (!requested.has('PRIVATE_MESSAGE')) return super.collectMessages(payload);
     const recoveryState = { recoveries: [], postNavigationInspected: false };
     const previousRecoveryState = this.douyinOpenConversationRecoveryState;
     this.douyinOpenConversationRecoveryState = recoveryState;
@@ -238,6 +254,39 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     return super.waitForMessageContentReady(page, type);
   }
 
+  buildUnreadPrivateTimelineMessages(preview, target) {
+    const denied = reason => ({ messages: [], reason });
+    const unreadCount = Number(preview.context?.unreadCount);
+    const conversationId = clean(target.conversationId);
+    const timeline = target.timeline;
+    if (!Number.isInteger(unreadCount) || unreadCount < 2) return denied('PRIVATE_UNREAD_COUNT_UNVERIFIED');
+    if (!target.ok || target.timelineStable !== true || timeline?.stable !== true) return denied('PRIVATE_TIMELINE_UNSTABLE');
+    if (clean(target.headerName) !== clean(preview.userName)) return denied('CONVERSATION_HEADER_MISMATCH');
+    if (!conversationId) return denied('STABLE_CONVERSATION_ID_REQUIRED');
+    if (target.sourceIsLatest !== true || clean(target.direction) !== 'incoming') return denied('SOURCE_MESSAGE_NOT_LATEST_IN_CONVERSATION');
+    const messages = Array.isArray(timeline.messages) ? timeline.messages : [];
+    const unread = messages.slice(-unreadCount);
+    if (unread.length !== unreadCount || unread.some(item => clean(item.direction) !== 'incoming' || !clean(item.text))) {
+      return denied('PRIVATE_UNREAD_TIMELINE_INCOMPLETE');
+    }
+    if (unread.some(item => !clean(item.messageId))) return denied('STABLE_MESSAGE_ID_REQUIRED');
+    if (new Set(unread.map(item => clean(item.messageId))).size !== unreadCount) return denied('PRIVATE_MESSAGE_ID_AMBIGUOUS');
+    if (messages.some(item => clean(item.conversationId) && clean(item.conversationId) !== conversationId)) return denied('OPEN_CONVERSATION_ID_CONFLICT');
+    const latest = unread.at(-1);
+    if (clean(latest.messageId) !== clean(target.messageId) || clean(latest.text) !== clean(preview.content)) return denied('SOURCE_PREVIEW_CHANGED');
+    return {
+      reason: 'UNREAD_CHAT_FULL_BATCH_VERIFIED',
+      messages: unread.map(sourceMessage => {
+        const message = this.buildOpenConversationIncomingMessage({
+          sourcePage: preview.externalUrl, headerName: target.headerName, conversationId, timeline, sourceMessage
+        });
+        message.context.unreadBatchSize = unreadCount;
+        message.context.privateVerificationReason = 'UNREAD_CHAT_FULL_BATCH_VERIFIED';
+        return message;
+      })
+    };
+  }
+
   async readPrivateConversationRowSnapshot(row) {
     const snapshot = await super.readPrivateConversationRowSnapshot(row);
     if (!snapshot?.visible) return snapshot;
@@ -319,6 +368,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
         clean(item.candidate?.userName)
         && (options.requireSourcePreview === false || clean(item.candidate?.preview))
       ));
+      const visibleNamesComplete = current.rowSnapshots.length > 0 && current.rowSnapshots.every(item => clean(item.candidate?.userName));
       diagnostics.push({
         attempt,
         rowCount: current.count,
@@ -327,9 +377,12 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
         exactRowCount: current.exactRows.length,
         stableSamples,
         matchingRowsComplete,
-        visibleRowsComplete
+        visibleRowsComplete,
+        visibleNamesComplete
       });
-      const targetStable = matchingRowsComplete && visibleRowsComplete && stableSamples >= stableRequired;
+      // Other chats may legitimately have an empty preview. They must not block
+      // an exact, stable target whose opened timeline is independently verified.
+      const targetStable = matchingRowsComplete && visibleNamesComplete && stableSamples >= stableRequired;
       const missingStable = attempt >= missingDecisionAttempt && visibleRowsComplete && stableSamples >= stableRequired;
       if (targetStable || missingStable) {
         return { ...current, stable: true, attempts: attempt, stableSamples, diagnostics };
@@ -449,7 +502,11 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
           }
         } catch {}
       }
-      const uniqueHeaders = [...new Set(headers)];
+      const allHeaders = [...new Set(headers)];
+      // 抖音同时保留外层“消息”面板标题和内层聊天标题；返回按钮属于内层聊天。
+      const exactChatHeaders = allHeaders.filter(element => element.classList?.contains('StackLayoutStackChatHeadertitle'));
+      const chatHeaders = allHeaders.filter(element => /StackChatHeader[^ ]*title/i.test(String(element.className || '')));
+      const uniqueHeaders = exactChatHeaders.length ? exactChatHeaders : chatHeaders.length ? chatHeaders : allHeaders;
       if (uniqueHeaders.length !== 1) {
         return {
           clicked: false,
@@ -555,9 +612,16 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     ).catch(() => null);
     let backClick = null;
     if (directBack) {
-      await directBack.click();
-      backClick = { clicked: true, reason: 'PRIVATE_BACK_CONTROL_CLICKED_BY_SELECTOR' };
-    } else {
+      try {
+        await directBack.click({ timeout: 2500 });
+        backClick = { clicked: true, reason: 'PRIVATE_BACK_CONTROL_CLICKED_BY_SELECTOR' };
+      } catch (error) {
+        if (['PLATFORM_STOPPED', 'PLATFORM_OPERATION_CANCELLED'].includes(error.code)) throw error;
+        await this.assertRuntimeAllowed();
+        backClick = { clicked: false, reason: 'PRIVATE_BACK_SELECTOR_CLICK_FAILED', error: clean(error?.message || error) };
+      }
+    }
+    if (!backClick?.clicked) {
       backClick = await this.clickPrivateConversationBackByGeometry(privatePage);
     }
     if (backClick.clicked) {
@@ -739,10 +803,8 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
         recoveryState.recoveries.push(directRecovery);
         if (directRecovery.recoveredCount === 0
           && ['OPEN_CONVERSATION_HEADER_MISSING', 'OPEN_CONVERSATION_EDITOR_MISSING'].includes(directRecovery.reason)) {
-          recoveryState.recoveries.push({
-            ...(await this.collectIncomingFromRecentReadPrivateConversations(page)),
-            inspectionPhase: 'AFTER_PRIVATE_NAVIGATION_READ_ROW_SCAN'
-          });
+          // Verify current unread messages before the slower read-chat recovery.
+          recoveryState.recentReadScanNeeded = true;
         }
       } catch (error) {
         recoveryState.recoveries.push({
@@ -755,6 +817,38 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       }
     }
     return readiness;
+  }
+
+  async afterPrivateUnreadCollection(page, messages = [], payload = {}) {
+    const recoveryState = this.douyinOpenConversationRecoveryState;
+    if (!recoveryState?.recentReadScanNeeded) return;
+    recoveryState.recentReadScanNeeded = false;
+    const recovered = recoveryState.recoveries.flatMap(item => item.messages || (item.message ? [item.message] : []));
+    const hasVerifiedIncoming = [...messages, ...recovered].some(message => {
+      const context = message.context || {};
+      return message.messageType === 'PRIVATE_MESSAGE' && context.sourceVerified === true
+        && context.fullSource === true && context.previewOnly !== true
+        && context.direction === 'incoming' && clean(context.messageId)
+        && clean(context.conversationId || context.conversationKey)
+        && context.platformReplyDetected !== true;
+    });
+    if (hasVerifiedIncoming) {
+      recoveryState.recoveries.push({ attempted: false, recoveredCount: 0,
+        reason: 'RECENT_READ_SCAN_DEFERRED_FOR_VERIFIED_INCOMING',
+        inspectionPhase: 'AFTER_PRIVATE_UNREAD_COLLECTION' });
+      return;
+    }
+    try {
+      recoveryState.recoveries.push({
+        ...(await this.collectIncomingFromRecentReadPrivateConversations(page, payload)),
+        inspectionPhase: 'AFTER_PRIVATE_NAVIGATION_READ_ROW_SCAN'
+      });
+    } catch (error) {
+      if (['PLATFORM_STOPPED', 'PLATFORM_OPERATION_CANCELLED'].includes(error.code)) throw error;
+      recoveryState.recoveries.push({ attempted: true, recoveredCount: 0,
+        reason: 'RECENT_READ_CONVERSATION_SCAN_FAILED', error: clean(error?.message || error),
+        inspectionPhase: 'AFTER_PRIVATE_NAVIGATION_READ_ROW_SCAN' });
+    }
   }
 
   combineOpenConversationRecoveries(recoveries = []) {
@@ -811,6 +905,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
 
   async readOpenDouyinConversationHeader(page) {
     const names = new Map();
+    const candidates = [];
     const selectors = this.spec.privateConversationHeaderSelectors || [];
     for (const selector of selectors) {
       const locators = page?.locator?.(selector);
@@ -820,6 +915,8 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
         if (!await locator.isVisible().catch(() => false)) continue;
         const candidate = await locator.evaluate(element => ({
           text: String(element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim(),
+          className: String(element.className || ''),
+          exactChatTitle: element.classList?.contains('StackLayoutStackChatHeadertitle') === true,
           insideConversationRow: Boolean(element.closest?.('[data-e2e="conversation-item"]'))
         })).catch(async () => ({
           text: clean(await locator.innerText().catch(() => '')),
@@ -827,8 +924,13 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
         }));
         const name = clean(candidate?.text);
         if (!name || candidate?.insideConversationRow) continue;
-        names.set(name, { selector, index });
+        candidates.push({ name, selector, index, exactChatTitle: candidate?.exactChatTitle === true, chatHeader: /StackChatHeader[^ ]*title/i.test(candidate?.className || '') });
       }
+    }
+    const exactChatCandidates = candidates.filter(candidate => candidate.exactChatTitle);
+    const chatCandidates = candidates.filter(candidate => candidate.chatHeader);
+    for (const candidate of exactChatCandidates.length ? exactChatCandidates : chatCandidates.length ? chatCandidates : candidates) {
+      names.set(candidate.name, { selector: candidate.selector, index: candidate.index });
     }
     if (!names.size) return { ok: false, reason: 'OPEN_CONVERSATION_HEADER_MISSING' };
     if (names.size !== 1) return { ok: false, reason: 'OPEN_CONVERSATION_HEADER_AMBIGUOUS', candidates: [...names.keys()] };
@@ -1312,6 +1414,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     await this.assertRuntimeAllowed();
     await page.goto(this.spec.publishUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     if (!await this.waitForReady(page)) {
+      if (DOUYIN_VERIFY_RE.test(await pageEvidenceText(page))) return this.waitForManualSecurityVerification(page, payload, { submitAttempted: false });
       return { status: 'NEEDS_CONFIRMATION', result: await this.evidence(payload, '\u7b49\u5f85\u4eba\u5de5\u767b\u5f55\u6296\u97f3\u8d85\u65f6\uff1b\u6d4f\u89c8\u5668\u9875\u9762\u5df2\u4fdd\u7559', page, 'login_required') };
     }
     if (this.spec.publishPageSettleMs) await page.waitForTimeout(this.spec.publishPageSettleMs);
@@ -1338,7 +1441,8 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       }
 
       const postClickText = await pageEvidenceText(page);
-      if (DOUYIN_VERIFY_RE.test(postClickText) || patternMatches(this.spec.publishBlockedTextPattern, postClickText)) {
+      if (DOUYIN_VERIFY_RE.test(postClickText)) return this.waitForManualSecurityVerification(page, payload, { clickResult, submitAttempted: true });
+      if (patternMatches(this.spec.publishBlockedTextPattern, postClickText)) {
         return { status: 'NEEDS_CONFIRMATION', result: { ...(await this.evidence(payload, '\u6296\u97f3\u8981\u6c42\u4eba\u5de5\u5b8c\u6210\u8d26\u53f7\u6216\u5b89\u5168\u9a8c\u8bc1\uff0c\u7cfb\u7edf\u4e0d\u4f1a\u7ed5\u8fc7\u9a8c\u8bc1\u6216\u81ea\u52a8\u91cd\u8bd5', page, 'publish_verification_required', { clickResult, submissionStatus: 'UNKNOWN' })), doNotRetry: true } };
       }
       const publishSignal = await this.waitForPublishSignal(page);
@@ -1347,6 +1451,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       }
       return { status: 'NEEDS_CONFIRMATION', result: { ...(await this.evidence(payload, '\u5df2\u70b9\u51fb\u6296\u97f3\u53d1\u5e03\uff0c\u4f46\u672a\u68c0\u6d4b\u5230\u53ef\u9760\u6210\u529f\u4fe1\u53f7\uff1b\u8bf7\u4eba\u5de5\u6838\u5bf9\u4e14\u4e0d\u8981\u81ea\u52a8\u91cd\u8bd5', page, 'publish_unconfirmed', { submissionStatus: 'UNKNOWN', publishSignal, clickResult })), doNotRetry: true } };
     } catch (error) {
+      if (isPublishSecurityChallenge(error)) return this.waitForManualSecurityVerification(page, payload, { submitAttempted: this.douyinPublishAttempted });
       if (!this.douyinPublishAttempted) throw error;
       return {
         status: 'NEEDS_CONFIRMATION',
@@ -1359,6 +1464,10 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
   }
 
   async replyToMessage(payload) {
+    return this.douyinReplyAttemptScope.run({ attempted: false }, () => this.replyToMessageInScope(payload));
+  }
+
+  async replyToMessageInScope(payload) {
     await this.assertRuntimeAllowed();
     this.douyinReplyAttempted = false;
     const isPrivate = String(payload?.messageType || '').toUpperCase() === 'PRIVATE_MESSAGE';
@@ -1477,7 +1586,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
 
   async refreshDouyinCommentListIfOffered(page, { maxAttempts = 1, settleTimeoutMs = 6000 } = {}) {
     if (this.platformCode !== 'douyin') return { offered: false, clicked: false, attempts: 0, reason: 'NOT_DOUYIN' };
-    const refreshPattern = /\u6682\u65e0\u8bc4\u8bba[\s\S]{0,120}\u70b9\u51fb\u5237\u65b0|\u70b9\u51fb\u5237\u65b0[\s\S]{0,120}\u6682\u65e0\u8bc4\u8bba/i;
+    const refreshPattern = /暂无(?:更多)?评论[\s\S]{0,120}点击刷新|点击刷新[\s\S]{0,120}暂无(?:更多)?评论/i;
     const limit = Math.max(0, Math.min(Number(maxAttempts) || 0, 2));
     const result = { offered: false, clicked: false, attempts: 0, loaded: false, stateCleared: false, reason: 'REFRESH_NOT_OFFERED' };
     for (let attempt = 0; attempt < limit; attempt += 1) {
@@ -1525,11 +1634,11 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
   async inspectDouyinCommentEmptyState(page, text = null) {
     if (this.platformCode !== 'douyin') return { confirmedEmpty: false, reason: 'NOT_DOUYIN' };
     const evidenceText = text == null ? await pageEvidenceText(page) : clean(text);
-    const explicitEmpty = /\u6682\u65e0\u8bc4\u8bba/i.test(evidenceText);
+    const explicitEmpty = /暂无(?:更多)?评论/i.test(evidenceText);
     const busyText = /(?:\u6b63\u5728)?(?:\u52a0\u8f7d|\u5237\u65b0|\u8bf7\u6c42)(?:\u4e2d|\u2026|\.{3})|\u8bf7\u7a0d\u5019/i.test(evidenceText);
     const busySelector = await this.firstVisibleSelector(page, [
       '[aria-busy="true"]',
-      '[class*="loading"]',
+      '[class*="loading"]:not(:has([class*="empty-refresh-"]))',
       '[class*="Loading"]',
       '[class*="spinning"]',
       '[class*="spinner"]',
@@ -1568,7 +1677,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     if (!refreshClicked) return { ...result, reason: 'COMMENT_RECOVERY_REFRESH_NOT_CLICKED' };
     const currentUrl = page.url();
     const expectedUrl = clean(this.spec.commentUrl);
-    if (!expectedUrl || !currentUrl.startsWith(expectedUrl)) return { ...result, reason: 'COMMENT_RECOVERY_URL_MISMATCH', currentUrl, expectedUrl };
+    if (!expectedUrl || !patternMatches(this.spec.commentPageUrlPattern, currentUrl)) return { ...result, reason: 'COMMENT_RECOVERY_URL_MISMATCH', currentUrl, expectedUrl };
     result.attempted = true;
     result.currentUrl = currentUrl;
     result.refreshOffered = true;
@@ -1585,7 +1694,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     }
     await page.waitForTimeout(result.reloadTimedOut ? 750 : 1200).catch(() => {});
     result.finalUrl = page.url();
-    if (!result.finalUrl.startsWith(expectedUrl)) {
+    if (!patternMatches(this.spec.commentPageUrlPattern, result.finalUrl)) {
       if (result.reloadTimedOut) return deferAfterReloadTimeout('COMMENT_RECOVERY_FINAL_URL_MISMATCH');
       result.reason = 'COMMENT_RECOVERY_FINAL_URL_MISMATCH';
       return result;
@@ -1683,6 +1792,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     return locator.evaluate(element => {
       const text = value => String(value || '').replace(/\s+/g, ' ').trim();
       const result = {};
+      const renderedComment = text(element.querySelector('pre[class*="cmt-text-"],[class*="comment-content-text-"]')?.textContent);
       const wanted = new Map([
         ['comment_id', 'commentStableId'], ['commentid', 'commentStableId'], ['cid', 'commentStableId'],
         ['item_id_plain', 'sourceVideoKey'], ['aweme_id', 'sourceVideoKey'], ['video_id', 'sourceVideoKey'],
@@ -1700,13 +1810,21 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       const inspect = (value, depth = 0) => {
         if (!value || depth > 8 || (typeof value !== 'object' && typeof value !== 'function') || seen.has(value)) return;
         seen.add(value);
+        const rawComment = typeof value.content === 'string' ? text(value.content) : '';
+        const withoutReactions = value => value.replace(/\[(?:666|赞|强|鼓掌|比心|爱心|抱拳)\]/gu, '').trim();
+        if (rawComment && (rawComment === renderedComment || (withoutReactions(rawComment) && withoutReactions(rawComment) === withoutReactions(renderedComment)) || renderedComment.endsWith(`:${rawComment}`) || renderedComment.endsWith(`：${rawComment}`))
+          && /^\d+$/.test(text(value.id)) && text(value.uid)) {
+          result.commentStableId ||= text(value.id);
+          result.actorPlatformId ||= text(value.uid);
+          result.commentContent ||= rawComment;
+        }
         for (const [key, child] of Object.entries(value)) {
           if (['return', 'child', 'sibling', 'stateNode', '_owner'].includes(key)) continue;
           assignPrimitive(key, child);
           if (key === 'key' && typeof child === 'string' && child.trim().startsWith('{')) {
             try { inspect(JSON.parse(child), depth + 1); } catch {}
           }
-          if (depth < 2 || /props|item|video|comment|data|state|key|list/i.test(key)) inspect(child, depth + 1);
+          if (Array.isArray(value) || depth < 2 || /props|item|video|comment|data|state|key|list/i.test(key)) inspect(child, depth + 1);
         }
       };
       const identityNodes = [];
@@ -1719,29 +1837,37 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
         }
       }
       if (!result.sourceVideoKey && result.sourceVideoOpaqueKey) result.sourceVideoKey = result.sourceVideoOpaqueKey;
-      const userNode = element.querySelector('h4[class*="cmt-name-"]');
-      const contentNode = element.querySelector('pre[class*="cmt-text-"]');
-      const timeNode = element.querySelector('p[class*="cmt-time-"]');
+      const userNode = element.querySelector('h4[class*="cmt-name-"],[class*="username-"]');
+      const contentNode = element.querySelector('pre[class*="cmt-text-"],[class*="comment-content-text-"]');
+      const timeNode = element.querySelector('p[class*="cmt-time-"],[class*="time-"]');
       const image = element.querySelector('img[alt]');
       const published = element.querySelector('[class*="publish-time-"]');
       const countNode = element.querySelector('[class*="comment-count-"] span');
+      const currentPickerCard = element.parentElement?.classList.contains('douyin-creator-interactive-list-items');
+      const pickerTitle = currentPickerCard ? element.querySelector('[class*="title-"]') : null;
+      const pickerTime = currentPickerCard ? element.querySelector('[class*="time-"]') : null;
+      const pickerCount = currentPickerCard ? element.querySelector('[class*="right-"] > div') : null;
       return {
         ...result,
         userName: text(userNode?.innerText || userNode?.textContent),
-        content: text(contentNode?.innerText || contentNode?.textContent),
+        content: result.commentContent || text(contentNode?.innerText || contentNode?.textContent),
         eventTime: text(timeNode?.getAttribute('datetime') || timeNode?.innerText || timeNode?.textContent),
-        sourceVideoTitle: text(result.sourceVideoTitle || image?.getAttribute('alt')) || null,
-        sourceVideoPublishedAt: text(result.sourceVideoPublishedAt || published?.innerText || published?.textContent) || null,
-        commentCount: Number.parseInt(text(result.commentCount ?? countNode?.innerText ?? countNode?.textContent), 10) || 0,
+        sourceVideoTitle: currentPickerCard ? text(pickerTitle?.innerText || pickerTitle?.textContent) || null : text(result.sourceVideoTitle || image?.getAttribute('alt')) || null,
+        sourceVideoPublishedAt: currentPickerCard ? text(pickerTime?.innerText || pickerTime?.textContent) || null : text(result.sourceVideoPublishedAt || published?.innerText || published?.textContent) || null,
+        commentCount: Number.parseInt(text(pickerCount?.innerText ?? pickerCount?.textContent ?? result.commentCount ?? countNode?.innerText ?? countNode?.textContent), 10) || 0,
+        commentCountConfirmed: currentPickerCard && Boolean(pickerCount) && /^\d+$/.test(text(pickerCount.innerText || pickerCount.textContent)),
         className: String(element.className || ''),
-        selected: /(?:^|\s)selected-[^\s]+/.test(String(element.className || '')),
+        selected: /(?:^|\s)(?:selected|active)-[^\s]+/.test(String(element.className || '')),
         elementText: text(element.innerText || element.textContent)
       };
     }).catch(() => null);
   }
 
   async readDouyinCommentCandidate(locator) {
-    return this.readDouyinElementIdentity(locator);
+    const candidate = await this.readDouyinElementIdentity(locator);
+    if (!candidate || typeof locator.page !== 'function') return candidate;
+    const current = await this.readDouyinCurrentVideoIdentity(locator.page());
+    return current ? { ...candidate, sourceVideoKey: current.sourceVideoKey, sourceVideoOpaqueKey: current.sourceVideoOpaqueKey } : candidate;
   }
 
   async inspectDouyinCommentReplyThread(locator) {
@@ -1757,8 +1883,8 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       const leafExactNodes = pattern => [...element.querySelectorAll('*')]
         .filter(node => visible(node) && pattern.test(nodeText(node)))
         .filter(node => ![...node.children].some(child => visible(child) && nodeText(child) === nodeText(node)));
-      const expandControls = leafExactNodes(/^展开\s*\d+\s*条回复$/);
-      const collapseControls = leafExactNodes(/^收起回复$/);
+      const expandControls = leafExactNodes(/^(?:展开|查看)\s*\d+\s*条回复$/);
+      const collapseControls = leafExactNodes(/^收起(?:回复)?$/);
       const collapsedReplyCount = expandControls.reduce((maximum, node) => {
         const matched = nodeText(node).match(/(\d+)/);
         return Math.max(maximum, Number(matched?.[1] || 0));
@@ -1817,7 +1943,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
 
   async findDouyinCommentReplyThreadToggle(container, mode = 'expand') {
     if (!container) return { ok: false, reason: 'COMMENT_REPLY_THREAD_SCOPE_MISSING', count: 0 };
-    const pattern = mode === 'collapse' ? /^收起回复$/ : /^展开\s*\d+\s*条回复$/;
+    const pattern = mode === 'collapse' ? /^收起(?:回复)?$/ : /^(?:展开|查看)\s*\d+\s*条回复$/;
     const controls = container.locator('button,[role="button"],a,span,div,p');
     const count = Math.min(await controls.count().catch(() => 0), 160);
     const matches = [];
@@ -1970,28 +2096,55 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
   }
 
   async ensureDouyinVideoPickerOpen(page) {
-    const existing = page.locator('.semi-sidesheet-content').filter({ hasText: '作品列表' });
+    const sheetSelector = '.semi-sidesheet-content,.douyin-creator-interactive-sidesheet-content';
+    const existing = page.locator(sheetSelector).filter({ hasText: '作品列表' });
     if (await existing.first().isVisible().catch(() => false)) return { ok: true, alreadyOpen: true, sheet: existing.first() };
-    const choose = await firstUsable([
+    const chooseControls = [
       page.getByRole('button', { name: /^选择作品$/ }),
       page.getByText(/^选择作品$/, { exact: true })
-    ]);
-    if (!choose) return { ok: false, reason: 'DOUYIN_VIDEO_PICKER_TRIGGER_MISSING' };
+    ];
+    let choose = await firstUsable(chooseControls);
+    if (!choose) {
+      await chooseControls[0].first().waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+      choose = await firstUsable(chooseControls);
+    }
+    if (!choose) return { ok: false, reason: 'DOUYIN_VIDEO_PICKER_TRIGGER_MISSING', url: page.url() };
     await this.assertRuntimeAllowed();
     await choose.click();
-    const sheet = page.locator('.semi-sidesheet-content').filter({ hasText: '作品列表' }).first();
+    const sheet = page.locator(sheetSelector).filter({ hasText: '作品列表' }).first();
     const opened = await sheet.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
     return opened ? { ok: true, alreadyOpen: false, sheet } : { ok: false, reason: 'DOUYIN_VIDEO_PICKER_NOT_OPENED' };
+  }
+
+  async inspectCommentVideos({ selectFirstWithComments = false } = {}) {
+    const page = await this.getPage();
+    const navigation = await this.prepareMessagePage(page, { type: 'COMMENT', label: '评论', url: this.spec.commentUrl });
+    const inventory = await this.inspectDouyinCommentVideos(page);
+    const candidate = selectFirstWithComments ? inventory.videos?.find(item => item.commentCount > 0) : null;
+    const selected = candidate ? await this.openDouyinCommentVideoByKey(page, candidate.sourceVideoKey) : null;
+    const readiness = selected?.ok ? await this.waitForCommentVideoReady(page) : null;
+    const commentMessages = selected?.ok && readiness?.ready
+      ? await this.extractMessages(page, 'COMMENT', {}, { sourceContext: { ...selected.video, sourceVerified: true } }) : [];
+    const commentIdentities = [];
+    if (selected?.ok && readiness?.ready) {
+      const rows = page.locator(this.spec.commentRowSelector);
+      const count = Math.min(await rows.count(), 20);
+      for (let index = 0; index < count; index += 1) {
+        commentIdentities.push(await this.readDouyinElementIdentity(rows.nth(index)));
+      }
+    }
+    return { inventory, navigation, selected, readiness, commentMessages, commentIdentities, inspectionOnly: true, sent: false };
   }
 
   async inspectDouyinCommentVideos(page, { maxRounds = 8 } = {}) {
     const picker = await this.ensureDouyinVideoPickerOpen(page);
     if (!picker.ok) return { ...picker, videos: [] };
+    await picker.sheet.locator('[class*="item-container-"],.douyin-creator-interactive-list-items > [class*="container-"]').first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
     const videos = [];
     const seen = new Set();
     let stopReason = 'MAX_ROUNDS';
     for (let round = 1; round <= Math.max(1, Number(maxRounds) || 8); round += 1) {
-      const cards = picker.sheet.locator('[class*="item-container-"]');
+      const cards = picker.sheet.locator('[class*="item-container-"],.douyin-creator-interactive-list-items > [class*="container-"]');
       const count = Math.min(await cards.count().catch(() => 0), 200);
       let added = 0;
       for (let index = 0; index < count; index += 1) {
@@ -2008,6 +2161,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
           sourceVideoTitle: clean(identity?.sourceVideoTitle) || null,
           sourceVideoPublishedAt: clean(identity?.sourceVideoPublishedAt) || null,
           commentCount: Math.max(0, Number(identity?.commentCount) || 0),
+          commentCountConfirmed: identity?.commentCountConfirmed === true,
           selected: identity?.selected === true
         });
         added += 1;
@@ -2025,10 +2179,28 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       if (!advance.moved) { stopReason = advance.reason || (added ? 'VIDEO_LIST_STABLE' : 'VIDEO_LIST_EMPTY'); break; }
       await page.waitForTimeout(350);
     }
+    this.douyinCommentVideoInventories ||= new WeakMap();
+    this.douyinCommentVideoInventories.set(page, videos);
     return { ok: videos.length > 0, reason: videos.length ? stopReason : 'DOUYIN_VIDEO_LIST_EMPTY', videos };
   }
 
   async readDouyinCurrentVideoIdentity(page) {
+    const preview = page.locator('[class*="previewCard-"]').first();
+    if (await preview.isVisible().catch(() => false)) {
+      // The redesigned header no longer exposes the video ID in its own props.
+      // Resolve its complete rendered title AND publication time against the verified
+      // picker inventory. Ambiguous titles/timestamps must never bind comments.
+      const rendered = await preview.evaluate(element => {
+        const text = node => String(node?.innerText || node?.textContent || '').replace(/\s+/g, ' ').trim();
+        return { title: text(element.querySelector('[class*="title-"]')), publishedAt: text(element.querySelector('[class*="desc-"]')) };
+      }).catch(() => null);
+      if (rendered?.publishedAt) {
+        const matches = (this.douyinCommentVideoInventories?.get(page) || []).filter(video =>
+          clean(video.sourceVideoTitle) === rendered.title && clean(video.sourceVideoPublishedAt) === rendered.publishedAt);
+        if (matches.length === 1) return { ...matches[0], identityEvidence: 'UNIQUE_RENDERED_TITLE_AND_PUBLICATION_TIME' };
+      }
+      return null;
+    }
     const scopes = [
       page.locator('.comment-container').first(),
       page.locator('[class*="cmt-li-"]').first()
@@ -2044,13 +2216,20 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
   async openDouyinCommentVideoByKey(page, sourceVideoKey, { maxRounds = 8 } = {}) {
     const expectedKey = clean(sourceVideoKey);
     if (!expectedKey) return { ok: false, reason: 'DOUYIN_SOURCE_VIDEO_KEY_REQUIRED' };
+    if (!this.douyinCommentVideoInventories?.get(page)?.length) await this.inspectDouyinCommentVideos(page);
     const current = await this.readDouyinCurrentVideoIdentity(page);
-    if (clean(current?.sourceVideoKey) === expectedKey) return { ok: true, alreadySelected: true, video: current };
-    const picker = await this.ensureDouyinVideoPickerOpen(page);
+    const sheetVisible = await page.locator('.semi-sidesheet-content,.douyin-creator-interactive-sidesheet-content').first().isVisible().catch(() => false);
+    if (clean(current?.sourceVideoKey) === expectedKey && !sheetVisible) return { ok: true, alreadySelected: true, video: current };
+    let picker = await this.ensureDouyinVideoPickerOpen(page);
+    if (!picker.ok && picker.reason === 'DOUYIN_VIDEO_PICKER_TRIGGER_MISSING') {
+      await this.assertRuntimeAllowed();
+      await this.prepareMessagePage(page, { type: 'COMMENT', label: '评论', url: this.spec.commentUrl });
+      picker = await this.ensureDouyinVideoPickerOpen(page);
+    }
     if (!picker.ok) return picker;
     const observed = [];
     for (let round = 1; round <= Math.max(1, Number(maxRounds) || 8); round += 1) {
-      const cards = picker.sheet.locator('[class*="item-container-"]');
+      const cards = picker.sheet.locator('[class*="item-container-"],.douyin-creator-interactive-list-items > [class*="container-"]');
       const count = Math.min(await cards.count().catch(() => 0), 200);
       for (let index = 0; index < count; index += 1) {
         const card = cards.nth(index);
@@ -2061,9 +2240,18 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
         if (actualKey !== expectedKey && clean(identity?.sourceVideoOpaqueKey) !== expectedKey) continue;
         await this.assertRuntimeAllowed();
         await card.click();
-        await picker.sheet.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
-        await page.waitForTimeout(650);
-        const selected = await this.readDouyinCurrentVideoIdentity(page);
+        let closed = await picker.sheet.waitFor({ state: 'hidden', timeout: 3000 }).then(() => true).catch(() => false);
+        if (!closed && page.keyboard) {
+          await page.keyboard.press('Escape');
+          closed = await picker.sheet.waitFor({ state: 'hidden', timeout: 2000 }).then(() => true).catch(() => false);
+        }
+        if (!closed) return { ok: false, reason: 'DOUYIN_VIDEO_PICKER_STILL_OPEN', expectedKey };
+        let selected = null;
+        for (let attempt = 0; attempt < 12; attempt++) {
+          selected = await this.readDouyinCurrentVideoIdentity(page);
+          if (clean(selected?.sourceVideoKey) === expectedKey || clean(selected?.sourceVideoOpaqueKey) === expectedKey) break;
+          await page.waitForTimeout(350);
+        }
         if (clean(selected?.sourceVideoKey) !== expectedKey && clean(selected?.sourceVideoOpaqueKey) !== expectedKey) {
           return { ok: false, reason: 'DOUYIN_SELECTED_VIDEO_MISMATCH', expectedKey, selected, observed };
         }
@@ -2090,8 +2278,35 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     return this.openDouyinCommentVideoByKey(page, context.sourceVideoKey || context.postId || context.awemeId || context.itemId);
   }
 
-  async collectHistoricalCommentMessages(page, payload, options = {}) {
+  async prepareCommentCollection(page) {
+    const pageCheck = await this.classifyLiveMessagePage(page, 'COMMENT');
+    if (!pageCheck.valid) return this.waitForMessageContentReady(page, 'COMMENT');
     const inventory = await this.inspectDouyinCommentVideos(page);
+    if (!inventory.ok) return this.waitForMessageContentReady(page, 'COMMENT');
+    return { ready: true, pageCheck, inventory, reason: 'COMMENT_VIDEO_INVENTORY_VERIFIED' };
+  }
+
+  async waitForCommentVideoReady(page) {
+    // Reloading this route resets the selected work to the newest video.
+    // Wait within the selected work so another video's rows cannot be imported.
+    const deadline = Date.now() + 20000;
+    let emptySamples = 0;
+    while (Date.now() < deadline) {
+      await this.assertRuntimeAllowed();
+      const pageCheck = await this.classifyLiveMessagePage(page, 'COMMENT');
+      if (!pageCheck.valid && ['PAGE_ERROR', 'URL_MISMATCH'].includes(pageCheck.reason)) return { ready: false, pageCheck, reason: pageCheck.reason };
+      const rowSelector = await this.firstVisibleSelector(page, this.spec.commentReadySelectors || []);
+      if (pageCheck.valid && rowSelector) return { ready: true, pageCheck, reason: 'COMMENT_ROWS_READY', rowSelector };
+      const empty = pageCheck.valid ? await this.inspectDouyinCommentEmptyState(page) : null;
+      emptySamples = empty?.confirmedEmpty ? emptySamples + 1 : 0;
+      if (emptySamples >= 2) return { ready: true, pageCheck, empty: true, reason: 'COMMENT_EMPTY_CONFIRMED' };
+      await page.waitForTimeout(500);
+    }
+    return { ready: false, reason: 'MESSAGE_CONTENT_TIMEOUT' };
+  }
+
+  async collectHistoricalCommentMessages(page, payload, options = {}) {
+    const inventory = options.inventory || await this.inspectDouyinCommentVideos(page);
     if (!inventory.ok) {
       const current = await this.readDouyinCurrentVideoIdentity(page);
       return super.collectHistoricalCommentMessages(page, payload, {
@@ -2112,12 +2327,20 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     let rounds = 0;
     for (const video of inventory.videos) {
       await this.assertRuntimeAllowed();
+      if (video.commentCountConfirmed === true && video.commentCount === 0) {
+        videoResults.push({ sourceVideoKey: video.sourceVideoKey, status: 'SUCCESS', count: 0, stopReason: 'PLATFORM_COMMENT_COUNT_ZERO' });
+        continue;
+      }
       const selected = await this.openDouyinCommentVideoByKey(page, video.sourceVideoKey);
       if (!selected.ok) {
         videoResults.push({ sourceVideoKey: video.sourceVideoKey, status: 'SKIPPED', reason: selected.reason, sourceGone: selected.sourceGone === true });
         continue;
       }
-      await page.waitForTimeout(450);
+      const readiness = await this.waitForCommentVideoReady(page);
+      if (!readiness.ready) {
+        videoResults.push({ sourceVideoKey: video.sourceVideoKey, status: 'NEEDS_CONFIRMATION', reason: readiness.reason });
+        continue;
+      }
       const collection = await super.collectHistoricalCommentMessages(page, payload, {
         ...options,
         sourceContext: {
@@ -2140,7 +2363,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       }
       videoResults.push({ sourceVideoKey: video.sourceVideoKey, status: 'SUCCESS', count: added, stopReason: collection.stopReason });
     }
-    return { messages, rounds, stopReason: 'ALL_CURRENT_DOUYIN_VIDEOS_SCANNED', videoResults, inventoryReason: inventory.reason };
+    return { messages, rounds, complete: videoResults.every(item => item.status === 'SUCCESS'), stopReason: 'ALL_CURRENT_DOUYIN_VIDEOS_SCANNED', videoResults, inventoryReason: inventory.reason };
   }
 
   async findDouyinCommentEditor(page, payload, scope = null) {

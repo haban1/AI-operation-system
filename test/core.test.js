@@ -154,13 +154,14 @@ test('Douyin private cross-poll dedupe tolerates a five-minute occurrence-anchor
   assert.equal(isSameDouyinPrivateOccurrence(existing, incoming, '2026-08-19T06:02:00.000Z'), true);
 });
 
-test('Douyin unread private enrichment opens only one-unread candidates and upgrades stable evidence', async () => {
+test('Douyin unread private enrichment verifies single unread and retains incomplete multi-unread previews', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'douyin-private-enrich-'));
   try {
     const adapter = new DouyinAssistedRpaAdapter({ platformCode: 'douyin', logsDir: dir, profileDir: path.join(dir, 'profile'), executablePath: '', loginTimeoutMs: 1000, sendTimeoutMs: 1000 });
     let openCalls = 0;
     adapter.openPrivateConversationForPayload = async (_page, targetPayload) => {
       openCalls += 1;
+      if (targetPayload.userName === '多条用户') return { ok: false, reason: 'UNREAD_BATCH_INCOMPLETE' };
       assert.equal(targetPayload.userName, '咖啡不嘉🧊');
       return {
         ok: true,
@@ -180,9 +181,9 @@ test('Douyin unread private enrichment opens only one-unread candidates and upgr
       { messageType: 'PRIVATE_MESSAGE', externalId: 'old-3', externalUrl: 'https://www.douyin.com/user/self', userName: '咖啡不嘉🧊', content: '私信一般多久回复', context: { unread: true, unreadCount: 1, previewOnly: true, inboxType: 'MAIN' } }
     ];
     const result = await adapter.enrichDouyinUnreadPrivateMessages({}, messages, {});
-    assert.equal(openCalls, 1);
+    assert.equal(openCalls, 2);
     assert.equal(result.verifiedCount, 1);
-    assert.equal(result.messages[1].context.privateVerificationReason, 'PRIVATE_PREVIEW_MULTIPLE_UNREAD');
+    assert.equal(result.messages[1].context.privateVerificationReason, 'UNREAD_BATCH_INCOMPLETE');
     assert.equal(result.messages[2].context.previewOnly, false);
     assert.equal(result.messages[2].context.fullSource, true);
     assert.equal(result.messages[2].context.sourceVerified, true);
@@ -893,6 +894,12 @@ test('Douyin comment semantic identity separates videos and preserves same-video
     context_json: JSON.stringify({ sourceVideoKey: 'video-A', eventTime: '3\u5c0f\u65f6\u524d' })
   };
   assert.equal(commentSourceIdentity(existing.context_json), 'video:video-a');
+  assert.equal(isSameDouyinCommentSemanticCandidate({ ...existing, deleted_at: '2026-08-08T12:01:00.000Z' }, {
+    userName: 'same-user', content: 'same-content', context: { sourceVideoKey: 'video-A', commentStableId: 'stable-comment-A' }
+  }), true);
+  assert.equal(isSameDouyinCommentSemanticCandidate({ ...existing, context_json: JSON.stringify({ sourceVideoKey: 'video-A', commentStableId: 'stable-comment-A' }) }, {
+    userName: 'same-user', content: 'same-content', context: { sourceVideoKey: 'video-A', commentStableId: 'stable-comment-B' }
+  }), false);
   assert.equal(isSameDouyinCommentSemanticCandidate(existing, {
     userName: 'same-user', content: 'same-content', context: { sourceVideoKey: 'video-A', eventTime: '4\u5c0f\u65f6\u524d' }
   }, '2026-08-08T16:00:00.000Z'), true);
@@ -1586,6 +1593,7 @@ test('\u6296\u97f3\u8bc4\u8bba\u5165\u53e3\uff1a\u9996\u6b21\u88ab\u5b89\u5168\u
     adapter.getPage = async () => page;
     adapter.inspectLoginState = async () => ({ state: 'READY', evidence: ['test-authenticated'] });
     // 本用例只验证安全重定向后的单次重试，不重复模拟历史评论滚动采集器。
+    adapter.inspectDouyinCommentVideos = async () => ({ ok: false, videos: [] });
     adapter.collectHistoricalCommentMessages = async () => ({ messages: [], rounds: 1, uniqueCount: 0, stopReason: 'TEST_EMPTY' });
     adapter.evidence = async (_payload, message, evidencePage, stage, extra = {}) => ({ message, stage, url: evidencePage.url(), ...extra });
     const result = await adapter.collectMessages({ types: ['COMMENT'], profileName: 'test' });
@@ -3683,7 +3691,7 @@ test('Local Agent starts platform/channel workers while preserving cross-platfor
   assert.match(source, /const activeJobCountsByPlatform = new Map\(\)/);
   assert.match(source, /function platformHasActiveJob\(platformCode\)/);
   assert.match(source, /const pollableCodes = desiredCodes\.filter/);
-  assert.match(source, /if \(config\.loginStatusPollEnabled && loginPollingGate\.isDue\(\)\)/);
+  assert.match(source, /if \(config\.agentRole !== 'materials' && config\.loginStatusPollEnabled && loginPollingGate\.isDue\(\)\)/);
   assert.doesNotMatch(source, /activeJobCount === 0 && config\.loginStatusPollEnabled/);
 });
 

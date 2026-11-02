@@ -57,13 +57,19 @@ export function releaseIssueBlocks(issueId, { releasedBy = '管理员', reason =
 
 export function activeBlocksForPlatform(platformCode) {
   return rows(`SELECT rb.*,i.title,i.category FROM runtime_blocks rb JOIN issues i ON i.id=rb.issue_id
-    WHERE rb.status='ACTIVE' AND (rb.scope='SYSTEM' OR (rb.scope='PLATFORM' AND rb.block_key=?) OR (rb.scope='PLATFORM_FEATURE' AND rb.block_key LIKE ?))
-    ORDER BY rb.id`, String(platformCode), `${platformCode}:%`);
+    WHERE rb.status='ACTIVE' AND (rb.scope='SYSTEM' OR (rb.scope='PLATFORM' AND rb.block_key=?) OR (rb.scope='PLATFORM_FEATURE' AND rb.block_key LIKE ?)
+      OR (rb.scope='ACCOUNT' AND EXISTS (SELECT 1 FROM accounts a WHERE CAST(a.id AS TEXT)=rb.block_key AND a.platform_code=? AND a.enabled=1)))
+    ORDER BY rb.id`, String(platformCode), `${platformCode}:%`, String(platformCode));
 }
 
 export function runtimeBlockSummary(platformCode) {
   const blocks = activeBlocksForPlatform(platformCode);
-  return { active_block_count: blocks.length, active_blocks: blocks, blocked: blocks.length > 0 };
+  const accounts = rows('SELECT id FROM accounts WHERE platform_code=? AND enabled=1', String(platformCode));
+  const blockedAccounts = new Set(blocks.filter(block => block.scope === 'ACCOUNT').map(block => block.block_key));
+  // One blocked account must not stop the other accounts on this platform.
+  const blocked = blocks.some(block => block.scope !== 'ACCOUNT')
+    || (accounts.length > 0 && accounts.every(account => blockedAccounts.has(String(account.id))));
+  return { active_block_count: blocks.length, active_blocks: blocks, blocked };
 }
 
 export function jobBlockedByRuntime(payload = {}, jobType = '') {

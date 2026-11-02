@@ -82,17 +82,36 @@ func (c *Client) IsRunning() bool {
 }
 
 func (c *Client) GetProfile(wxid string) (resp GetProfileResponse, err error) {
-	if err = c.limiter.Wait(context.Background()); err != nil {
+	return c.GetProfileContext(context.Background(), wxid)
+}
+
+// GetProfileContext bounds probes and validates the returned account. HTTP errors
+// or an empty response must never be interpreted as a recovered login session.
+func (c *Client) GetProfileContext(ctx context.Context, wxid string) (resp GetProfileResponse, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+	if err = c.limiter.Wait(ctx); err != nil {
 		return
 	}
 	var result ClientResponse[GetProfileResponse]
-	_, err = c.client.R().
+	httpResp, err := c.client.R().
+		SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
 		SetQueryParam("wxid", wxid).
 		SetResult(&result).
 		Post(fmt.Sprintf("%s%s", c.Domain.BasePath(), UserGetContactProfile))
 	if err = result.CheckError(err); err != nil {
 		return
+	}
+	if httpResp.IsError() || (!result.Success && result.Code != 0) {
+		return resp, fmt.Errorf("获取微信登录状态失败: HTTP %d, code %d", httpResp.StatusCode(), result.Code)
+	}
+	if err = c.BaseResponseErrCheck(result.Data.BaseResponse); err != nil {
+		return
+	}
+	if result.Data.UserInfo == nil || result.Data.UserInfo.UserName == nil || result.Data.UserInfo.UserName.String == nil ||
+		*result.Data.UserInfo.UserName.String != wxid || wxid == "" {
+		return resp, errors.New("微信登录状态响应缺少匹配的账号信息")
 	}
 	resp = result.Data
 	return
@@ -380,24 +399,42 @@ func (c *Client) Logout(wxid string) (err error) {
 
 // AutoHeartBeat 自动心跳，包括自动同步消息
 func (c *Client) AutoHeartBeat(wxid string) (err error) {
-	var result ClientResponse[struct{}]
-	_, err = c.client.R().
-		SetResult(&result).
-		SetQueryParam("wxid", wxid).
-		Post(fmt.Sprintf("%s%s", c.Domain.BasePath(), LoginAutoHeartBeat))
-	err = result.CheckError(err)
-	return
+	return c.AutoHeartBeatContext(context.Background(), wxid)
+}
+
+func (c *Client) AutoHeartBeatContext(ctx context.Context, wxid string) error {
+	return c.loginControl(ctx, wxid, LoginAutoHeartBeat)
 }
 
 // CloseAutoHeartBeat 关闭自动心跳
 func (c *Client) CloseAutoHeartBeat(wxid string) (err error) {
+	return c.CloseAutoHeartBeatContext(context.Background(), wxid)
+}
+
+func (c *Client) CloseAutoHeartBeatContext(ctx context.Context, wxid string) error {
+	return c.loginControl(ctx, wxid, LoginCloseAutoHeartBeat)
+}
+
+func (c *Client) LogoutContext(ctx context.Context, wxid string) error {
+	return c.loginControl(ctx, wxid, LoginLogout)
+}
+
+func (c *Client) loginControl(ctx context.Context, wxid, path string) error {
+	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
 	var result ClientResponse[struct{}]
-	_, err = c.client.R().
+	httpResp, err := c.client.R().
+		SetContext(ctx).
 		SetResult(&result).
 		SetQueryParam("wxid", wxid).
-		Post(fmt.Sprintf("%s%s", c.Domain.BasePath(), LoginCloseAutoHeartBeat))
-	err = result.CheckError(err)
-	return
+		Post(fmt.Sprintf("%s%s", c.Domain.BasePath(), path))
+	if err = result.CheckError(err); err != nil {
+		return err
+	}
+	if httpResp.IsError() || (!result.Success && result.Code != 0) {
+		return fmt.Errorf("微信会话操作失败: HTTP %d, code %d", httpResp.StatusCode(), result.Code)
+	}
+	return nil
 }
 
 // Heartbeat 手动发起心跳
@@ -1194,8 +1231,15 @@ func (c *Client) FriendDelete(Wxid, ToWxid string) (oplogResponse OplogResponse,
 }
 
 func (c *Client) CdnDownloadImg(wxid, aeskey, cdnmidimgurl string) (imgbase64 string, err error) {
+	return c.CdnDownloadImgContext(context.Background(), wxid, aeskey, cdnmidimgurl)
+}
+
+func (c *Client) CdnDownloadImgContext(ctx context.Context, wxid, aeskey, cdnmidimgurl string) (imgbase64 string, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	var result ClientResponse[DownloadImageDetail]
-	_, err = c.client.R().
+	resp, err := c.client.R().
+		SetContext(ctx).
 		SetResult(&result).
 		SetBody(CdnDownloadImgRequest{
 			Wxid:       wxid,
@@ -1204,6 +1248,9 @@ func (c *Client) CdnDownloadImg(wxid, aeskey, cdnmidimgurl string) (imgbase64 st
 		}).Post(fmt.Sprintf("%s%s", c.Domain.BasePath(), ToolsCdnDownloadImage))
 	if err = result.CheckError(err); err != nil {
 		return
+	}
+	if resp.StatusCode() != http.StatusOK || result.Code != 0 {
+		return "", fmt.Errorf("图片下载失败: HTTP %d, code %d", resp.StatusCode(), result.Code)
 	}
 	imgbase64 = result.Data.Image
 	return
@@ -1320,11 +1367,19 @@ func (c *Client) GroupConsentToJoin(wxid, Url string) (QID string, err error) {
 }
 
 func (c *Client) GetChatRoomMemberDetail(wxid, QID string) (chatRoomMember []ChatRoomMember, err error) {
-	if err = c.limiter.Wait(context.Background()); err != nil {
+	return c.GetChatRoomMemberDetailContext(context.Background(), wxid, QID)
+}
+
+// A partial or failed snapshot must never cause existing members to be marked as left.
+func (c *Client) GetChatRoomMemberDetailContext(ctx context.Context, wxid, QID string) (chatRoomMember []ChatRoomMember, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	if err = c.limiter.Wait(ctx); err != nil {
 		return
 	}
 	var result ClientResponse[ChatRoomMemberDetail]
-	_, err = c.client.R().
+	httpResp, err := c.client.R().
+		SetContext(ctx).
 		SetResult(&result).
 		SetBody(ChatRoomRequestBase{
 			Wxid: wxid,
@@ -1333,7 +1388,24 @@ func (c *Client) GetChatRoomMemberDetail(wxid, QID string) (chatRoomMember []Cha
 	if err = result.CheckError(err); err != nil {
 		return
 	}
+	if httpResp.StatusCode() != http.StatusOK || result.Code != 0 {
+		return nil, fmt.Errorf("获取群成员失败: HTTP %d, code %d", httpResp.StatusCode(), result.Code)
+	}
+	if err = c.BaseResponseErrCheck(&result.Data.BaseResponse); err != nil {
+		return
+	}
 	chatRoomMember = result.Data.NewChatroomData.ChatRoomMember
+	if QID == "" || result.Data.ChatroomUserName != QID || len(chatRoomMember) == 0 ||
+		result.Data.NewChatroomData.MemberCount != len(chatRoomMember) {
+		return nil, errors.New("微信返回的群成员名单不完整，请稍后重试")
+	}
+	seen := make(map[string]bool, len(chatRoomMember))
+	for _, member := range chatRoomMember {
+		if strings.TrimSpace(member.UserName) == "" || seen[member.UserName] {
+			return nil, errors.New("微信返回的群成员名单异常，请稍后重试")
+		}
+		seen[member.UserName] = true
+	}
 	return
 }
 
@@ -1440,24 +1512,43 @@ func (c *Client) FriendCircleComment(req FriendCircleCommentRequest) (resp SnsCo
 
 // FriendCircleGetDetail 获取特定人朋友圈
 func (c *Client) FriendCircleGetDetail(req FriendCircleGetDetailRequest) (resp SnsUserPageResponse, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	var result ClientResponse[SnsUserPageResponse]
-	_, err = c.client.R().
+	httpResp, err := c.client.R().
+		SetContext(ctx).
 		SetResult(&result).
 		SetBody(req).Post(fmt.Sprintf("%s%s", c.Domain.BasePath(), FriendCircleGetDetail))
 	if err = result.CheckError(err); err != nil {
-		err2 := c.BaseResponseErrCheck(result.Data.BaseResponse)
-		if err2 != nil {
-			err = fmt.Errorf("%s\n%s", err.Error(), err2.Error())
-			return
-		}
 		return
 	}
-	err = c.BaseResponseErrCheck(result.Data.BaseResponse)
+	if httpResp.IsError() || result.Code != 0 {
+		return resp, fmt.Errorf("获取好友朋友圈失败: HTTP %d, code %d", httpResp.StatusCode(), result.Code)
+	}
+	if result.Data.BaseResponse == nil {
+		return resp, errors.New("获取好友朋友圈失败：微信返回的数据不完整，请重试")
+	}
+	err = c.friendMomentPageError(result.Data)
 	if err != nil {
 		return
 	}
 	resp = result.Data
 	return
+}
+
+func (c *Client) friendMomentPageError(page SnsUserPageResponse) error {
+	// User pages return these visibility statuses alongside a valid page and
+	// RetTips (month / half-year / three days). Preserve both visible posts and
+	// the server's explanation. This exception must not affect other endpoints.
+	switch page.BaseResponse.Ret {
+	case 207, 2001, 2004:
+		for _, tip := range page.RetTips {
+			if strings.TrimSpace(tip) != "" {
+				return nil
+			}
+		}
+	}
+	return c.BaseResponseErrCheck(page.BaseResponse)
 }
 
 // FriendCircleGetIdDetail 获取特定ID详情内容

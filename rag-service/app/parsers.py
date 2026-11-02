@@ -277,6 +277,9 @@ def parse_xlsx(path: Path) -> ParsedDocument:
     sheet_count = 0
     for sheet in workbook.worksheets:
         sheet_count += 1
+        # Some spreadsheet exporters declare A1 even when the worksheet XML
+        # contains many rows. Stream the actual cells rather than that range.
+        sheet.reset_dimensions()
         rows = sheet.iter_rows(values_only=True)
         try:
             headers = [_clean(value) for value in next(rows)]

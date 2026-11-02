@@ -115,7 +115,8 @@ func (ct *Message) SendImageMessage(c *gin.Context) {
 		return
 	}
 	// 解析表单参数
-	var req dto.SendImageMessageRequest
+	// Multipart binding reads body fields only; the authorized robot ID is in query.
+	req := dto.SendImageMessageRequest{ID: robot.ID}
 	if ok, err := appx.BindAndValid(c, &req); !ok || err != nil {
 		resp.ToErrorResponse(errors.New("参数错误"))
 		return

@@ -108,6 +108,12 @@ def generate(settings, instructions, prompt, timeout=240, schema=None, images=No
     provider = settings['provider']
     base = normalize_settings(settings)['base_url']
     headers = {'Content-Type':'application/json', 'Accept':'application/json'}
+    if schema:
+        # JSON mode guarantees syntax only. Compatible gateways may not support
+        # native structured outputs, so every provider also receives the contract.
+        instructions += ('\n只返回符合以下 JSON Schema 的完整 JSON 对象，字段名、类型和长度必须一致。'
+                         '不要将字符串字段写成数组或对象，不要添加 Schema 之外的字段。\n'
+                         +json.dumps(schema,ensure_ascii=False))
     if provider == 'ollama':
         endpoint = base+'/api/chat'
         body = {'model':settings['model'],'messages':[{'role':'system','content':instructions},{'role':'user','content':prompt}],

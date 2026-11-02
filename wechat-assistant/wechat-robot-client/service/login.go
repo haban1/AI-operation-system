@@ -35,66 +35,20 @@ func NewLoginService(ctx context.Context) *LoginService {
 }
 
 func (s *LoginService) Online() error {
-	vars.RobotRuntime.Status = model.RobotStatusOnline
-	// 启动定时任务
-	if vars.CronManager != nil {
-		vars.CronManager.Clear()
-		vars.CronManager.Start()
-	}
-	if vars.RobotRuntime.SyncMomentCancel != nil {
-		vars.RobotRuntime.SyncMomentCancel()
-	}
-	go func() {
-		time.Sleep(1 * time.Second)
-		NewMomentsService(context.Background()).SyncMomentStart()
-	}()
-	// 开启自动心跳，包括长连接自动同步消息
-	err := s.AutoHeartBeat()
-	if err != nil {
-		return fmt.Errorf("开启自动心跳失败: %w", err)
-	}
-	// 更新机器人状态
-	robot := model.RobotAdmin{
-		ID:     vars.RobotRuntime.RobotID,
-		Status: model.RobotStatusOnline,
-	}
-	return s.robotAdminRepo.Update(&robot)
+	return vars.LoginSession.Online(s.ctx)
 }
 
 func (s *LoginService) Offline() error {
-	vars.RobotRuntime.Status = model.RobotStatusOffline
-	err := s.CloseAutoHeartBeat()
-	if err != nil {
-		log.Printf("关闭自动心跳失败: %v\n", err)
-	}
-	if vars.RobotRuntime.SyncMomentCancel != nil {
-		vars.RobotRuntime.SyncMomentCancel()
-	}
-	// 清空定时任务
-	if vars.CronManager != nil {
-		vars.CronManager.Clear()
-	}
-	// 更新状态
-	robot := model.RobotAdmin{
-		ID:     vars.RobotRuntime.RobotID,
-		Status: model.RobotStatusOffline,
-	}
-	return s.robotAdminRepo.Update(&robot)
+	return vars.LoginSession.Offline(s.ctx)
 }
 
 func (s *LoginService) IsRunning() (result bool) {
-	result = vars.RobotRuntime.IsRunning()
-	if !result && vars.RobotRuntime.Status != model.RobotStatusOffline {
-		s.Offline()
-	}
-	return
+	// A failed TCP probe is not an instruction to stop automatic recovery.
+	return vars.RobotRuntime.IsRunning()
 }
 
 func (s *LoginService) IsLoggedIn() (result bool) {
-	result = vars.RobotRuntime.IsLoggedIn()
-	if !result && vars.RobotRuntime.Status != model.RobotStatusOffline {
-		s.Offline()
-	}
+	result, _ = vars.LoginSession.Check(s.ctx)
 	return
 }
 
@@ -177,7 +131,6 @@ func (s *LoginService) LoginCheck(uuid string) (resp robot.CheckUuid, err error)
 		}
 		// 登陆成功
 		vars.RobotRuntime.WxID = resp.AcctSectResp.Username
-		vars.RobotRuntime.Status = model.RobotStatusOnline
 		vars.RobotRuntime.LoginTime = time.Now().Unix()
 		err = s.Online()
 		if err != nil {
@@ -230,9 +183,8 @@ func (s *LoginService) LoginData62SMSAgain(req robot.LoginData62SMSAgainRequest)
 func (s *LoginService) LoginData62SMSVerify(req robot.LoginData62SMSVerifyRequest) (resp string, err error) {
 	resp, err = vars.RobotRuntime.LoginData62SMSVerify(req)
 	if err == nil {
-		vars.RobotRuntime.Status = model.RobotStatusOnline
 		vars.RobotRuntime.LoginTime = time.Now().Unix()
-		_ = s.Online()
+		err = s.Online()
 	}
 	return
 }
@@ -240,9 +192,8 @@ func (s *LoginService) LoginData62SMSVerify(req robot.LoginData62SMSVerifyReques
 func (s *LoginService) LoginA16Data(username, password string) (resp robot.UnifyAuthResponse, err error) {
 	resp, err = vars.RobotRuntime.LoginA16Data(username, password)
 	if err == nil {
-		vars.RobotRuntime.Status = model.RobotStatusOnline
 		vars.RobotRuntime.LoginTime = time.Now().Unix()
-		_ = s.Online()
+		err = s.Online()
 	}
 	return
 }
@@ -271,12 +222,7 @@ func (s *LoginService) ImportLoginData(loginDataStr string) (err error) {
 }
 
 func (r *LoginService) Logout() (err error) {
-	err = r.Offline()
-	if err != nil {
-		return
-	}
-	err = vars.RobotRuntime.Logout()
-	return
+	return vars.LoginSession.Logout(r.ctx)
 }
 
 func (r *LoginService) SyncMessageCallback(wxID string, syncMessage robot.SyncMessage) {
@@ -298,7 +244,7 @@ func (r *LoginService) LogoutCallback(req dto.LogoutNotificationRequest) (err er
 		}
 		err := r.Offline()
 		if err != nil {
-			log.Printf("接收到掉线通知，退出客户端失败: %v", err)
+			log.Printf("接收到掉线通知，更新离线状态失败: %v", err)
 		}
 	}()
 

@@ -21,7 +21,7 @@ function loadEnvFile() {
 }
 
 const runningUnderNodeTest = Boolean(process.env.NODE_TEST_CONTEXT);
-if (process.env.NODE_ENV !== 'test' && !runningUnderNodeTest) loadEnvFile();
+if (process.env.NODE_ENV !== 'test' && !runningUnderNodeTest && process.env.TIANHE_SKIP_DOTENV !== 'true') loadEnvFile();
 
 function numberEnv(name, fallback) {
   const value = Number(process.env[name]);
@@ -42,6 +42,8 @@ export const config = {
   modelGatewayToken: process.env.TIANHE_MODEL_TOKEN || '',
   aiSignalStudioUrl: String(process.env.AI_SIGNAL_STUDIO_URL || '').trim(),
   aiSignalStudioHealthUrl: String(process.env.AI_SIGNAL_STUDIO_HEALTH_URL || '').trim(),
+  aiStudioInternalUrl: String(process.env.AI_STUDIO_INTERNAL_URL || '').trim(),
+  aiStudioToken: process.env.AI_STUDIO_TOKEN || '',
   aiSignalStudioInternalUrl: String(process.env.AI_SIGNAL_STUDIO_INTERNAL_URL || '').trim(),
   videoEditingUrl: String(process.env.VIDEO_EDITING_URL || '').trim(),
   videoEditingHealthUrl: String(process.env.VIDEO_EDITING_HEALTH_URL || '').trim(),
@@ -60,9 +62,15 @@ export const config = {
   host: process.env.SERVER_HOST || '127.0.0.1',
   agentPort: numberEnv('AGENT_PORT', 17831),
   agentHost: process.env.AGENT_HOST || '127.0.0.1',
+  browserAgentUrl: String(process.env.BROWSER_AGENT_URL || '').trim().replace(/\/$/, ''),
+  agentRole: process.env.AGENT_ROLE || 'all',
+  agentRemoteMaterials: booleanEnv('AGENT_REMOTE_MATERIALS', false),
+  agentMaterialCacheDir: path.resolve(ROOT, process.env.AGENT_MATERIAL_CACHE_DIR || './runtime/browser-agent/materials'),
   allowedOrigins: splitEnv('ALLOWED_ORIGINS', 'http://127.0.0.1:3100,http://localhost:3100'),
   agentAllowedOrigins: splitEnv('AGENT_ALLOWED_ORIGINS', 'http://127.0.0.1:3100,http://localhost:3100'),
   requestBodyMaxBytes: Math.max(64 * 1024, numberEnv('REQUEST_BODY_MAX_BYTES', 2_000_000)),
+  materialUploadDir: path.resolve(ROOT, process.env.MATERIAL_UPLOAD_DIR || path.join(path.dirname(process.env.DATABASE_PATH || './data/mvp.db'), 'publish-materials')),
+  materialUploadMaxBytes: Math.max(1024, Math.min(20 * 1024 ** 3, numberEnv('MATERIAL_UPLOAD_MAX_BYTES', 2 * 1024 ** 3))),
   authEnabled: booleanEnv('AUTH_ENABLED', false),
   adminUsername: process.env.ADMIN_USERNAME || 'admin',
   adminPassword: process.env.ADMIN_PASSWORD || '',
@@ -101,6 +109,9 @@ export const config = {
   audioContentGenerationEnabled: booleanEnv('AI_AUDIO_CONTENT_GENERATION_ENABLED', true),
   audioContentAutoTrigger: booleanEnv('AI_AUDIO_CONTENT_AUTO_TRIGGER', true),
   audioAsrModel: process.env.QWEN_ASR_MODEL || 'qwen3-asr-flash',
+  localAsrExecutable: process.env.LOCAL_ASR_EXECUTABLE || 'whisper-cli',
+  localAsrModelPath: process.env.LOCAL_ASR_MODEL_PATH || '',
+  localAsrThreads: Math.max(1, Math.min(16, numberEnv('LOCAL_ASR_THREADS', 4))),
   audioContentModel: process.env.QWEN_CONTENT_MODEL || process.env.QWEN_MODEL || 'qwen3.7-plus',
   imageContentModel: process.env.QWEN_IMAGE_CONTENT_MODEL || process.env.QWEN_MODEL || 'qwen3.7-plus',
   trafficPredictionEnabled: booleanEnv('AI_TRAFFIC_PREDICTION_ENABLED', true),
@@ -112,7 +123,7 @@ export const config = {
   audioAsrTimeoutMs: Math.max(10_000, numberEnv('AI_ASR_TIMEOUT_MS', 60_000)),
   audioContentTimeoutMs: Math.max(10_000, numberEnv('AI_CONTENT_TIMEOUT_MS', 30_000)),
   audioKnowledgeTimeoutMs: Math.max(10_000, numberEnv('AI_KNOWLEDGE_TIMEOUT_MS', 60_000)),
-  audioTotalTimeoutMs: Math.max(30_000, Math.min(110_000, numberEnv('AI_AUDIO_TOTAL_TIMEOUT_MS', 110_000))),
+  audioTotalTimeoutMs: Math.max(30_000, Math.min(600_000, numberEnv('AI_AUDIO_TOTAL_TIMEOUT_MS', 110_000))),
   audioCacheMaxAgeMs: Math.max(60_000, numberEnv('AI_AUDIO_CACHE_MAX_AGE_MS', 7 * 24 * 60 * 60 * 1000)),
   aiReviewEnabled: process.env.AI_REVIEW_ENABLED !== 'false',
   aiReviewModel: process.env.AI_REVIEW_MODEL || process.env.QWEN_MODEL || 'qwen3.7-plus',
@@ -184,7 +195,7 @@ export const config = {
       profileDir: path.resolve(ROOT, process.env.DOUYIN_PROFILE_DIR || './data/browser-profiles/profile-douyin-main'),
       publishUrl: process.env.DOUYIN_PUBLISH_URL || 'https://creator.douyin.com/creator-micro/content/upload',
       manageUrl: process.env.DOUYIN_MANAGE_URL || 'https://creator.douyin.com/creator-micro/content/manage',
-      commentUrl: process.env.DOUYIN_COMMENT_URL || 'https://creator.douyin.com/creator-micro/data/following/comment',
+      commentUrl: process.env.DOUYIN_COMMENT_URL || 'https://creator.douyin.com/creator-micro/interactive/comment',
       messageUrl: process.env.DOUYIN_MESSAGE_URL || 'https://www.douyin.com/user/self'
     },
     wechat_channels: {
@@ -225,5 +236,4 @@ export const config = {
   messageCollectMinIntervalMs,
   messageCollectMaxIntervalMs
 };
-
 

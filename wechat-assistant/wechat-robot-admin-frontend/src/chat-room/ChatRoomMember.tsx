@@ -1,6 +1,21 @@
 import { DownOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons';
 import { useMemoizedFn, useRequest, useSetState } from 'ahooks';
-import { App, Avatar, Button, Col, Drawer, Dropdown, Input, List, Pagination, Row, Space, Tag } from 'antd';
+import {
+	Alert,
+	App,
+	Avatar,
+	Button,
+	Col,
+	Drawer,
+	Dropdown,
+	Input,
+	List,
+	Pagination,
+	Row,
+	Segmented,
+	Space,
+	Tag,
+} from 'antd';
 import dayjs from 'dayjs';
 import React from 'react';
 import type * as Api from '@/api/wechat-robot/wechat-robot';
@@ -42,14 +57,23 @@ const GroupMember = (props: IProps) => {
 
 	const { chatRoom } = props;
 
-	const [search, setSearch] = useSetState({ keyword: '', pageIndex: 1 });
+	const [search, setSearch] = useSetState<{ keyword: string; pageIndex: number; membership: 'current' | 'left' }>({
+		keyword: '',
+		pageIndex: 1,
+		membership: 'current',
+	});
 	const [addFriendState, setAddFriendState] = useSetState<IAddFriendState>({});
 	const [momentState, setMomentState] = useSetState<IMomentState>({});
 	const [memberSettingsState, setMemberSettingsState] = useSetState<IMemberState>({});
 	const [memberRemoveState, setMemberRemoveState] = useSetState<IMemberState>({});
 
-	// 手动同步群成员
-	const { runAsync, loading: syncLoading } = useRequest(
+	// The drawer is mounted on each entry: verify membership before showing the list.
+	const {
+		run: syncMembers,
+		data: syncedAt,
+		loading: syncLoading,
+		error: syncError,
+	} = useRequest(
 		async () => {
 			await window.wechatRobotClient.chatRoom.membersSyncCreate(
 				{ id: props.robotId },
@@ -58,34 +82,43 @@ const GroupMember = (props: IProps) => {
 					chat_room_id: chatRoom.wechat_id || '',
 				},
 			);
+			return Date.now();
 		},
 		{
-			manual: true,
-			onError: reason => {
-				message.error(reason.message);
+			onSuccess: () => {
+				if (search.pageIndex !== 1) setSearch({ pageIndex: 1 });
 			},
 		},
 	);
 
-	const { data, loading, refresh } = useRequest(
+	const verified = !!syncedAt && !syncLoading && !syncError;
+	const {
+		data,
+		loading,
+		error: listError,
+		refresh,
+	} = useRequest(
 		async () => {
 			const resp = await window.wechatRobotClient.chatRoom.membersList({
 				id: props.robotId,
 				chat_room_id: chatRoom.wechat_id || '',
 				keyword: search.keyword,
+				membership: search.membership,
 				page_index: search.pageIndex,
 				page_size: 20,
 			});
 			return resp.data?.data;
 		},
 		{
-			manual: false,
-			refreshDeps: [search],
+			ready: verified,
+			refreshDeps: [search, syncedAt],
 			onError: reason => {
 				message.error(reason.message);
 			},
 		},
 	);
+	const onSync = useMemoizedFn(() => syncMembers());
+	const onMembershipChange = useMemoizedFn((membership: 'current' | 'left') => setSearch({ membership, pageIndex: 1 }));
 
 	const onAddFriendClose = useMemoizedFn(() => {
 		setAddFriendState({ open: false, chatRoomMemberId: undefined, chatRoomMemberName: undefined });
@@ -127,13 +160,9 @@ const GroupMember = (props: IProps) => {
 					<Button
 						type="primary"
 						loading={syncLoading}
-						onClick={async () => {
-							await runAsync();
-							setSearch({ pageIndex: 1 });
-							message.success('同步群成员成功');
-						}}
+						onClick={onSync}
 					>
-						同步群成员
+						重新同步
 					</Button>
 				</Space>
 			}
@@ -144,6 +173,20 @@ const GroupMember = (props: IProps) => {
 			footer={null}
 		>
 			<div>
+				<Alert
+					showIcon
+					type={syncError || listError ? 'error' : syncLoading || !syncedAt ? 'info' : 'success'}
+					title={
+						syncError
+							? `同步失败，暂时无法确认当前成员：${syncError.message}`
+							: syncLoading || !syncedAt
+								? '正在向微信核对群成员，并更新头像和名称…'
+								: listError
+									? '成员名单加载失败，请重新同步后重试'
+									: `已核对当前成员 · ${dayjs(syncedAt).format('HH:mm:ss')} · 每次打开自动更新`
+					}
+					style={{ marginBottom: 12 }}
+				/>
 				<Row
 					style={{ marginBottom: 16 }}
 					align="middle"
@@ -152,6 +195,7 @@ const GroupMember = (props: IProps) => {
 				>
 					<Col flex="0 1 300px">
 						<Input
+							disabled={!verified}
 							placeholder="搜索群成员"
 							prefix={<SearchOutlined />}
 							allowClear
@@ -160,6 +204,17 @@ const GroupMember = (props: IProps) => {
 									setSearch({ keyword: ev.currentTarget.value, pageIndex: 1 });
 								}
 							}}
+						/>
+					</Col>
+					<Col>
+						<Segmented
+							disabled={!verified}
+							value={search.membership}
+							options={[
+								{ label: '当前成员', value: 'current' },
+								{ label: '已退群', value: 'left' },
+							]}
+							onChange={onMembershipChange}
 						/>
 					</Col>
 				</Row>
@@ -173,8 +228,15 @@ const GroupMember = (props: IProps) => {
 					<List
 						rowKey="id"
 						itemLayout="horizontal"
-						loading={loading}
-						dataSource={data?.items || []}
+						loading={syncLoading || loading}
+						dataSource={verified && !listError ? data?.items || [] : []}
+						locale={{
+							emptyText: !verified
+								? '等待同步微信成员名单'
+								: search.membership === 'current'
+									? '没有匹配的当前成员'
+									: '暂无退群记录',
+						}}
 						style={{ maxHeight: 'calc(100vh - 185px)', overflowY: 'auto' }}
 						renderItem={item => {
 							return (
@@ -184,11 +246,17 @@ const GroupMember = (props: IProps) => {
 											<Avatar
 												style={{ marginLeft: 8 }}
 												src={item.avatar || DefaultAvatar}
+												alt={`${item.remark || item.nickname || item.alias || '微信用户'}的头像`}
 											/>
 										}
 										title={
 											<span>
-												<span>{item.remark || item.nickname || item.alias}</span>
+												<span>{item.remark || item.nickname || item.alias || '微信用户（昵称暂缺）'}</span>
+												{item.remark && item.nickname && item.remark !== item.nickname && (
+													<span style={{ marginLeft: 8, color: 'gray', fontWeight: 'normal' }}>
+														微信名：{item.nickname}
+													</span>
+												)}
 												<Space
 													size="small"
 													style={{ marginLeft: 8 }}
@@ -346,16 +414,24 @@ const GroupMember = (props: IProps) => {
 						/>
 					)}
 				</div>
-				<div className="pagination">
+				<div
+					className="pagination"
+					style={{ display: verified && !listError ? undefined : 'none' }}
+				>
 					<Pagination
 						align="end"
 						size="small"
 						current={search.pageIndex}
 						pageSize={20}
-						total={data?.total || 0}
+						total={verified && !listError ? data?.total || 0 : 0}
+						disabled={!verified}
 						showSizeChanger={false}
 						showTotal={total => {
-							return <span style={{ fontSize: 12, color: 'gray' }}>{`群成员共 ${total} 人`}</span>;
+							return (
+								<span
+									style={{ fontSize: 12, color: 'gray' }}
+								>{`${search.membership === 'current' ? '当前成员' : '已退群'}共 ${total} 人`}</span>
+							);
 						}}
 						onChange={page => {
 							setSearch({ pageIndex: page });

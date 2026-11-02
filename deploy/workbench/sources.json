@@ -1,0 +1,12 @@
+{
+  "openchatcut": {
+    "repository": "https://github.com/0xsline/OpenChatCut.git",
+    "commit": "7fa4b7903e7ebecf832a36249f0c0c755200cc17",
+    "directory": "platforms/OpenChatCut"
+  },
+  "toonflow": {
+    "repository": "https://github.com/HBAI-Ltd/Toonflow-app.git",
+    "commit": "30139c931e80476caa718b31684b86383c6e83ce",
+    "directory": "platforms/Toonflow"
+  }
+}

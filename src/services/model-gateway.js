@@ -6,6 +6,8 @@ const PREFIX = '/api/model/v1/';
 const ROLES = Object.freeze({
   'tianhe-wechat-chat': ['model', 'wechat-agent'],
   'tianhe-rag-chat': ['model', 'rag-generation'],
+  'tianhe-workbench-chat': ['model', 'creative-workbench'],
+  'tianhe-workbench-vision': ['visionModel', 'creative-workbench'],
   'tianhe-robot-chat': ['model', 'wechat-robot'],
   'tianhe-robot-summary': ['model', 'wechat-robot'],
   'tianhe-robot-vision': ['visionModel', 'wechat-robot'],
@@ -46,6 +48,17 @@ export async function handleModelGateway(req, res, {
   if (req.method === 'GET' && route === 'status' && !url.search) {
     return reply(res, 200, { source: 'tianhe', mode: settings.mode, configured: Boolean(settings.apiKey),
       model: settings.model, visionModel: settings.visionModel });
+  }
+  // Compatible editors discover models through GET /models. Expose only the
+  // accepted role aliases, never provider credentials or arbitrary model IDs.
+  if (req.method === 'GET' && route === 'models' && !url.search) {
+    if (settings.mode !== 'online' || !settings.apiKey) {
+      const code = settings.mode !== 'online' ? 'AI_MODE_DISABLED' : 'AI_KEY_MISSING';
+      return failure(res, 503, code, ERROR_MESSAGES[code]);
+    }
+    return reply(res, 200, { object: 'list', data: Object.entries(ROLES)
+      .filter(([, [field]]) => Boolean(settings[field]))
+      .map(([id]) => ({ id, object: 'model', created: 0, owned_by: 'tianhe' })) });
   }
   if (req.method !== 'POST' || !['chat/completions', 'embeddings'].includes(route) || url.search) {
     return failure(res, 404, 'MODEL_ROUTE_NOT_FOUND', '模型接口不存在');

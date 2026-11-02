@@ -53,6 +53,10 @@ func InitWechatRobot() error {
 	}
 
 	vars.RobotRuntime.Client = client
+	vars.LoginSession, err = service.NewLoginSession(context.Background())
+	if err != nil {
+		return fmt.Errorf("读取微信登录意图失败: %w", err)
+	}
 
 	systemSettings, err := service.NewSystemSettingService(context.Background()).GetSystemSettings()
 	if err == nil && systemSettings != nil {
@@ -77,21 +81,13 @@ func InitWechatRobot() error {
 		case <-retryTicker.C:
 			if vars.RobotRuntime.IsRunning() {
 				log.Println("微信机器人服务端已启动")
-				if vars.RobotRuntime.IsLoggedIn() {
-					log.Println("微信机器人已登录")
-					vars.RobotRuntime.LoginTime = time.Now().Unix()
-					err := service.NewLoginService(context.Background()).Online()
-					if err != nil {
-						log.Println("微信机器人已登录，启动自动心跳失败:", err)
-						return err
-					}
-				} else {
-					log.Println("微信机器人服务端未登录")
-					err := service.NewLoginService(context.Background()).Offline()
-					if err != nil {
-						log.Println("微信机器人服务端未登录，设置离线状态失败:", err)
-						return err
-					}
+				vars.RobotRuntime.LoginTime = time.Now().Unix()
+				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+				err := vars.LoginSession.Restore(ctx)
+				cancel()
+				if err != nil {
+					// Keep the UI available for a fresh scan if credentials expired.
+					log.Println("微信会话初始化暂未完成，后台将继续检查；必要时请重新扫码登录")
 				}
 				return nil
 			} else {

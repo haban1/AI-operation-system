@@ -27,6 +27,7 @@ import (
 const syncChatRoomMemberDebounceInterval = 5 * time.Second
 
 var (
+	syncChatRoomMemberLocks  sync.Map
 	syncChatRoomMemberMu     sync.Mutex
 	syncChatRoomMemberTimers = make(map[string]*time.Timer)
 )
@@ -81,159 +82,80 @@ func (s *ChatRoomService) DebounceSyncChatRoomMember(chatRoomID string) {
 	syncChatRoomMemberTimers[chatRoomID] = newTimer
 }
 
+// Background membership events retain the configured departure notifications.
 func (s *ChatRoomService) SyncChatRoomMember(chatRoomID string) {
-	var chatRoomMembers []robot.ChatRoomMember
-	var err error
-	chatRoomMembers, err = vars.RobotRuntime.GetChatRoomMemberDetail(chatRoomID)
-	if err != nil {
-		log.Printf("获取群[%s]成员失败: %v", chatRoomID, err)
-		return
-	}
-	// 遍历获取到的群成员列表，如果数据库存在，则更新，数据库不存在则新增
-	if len(chatRoomMembers) > 0 {
-		now := time.Now().Unix()
-		// 获取当前成员的微信ID列表，用于后续比对
-		currentMemberIDs := make([]string, 0, len(chatRoomMembers))
-		for _, member := range chatRoomMembers {
-			currentMemberIDs = append(currentMemberIDs, member.UserName)
-		}
-		for _, member := range chatRoomMembers {
-			// 检查成员是否已存在
-			existMember, err := s.crmRepo.GetChatRoomMember(chatRoomID, member.UserName)
-			if err != nil {
-				log.Printf("查询群[%s]成员[%s]失败: %v", chatRoomID, member.UserName, err)
-				continue
-			}
-			if existMember != nil {
-				// 更新现有成员
-				isLeaved := false
-				updateMember := map[string]any{
-					"nickname":          member.NickName,
-					"avatar":            member.SmallHeadImgUrl,
-					"inviter_wechat_id": member.InviterUserName,
-					"is_leaved":         &isLeaved, // 确保标记为未离开
-					"leaved_at":         nil,       // 清除离开时间
-				}
-				if member.DisplayName != nil && *member.DisplayName != "" {
-					updateMember["remark"] = *member.DisplayName
-				} else {
-					updateMember["remark"] = ""
-				}
-				// 已经离开，重新加入群聊的人
-				if existMember.IsLeaved != nil && *existMember.IsLeaved {
-					updateMember["joined_at"] = now
-				}
-				// 更新数据库中已有的记录
-				err = s.crmRepo.UpdateByID(existMember.ID, updateMember)
-				if err != nil {
-					log.Printf("更新群[%s]成员[%s]失败: %v", chatRoomID, member.UserName, err)
-					continue
-				}
-			} else {
-				// 创建新成员
-				isLeaved := false
-				newMember := model.ChatRoomMember{
-					ChatRoomID:      chatRoomID,
-					WechatID:        member.UserName,
-					Nickname:        member.NickName,
-					Avatar:          member.SmallHeadImgUrl,
-					InviterWechatID: member.InviterUserName,
-					IsLeaved:        &isLeaved,
-					JoinedAt:        now,
-					LastActiveAt:    now,
-				}
-				if member.DisplayName != nil && *member.DisplayName != "" {
-					newMember.Remark = *member.DisplayName
-				}
-				err = s.crmRepo.Create(&newMember)
-				if err != nil {
-					log.Printf("创建群[%s]成员[%s]失败: %v", chatRoomID, member.UserName, err)
-					continue
-				}
-			}
-		}
-		// 查询数据库中该群的所有成员
-		dbMembers, err := s.crmRepo.GetChatRoomMembers(chatRoomID)
-		if err != nil {
-			log.Printf("获取群[%s]成员失败: %v", chatRoomID, err)
-			return
-		}
-		var leavedMembers []string
-		// 标记已离开的成员
-		for _, dbMember := range dbMembers {
-			if dbMember.IsLeaved != nil && !*dbMember.IsLeaved && !slices.Contains(currentMemberIDs, dbMember.WechatID) {
-				// 数据库有记录但当前群成员列表中不存在，标记为已离开
-				leaveTime := now
-				isLeaved := true
-				updateMember := model.ChatRoomMember{
-					ID:       dbMember.ID,
-					IsLeaved: &isLeaved,
-					LeavedAt: &leaveTime,
-				}
-				if dbMember.Remark != "" {
-					leavedMembers = append(leavedMembers, dbMember.Remark)
-				} else if dbMember.Nickname != "" {
-					leavedMembers = append(leavedMembers, dbMember.Nickname)
-				}
-				err = s.crmRepo.Update(&updateMember)
-				if err != nil {
-					log.Printf("标记群[%s]成员[%s]为已离开失败: %v", chatRoomID, dbMember.WechatID, err)
-				}
-				chatRoomSettings, err := s.crsRepo.GetChatRoomSettings(chatRoomID)
-				if err != nil {
-					log.Printf("获取群[%s]设置失败: %v", chatRoomID, err)
-					continue
-				}
-				if chatRoomSettings == nil {
-					log.Printf("群[%s]设置不存在", chatRoomID)
-					continue
-				}
-				if chatRoomSettings.WxhbNotifyMemberList != nil && *chatRoomSettings.WxhbNotifyMemberList != "" {
-					wxhbNotifyMemberList := strings.Split(*chatRoomSettings.WxhbNotifyMemberList, ",")
-					if slices.Contains(wxhbNotifyMemberList, dbMember.WechatID) {
-						// 从红包通知列表中移除已离开的成员
-						var newNotifyMemberList []string
-						for _, memberID := range wxhbNotifyMemberList {
-							if memberID != dbMember.WechatID {
-								newNotifyMemberList = append(newNotifyMemberList, memberID)
-							}
-						}
-						newNotifyMemberListStr := strings.Join(newNotifyMemberList, ",")
-						err = s.crsRepo.Update(&model.ChatRoomSettings{
-							ID:                   chatRoomSettings.ID,
-							WxhbNotifyMemberList: &newNotifyMemberListStr,
-						})
-						if err != nil {
-							log.Printf("更新群[%s]设置失败: %v", chatRoomID, err)
-						}
-					}
-				}
-			}
-		}
-		if len(leavedMembers) > 0 {
-			leaveChatRoomConfig := NewChatRoomSettingsService(s.ctx).GetLeaveChatRoomConfig(chatRoomID)
-			if leaveChatRoomConfig == nil || leaveChatRoomConfig.LeaveChatRoomAlertEnabled == nil || !*leaveChatRoomConfig.LeaveChatRoomAlertEnabled {
-				return
-			}
-			if strings.TrimSpace(leaveChatRoomConfig.LeaveChatRoomAlertText) == "" {
-				return
-			}
-			if len(leavedMembers) <= 10 {
-				NewMessageService(s.ctx).SendTextMessage(
-					chatRoomID,
-					strings.Replace(leaveChatRoomConfig.LeaveChatRoomAlertText, "{placeholder}", strings.Join(leavedMembers, "、"), 1),
-				)
-			} else {
-				NewMessageService(s.ctx).SendTextMessage(
-					chatRoomID,
-					strings.Replace(leaveChatRoomConfig.LeaveChatRoomAlertText, "{placeholder}", fmt.Sprintf("%s等%d位", leavedMembers[0], len(leavedMembers)), 1),
-				)
-			}
-		}
+	if err := s.syncChatRoomMember(chatRoomID, true); err != nil {
+		log.Printf("同步群[%s]成员失败: %v", chatRoomID, err)
 	}
 }
 
+// RefreshChatRoomMembers is a silent refresh for the member viewer.
+func (s *ChatRoomService) RefreshChatRoomMembers(chatRoomID string) error {
+	return s.syncChatRoomMember(chatRoomID, false)
+}
+
+func (s *ChatRoomService) syncChatRoomMember(chatRoomID string, notify bool) error {
+	unlock := lockChatRoomMembers(chatRoomID)
+	defer unlock()
+	if err := s.ctx.Err(); err != nil {
+		return err
+	}
+	return s.syncChatRoomMemberLocked(chatRoomID, notify)
+}
+
+// All paths that discover members share this lock, not only full snapshots.
+func lockChatRoomMembers(chatRoomID string) func() {
+	lock, _ := syncChatRoomMemberLocks.LoadOrStore(chatRoomID, &sync.Mutex{})
+	mu := lock.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
+func (s *ChatRoomService) syncChatRoomMemberLocked(chatRoomID string, notify bool) error {
+	if vars.RobotRuntime == nil || vars.RobotRuntime.Client == nil {
+		return errors.New("微信机器人尚未就绪，请稍后重试")
+	}
+	members, err := vars.RobotRuntime.Client.GetChatRoomMemberDetailContext(s.ctx, vars.RobotRuntime.WxID, chatRoomID)
+	if err != nil {
+		return fmt.Errorf("同步群成员失败: %w", err)
+	}
+	snapshot := make([]model.ChatRoomMember, 0, len(members))
+	for _, member := range members {
+		avatar := member.SmallHeadImgUrl
+		if avatar == "" {
+			avatar = member.BigHeadImgUrl
+		}
+		item := model.ChatRoomMember{
+			WechatID: member.UserName, Nickname: member.NickName,
+			Avatar: avatar, InviterWechatID: member.InviterUserName,
+		}
+		if member.DisplayName != nil {
+			item.Remark = *member.DisplayName
+		}
+		snapshot = append(snapshot, item)
+	}
+	departed, err := s.crmRepo.ReconcileMembers(chatRoomID, snapshot)
+	if err != nil {
+		return fmt.Errorf("保存群成员失败: %w", err)
+	}
+	if !notify || len(departed) == 0 {
+		return nil
+	}
+	config := NewChatRoomSettingsService(s.ctx).GetLeaveChatRoomConfig(chatRoomID)
+	if config == nil || config.LeaveChatRoomAlertEnabled == nil || !*config.LeaveChatRoomAlertEnabled || strings.TrimSpace(config.LeaveChatRoomAlertText) == "" {
+		return nil
+	}
+	names := strings.Join(departed, "、")
+	if len(departed) > 10 {
+		names = fmt.Sprintf("%s等%d位", departed[0], len(departed))
+	}
+	NewMessageService(s.ctx).SendTextMessage(chatRoomID, strings.Replace(config.LeaveChatRoomAlertText, "{placeholder}", names, 1))
+	return nil
+}
+
 func (s *ChatRoomService) CreateChatRoomMember(member *model.ChatRoomMember) error {
+	unlock := lockChatRoomMembers(member.ChatRoomID)
+	defer unlock()
 	return s.crmRepo.Create(member)
 }
 
@@ -242,6 +164,8 @@ func (s *ChatRoomService) UpdateChatRoomMember(member *model.ChatRoomMember) err
 }
 
 func (s *ChatRoomService) UpsertChatRoomMember(member *model.ChatRoomMember) error {
+	unlock := lockChatRoomMembers(member.ChatRoomID)
+	defer unlock()
 	existMember, err := s.crmRepo.GetChatRoomMember(member.ChatRoomID, member.WechatID)
 	if err != nil {
 		return err
@@ -414,6 +338,8 @@ func (s *ChatRoomService) GroupQuit(chatRoomID string) error {
 }
 
 func (s *ChatRoomService) UpdateChatRoomMembersOnNewMemberJoinIn(chatRoomID string, memberWeChatIDs []string) ([]*model.ChatRoomMember, error) {
+	unlock := lockChatRoomMembers(chatRoomID)
+	defer unlock()
 	now := time.Now().Unix()
 	// 将ids拆分成二十个一个的数组之后再获取详情
 	var newMembers = make([]robot.Contact, 0)

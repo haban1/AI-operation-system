@@ -67,9 +67,15 @@ export function isSameDouyinCommentSemanticCandidate(existing, incoming = {}, re
 
   const previousContext = parseContext(existing.context_json ?? existing.context);
   const incomingContext = parseContext(incoming.context);
-  const previousSource = commentSourceIdentity(previousContext);
-  const incomingSource = commentSourceIdentity(incomingContext);
+  const previousCommentId = normalizeCommentIdentityText(previousContext.commentStableId || previousContext.commentId);
+  const incomingCommentId = normalizeCommentIdentityText(incomingContext.commentStableId || incomingContext.commentId);
+  if (previousCommentId && incomingCommentId && previousCommentId !== incomingCommentId) return false;
+  // A newly discovered comment ID upgrades the old work-based identity. Comparing
+  // "video:..." with "comment:..." would recreate intentionally deleted records.
+  const previousSource = commentSourceIdentity({ ...previousContext, commentStableId: null, commentId: null });
+  const incomingSource = commentSourceIdentity({ ...incomingContext, commentStableId: null, commentId: null });
   if (previousSource && incomingSource) return previousSource === incomingSource;
+  if (previousCommentId && incomingCommentId) return true;
 
   const previousUrl = normalizeCommentIdentityText(existing.external_url);
   const incomingUrl = normalizeCommentIdentityText(incoming.externalUrl);
