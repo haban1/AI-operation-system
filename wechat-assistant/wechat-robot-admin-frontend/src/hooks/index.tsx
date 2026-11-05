@@ -1,3 +1,4 @@
+import { robotUrl } from '@/utils/embedded';
 import { useBoolean } from 'ahooks';
 import { App } from 'antd';
 import { createStyles } from 'antd-style';
@@ -13,7 +14,7 @@ export const useAttachDownload = (type: string, robotId: number, messageId: numb
 		try {
 			setLoading.setTrue();
 
-			const url = `/api/v1/chat/${type}/download?id=${robotId}&message_id=${messageId}`;
+			const url = robotUrl(`/api/v1/chat/${type}/download?id=${robotId}&message_id=${messageId}`);
 			const resp = await fetch(url, { signal: controller.signal });
 			if (!resp.ok) {
 				resp.json().then(data => {

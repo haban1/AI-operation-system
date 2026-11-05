@@ -1,3 +1,4 @@
+import { robotUrl } from '@/utils/embedded';
 import { theme } from 'antd';
 import { XMLParser } from 'fast-xml-parser';
 import React from 'react';
@@ -59,7 +60,7 @@ const MessageContent = (props: IProps) => {
 			return (
 				<audio
 					controls
-					src={`/api/v1/chat/voice/download?id=${props.robotId}&message_id=${props.message.id}`}
+					src={robotUrl(`/api/v1/chat/voice/download?id=${props.robotId}&message_id=${props.message.id}`)}
 				/>
 			);
 		case DtoMessageType.MsgTypeEmoticon: {

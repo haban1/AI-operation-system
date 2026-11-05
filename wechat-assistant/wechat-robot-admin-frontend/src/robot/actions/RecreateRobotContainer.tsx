@@ -1,3 +1,4 @@
+import { robotUrl } from '@/utils/embedded';
 import {
 	CloseCircleOutlined,
 	DeleteOutlined,
@@ -178,7 +179,7 @@ const RecreateRobotContainer = (props: IProps) => {
 		params.set('id', String(props.robotId));
 		params.set('v', String(Date.now()));
 		const suffix = profilePath ? `/${profilePath}` : '/';
-		return `/api/v1/pprof/debug/pprof${suffix}?${params.toString()}`;
+		return robotUrl(`/api/v1/pprof/debug/pprof${suffix}?${params.toString()}`);
 	});
 
 	const updatePprofSampling = useMemoizedFn(async (payload: PprofSamplingPayload, successText: string) => {
@@ -428,7 +429,7 @@ const RecreateRobotContainer = (props: IProps) => {
 	];
 
 	const pullDockerImages = useMemoizedFn(() => {
-		const eventSource = new EventSource('/api/v1/robot/docker/image/pull?id=' + props.robotId);
+		const eventSource = new EventSource(robotUrl('/api/v1/robot/docker/image/pull?id=') + props.robotId);
 
 		setImagePullState({ open: true, loading: true, eventSource });
 

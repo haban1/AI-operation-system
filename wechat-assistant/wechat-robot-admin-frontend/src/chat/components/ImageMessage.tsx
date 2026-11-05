@@ -1,3 +1,4 @@
+import { robotUrl } from '@/utils/embedded';
 import {
 	DownloadOutlined,
 	EyeOutlined,
@@ -38,7 +39,7 @@ const ImageMessage = (props: IProps) => {
 
 	const url =
 		(!useSavedImage && props.message.attachment_url) ||
-		`/api/v1/chat/image/download?id=${props.robotId}&message_id=${props.message.id}&retry=${attempt}`;
+		robotUrl(`/api/v1/chat/image/download?id=${props.robotId}&message_id=${props.message.id}&retry=${attempt}`);
 
 	if (failed) {
 		return (

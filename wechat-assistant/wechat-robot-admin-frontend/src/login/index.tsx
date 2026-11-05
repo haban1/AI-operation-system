@@ -1,3 +1,4 @@
+import { robotUrl } from '@/utils/embedded';
 import { LockOutlined } from '@ant-design/icons';
 import { useRequest } from 'ahooks';
 import { App, Button, Form, Input } from 'antd';
@@ -155,7 +156,7 @@ const Login = () => {
 			{loginMethod === 'scan' && (
 				<>
 					<img
-						src="/api/v1/oauth/official-account/url"
+						src={robotUrl('/api/v1/oauth/official-account/url')}
 						alt="二维码"
 					/>
 					<p>请使用微信扫描二维码关注公众号，输入「验证码」获取验证码（三分钟内有效）</p>

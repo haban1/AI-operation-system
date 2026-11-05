@@ -1,3 +1,4 @@
+import { robotUrl } from '@/utils/embedded';
 import { useRequest } from 'ahooks';
 import { App, Button, Tooltip } from 'antd';
 import axios from 'axios';
@@ -55,7 +56,7 @@ const OAuth = (props: IProps) => {
 			// 以 qrcode 字段名上传
 			formData.append('qrcode', imageBlob, 'qrcode.png');
 
-			const resp = await axios.post(`/api/v1/wxapp/qrcode-auth-login?id=${props.robotId}`, formData, {
+			const resp = await axios.post(robotUrl(`/api/v1/wxapp/qrcode-auth-login?id=${props.robotId}`), formData, {
 				headers: {
 					'Content-Type': 'multipart/form-data',
 				},

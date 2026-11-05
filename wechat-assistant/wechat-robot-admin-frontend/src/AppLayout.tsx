@@ -1,6 +1,6 @@
 import { FileWordOutlined, GithubOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
 import { useRequest } from 'ahooks';
-import { App, Avatar, Dropdown, Layout, Skeleton, Watermark } from 'antd';
+import { Alert, App, Avatar, Button, Dropdown, Layout, Skeleton, Watermark } from 'antd';
 import type { MenuProps } from 'antd';
 import React from 'react';
 import { Outlet } from 'react-router-dom';
@@ -9,6 +9,7 @@ import logo from '../public/logo.svg';
 import { UrlLogin } from './constant/redirect-url';
 import { UserContext } from './context/user';
 import { ThemeSwitch, useThemeSettings } from './theme-settings';
+import { isEmbedded } from './utils/embedded';
 
 const { Header } = Layout;
 
@@ -152,7 +153,7 @@ const AppLayout = () => {
 	const watermarkColor = resolvedThemeMode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)';
 
 	// 获取用户详情
-	const { data: user, loading: userLoading } = useRequest(
+	const { data: user, loading: userLoading, error, refresh } = useRequest(
 		async () => {
 			const resp = await window.wechatRobotClient.user.selfList();
 			return resp.data.data;
@@ -191,8 +192,22 @@ const AppLayout = () => {
 		},
 	];
 
+	if (isEmbedded && error && !user) {
+		return <Alert type="error" title="微信助手暂时无法加载" description={error.message} action={<Button onClick={refresh}>重试</Button>} />;
+	}
+
 	if (!user || userLoading) {
 		return <Skeleton active />;
+	}
+
+	if (isEmbedded) {
+		return (
+			<UserContext.Provider value={{ user, signOut }}>
+				<Layout style={rootStyle}>
+					<Outlet />
+				</Layout>
+			</UserContext.Provider>
+		);
 	}
 
 	return (

@@ -2,7 +2,12 @@
 # The robot still uses Tianhe's unified model gateway.
 services:
   web:
+    env_file:
+      - path: .env.wechat-workbench
+        required: false
+        format: raw
     environment:
+      WECHAT_ROBOT_ADMIN_INTERNAL_URL: http://wechat-nginx
       WECHAT_ROBOT_ADMIN_URL: http://10.70.72.78:8080
       # Both services are published on this host; keep embedded login cookies same-site.
       WECHAT_ROBOT_ADMIN_FOLLOW_HOST: "true"

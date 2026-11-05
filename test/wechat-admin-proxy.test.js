@@ -23,12 +23,14 @@ test('Retired WeChat mutation endpoints never contact 8000', async () => {
     res.writeHead(202, {'Content-Type':'application/json'}); res.end('{"id":"mock-only"}');
   });
   const gateway = http.createServer((req,res) => proxyWechatAdmin(req,res,new URL(req.url,'http://local')));
-  const saved = {wechatAdminBaseUrl:config.wechatAdminBaseUrl, wechatAdminToken:config.wechatAdminToken, wechatRobotAdminUrl:config.wechatRobotAdminUrl, wechatRobotAdminFollowHost:config.wechatRobotAdminFollowHost};
+  const saved = {wechatAdminBaseUrl:config.wechatAdminBaseUrl, wechatAdminToken:config.wechatAdminToken, wechatRobotAdminUrl:config.wechatRobotAdminUrl, wechatRobotAdminFollowHost:config.wechatRobotAdminFollowHost, wechatRobotAdminInternalUrl:config.wechatRobotAdminInternalUrl, wechatRobotAdminLoginToken:config.wechatRobotAdminLoginToken};
   try {
     await new Promise(resolve => upstream.listen(0,'127.0.0.1',resolve));
     await new Promise(resolve => gateway.listen(0,'127.0.0.1',resolve));
     config.wechatAdminBaseUrl = `http://127.0.0.1:${upstream.address().port}`;
     config.wechatAdminToken = 'server-private';
+    config.wechatRobotAdminInternalUrl = '';
+    config.wechatRobotAdminLoginToken = '';
     const body = new FormData(); body.append('content','模拟消息'); body.append('image',new Blob(['mock-bytes'],{type:'image/png'}),'demo.png');
     const result = await fetch(`http://127.0.0.1:${gateway.address().port}/api/wechat/broadcasts`, {method:'POST',body,headers:{Cookie:'browser-session',Authorization:'Bearer browser'}});
     assert.equal(result.status,410);
@@ -40,6 +42,14 @@ test('Retired WeChat mutation endpoints never contact 8000', async () => {
     assert.deepEqual(await (await fetch(adminConfigUrl)).json(),{url:'http://127.0.0.1:8080/'});
     config.wechatRobotAdminFollowHost = true;
     assert.deepEqual(await (await fetch(adminConfigUrl)).json(),{url:'http://127.0.0.1:8080/',followHost:true});
+    config.wechatRobotAdminInternalUrl = 'http://private-robot-service';
+    config.wechatRobotAdminLoginToken = 'server-only-wechat-login-token';
+    const embedded = await (await fetch(adminConfigUrl)).json();
+    assert.deepEqual(embedded, {url:'/wechat-workbench/',embedded:true});
+    assert.doesNotMatch(JSON.stringify(embedded), /private-robot-service|server-only-wechat-login-token/);
+    config.wechatRobotAdminLoginToken = '';
+    assert.deepEqual(await (await fetch(adminConfigUrl)).json(),{url:'http://127.0.0.1:8080/',followHost:true});
+    config.wechatRobotAdminInternalUrl = '';
     for (const invalid of ['javascript:alert(1)', 'http://user:password@localhost/', '']) {
       config.wechatRobotAdminUrl = invalid;
       assert.equal((await fetch(adminConfigUrl)).status,503);

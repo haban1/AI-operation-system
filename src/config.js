@@ -58,6 +58,8 @@ export const config = {
   contentLibraryMaxFileBytes: Math.max(1024, Math.min(20 * 1024 ** 3, numberEnv('CONTENT_LIBRARY_MAX_FILE_BYTES', 2 * 1024 ** 3))),
   wechatRobotAdminUrl: process.env.WECHAT_ROBOT_ADMIN_URL || '',
   wechatRobotAdminFollowHost: booleanEnv('WECHAT_ROBOT_ADMIN_FOLLOW_HOST', false),
+  wechatRobotAdminInternalUrl: String(process.env.WECHAT_ROBOT_ADMIN_INTERNAL_URL || '').trim(),
+  wechatRobotAdminLoginToken: process.env.WECHAT_ROBOT_ADMIN_LOGIN_TOKEN || '',
   port: numberEnv('PORT', 3100),
   host: process.env.SERVER_HOST || '127.0.0.1',
   agentPort: numberEnv('AGENT_PORT', 17831),

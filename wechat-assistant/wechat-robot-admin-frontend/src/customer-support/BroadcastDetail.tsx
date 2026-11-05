@@ -1,3 +1,4 @@
+import { robotUrl } from '@/utils/embedded';
 import { useMemoizedFn, useRequest } from 'ahooks';
 import {
 	Alert,
@@ -71,7 +72,7 @@ const BroadcastImage = React.memo((props: IImageProps) => {
 			) : (
 				<Image
 					key={attempt}
-					src={`/api/v1/support/broadcasts/image?${query}`}
+					src={robotUrl(`/api/v1/support/broadcasts/image?${query}`)}
 					alt={`群发记录图片 ${props.position}`}
 					width={180}
 					height={150}

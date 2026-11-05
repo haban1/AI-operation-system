@@ -1,3 +1,4 @@
+import { robotUrl } from '@/utils/embedded';
 import { InboxOutlined } from '@ant-design/icons';
 import { useRequest } from 'ahooks';
 import { App, Avatar, Button, Col, Flex, Input, Modal, Progress, Row, Select, Space, Upload } from 'antd';
@@ -144,13 +145,13 @@ const SendMessage = (props: IProps) => {
 			let path = '';
 			switch (type) {
 				case 'image':
-					path = '/api/v1/message/send/image?id=' + props.robotId;
+					path = robotUrl('/api/v1/message/send/image?id=') + props.robotId;
 					break;
 				case 'video':
-					path = '/api/v1/message/send/video?id=' + props.robotId;
+					path = robotUrl('/api/v1/message/send/video?id=') + props.robotId;
 					break;
 				case 'voice':
-					path = '/api/v1/message/send/voice?id=' + props.robotId;
+					path = robotUrl('/api/v1/message/send/voice?id=') + props.robotId;
 					break;
 			}
 			const resp = await axios.post(path, formData, {
@@ -277,7 +278,7 @@ const SendMessage = (props: IProps) => {
 				formData.append('total_chunks', totalChunks.toString());
 				formData.append('chunk', blob, file.name + '.part' + index);
 				const resp = await axios.post<{ code: number; message: string }>(
-					'/api/v1/message/send/file?id=' + props.robotId,
+					robotUrl('/api/v1/message/send/file?id=') + props.robotId,
 					formData,
 					{
 						headers: { 'Content-Type': 'multipart/form-data' },

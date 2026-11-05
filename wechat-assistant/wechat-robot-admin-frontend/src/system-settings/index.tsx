@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import type * as Api from '@/api/wechat-robot/wechat-robot';
 import { filterOption } from '@/common/filter-option';
 import ParamsGroup from '@/components/ParamsGroup';
+import { isEmbedded } from '@/utils/embedded';
 
 interface IProps {
 	robotId: number;
@@ -240,6 +241,7 @@ const SystemSettings = (props: IProps) => {
 						<Form.Item
 							layout="horizontal"
 							name="api_token_enabled"
+							hidden={isEmbedded}
 							label="Api密钥调用接口"
 							valuePropName="checked"
 							initialValue={false}
@@ -251,7 +253,7 @@ const SystemSettings = (props: IProps) => {
 						</Form.Item>
 						<Form.Item
 							label="Api密钥"
-							hidden={!apiToken}
+							hidden={isEmbedded || !apiToken}
 							tooltip="Api密钥用于调用接口，刷新后以前的Api密钥将失效，支持Authorization Header、X-API-Token Header、api_token Query参数三种方式调用接口 (界面上所有需要登录态的接口均可使用Api密钥调用)"
 						>
 							<Input

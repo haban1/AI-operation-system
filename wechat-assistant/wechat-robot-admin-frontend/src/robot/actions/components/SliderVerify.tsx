@@ -1,3 +1,4 @@
+import { robotUrl } from '@/utils/embedded';
 import { Button, message, Modal } from 'antd';
 import React, { useEffect, useState } from 'react';
 
@@ -58,7 +59,7 @@ const SliderVerify = (props: IProps) => {
 		>
 			<div style={{ width: '100%', height: '310px', margin: '0 auto', border: '1px solid #f0f0f0', borderRadius: 8 }}>
 				<iframe
-					src={`/api/v1/robot/login/slider?id=${props.robotId}&data62=${props.data62}&ticket=${props.ticket}`}
+					src={robotUrl(`/api/v1/robot/login/slider?id=${props.robotId}&data62=${props.data62}&ticket=${props.ticket}`)}
 					style={{
 						width: '100%',
 						height: '100%',

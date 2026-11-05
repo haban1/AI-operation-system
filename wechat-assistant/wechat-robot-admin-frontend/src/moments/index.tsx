@@ -1,3 +1,4 @@
+import { robotUrl } from '@/utils/embedded';
 import {
 	ArrowUpOutlined,
 	CameraOutlined,
@@ -522,7 +523,7 @@ const Moments = (props: IProps) => {
 															{media.length === 1 && Number(media[0].Type) === 6 ? (
 																<MediaVideo
 																	dataSource={media[0]}
-																	videoDownloadUrl={`/api/v1/moments/down-media?id=${props.robotId}&url=${encodeURIComponent(media[0]!.URL!.Value!)}`}
+																	videoDownloadUrl={robotUrl(`/api/v1/moments/down-media?id=${props.robotId}&url=${encodeURIComponent(media[0]!.URL!.Value!)}`)}
 																/>
 															) : (
 																<MediaList

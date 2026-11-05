@@ -19,6 +19,7 @@ import { beginConversationHandoff, conversationAutomationDisabled, markHumanFoll
 import { buildManualNotification, resolveRelatedNote } from './services/manual-notification.js';
 import { MINI_PROGRAM_PLATFORM_CODE, requestMiniProgramHandoff } from './services/mini-program-channel.js';
 import { proxyWechatAdmin } from './services/wechat-admin-proxy.js';
+import { createWechatWorkbenchProxy, isWechatWorkbenchPath } from './services/wechat-workbench-proxy.js';
 import { handleModelGateway } from './services/model-gateway.js';
 import { getAiSignalIntegration } from './services/ai-signal-integration.js';
 import { createAiSignalProxy, isAiSignalProxyPath } from './services/ai-signal-proxy.js';
@@ -3816,6 +3817,12 @@ const proxyAiSignal = createAiSignalProxy({
   allowedOrigins: config.allowedOrigins,
   maxBodyBytes: config.requestBodyMaxBytes,
 });
+const proxyWechatWorkbench = createWechatWorkbenchProxy({
+  upstreamUrl: config.wechatRobotAdminInternalUrl,
+  loginToken: config.wechatRobotAdminLoginToken,
+  authorize: requireAdminSession,
+  allowedOrigins: config.allowedOrigins,
+});
 
 async function api(req, res, url) {
   const { pathname } = url;
@@ -6070,6 +6077,7 @@ const server = http.createServer(async (req, res) => {
       return res.end();
     }
     if (isAiSignalProxyPath(url.pathname)) return await proxyAiSignal(req, res, url);
+    if (isWechatWorkbenchPath(url.pathname)) return await proxyWechatWorkbench(req, res, url);
     if (url.pathname === '/video-workbench' || url.pathname.startsWith('/video-workbench/')) {
       if (url.pathname === '/video-workbench') { res.writeHead(302, { Location: '/video-workbench/' }); return res.end(); }
       return await videoStudioRequest(req, res);

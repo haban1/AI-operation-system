@@ -2,6 +2,7 @@ import { useMemoizedFn } from 'ahooks';
 import { App as AntdApp, ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { isEmbedded } from '@/utils/embedded';
 import {
 	defaultThemePreferences,
 	getComponentSizeByDensity,
@@ -37,6 +38,9 @@ const getSystemIsDark = () => {
 };
 
 const getInitialPreferences = () => {
+	if (isEmbedded) {
+		return parseThemePreferences({ ...defaultThemePreferences, themeMode: 'dark', colorPreset: 'forest' });
+	}
 	if (typeof window === 'undefined') {
 		return defaultThemePreferences;
 	}
@@ -83,7 +87,7 @@ const ThemeSettingsProvider = (props: IProps) => {
 	}, []);
 
 	useEffect(() => {
-		window.localStorage.setItem(themeStorageKey, JSON.stringify(preferences));
+		if (!isEmbedded) window.localStorage.setItem(themeStorageKey, JSON.stringify(preferences));
 	}, [preferences]);
 
 	useEffect(() => {
@@ -112,7 +116,7 @@ const ThemeSettingsProvider = (props: IProps) => {
 				componentSize={componentSize}
 			>
 				<AntdApp>
-					<div className="skin" />
+					{!isEmbedded && <div className="skin" />}
 					{props.children}
 				</AntdApp>
 			</ConfigProvider>

@@ -12,6 +12,31 @@ body {
 	text-rendering: optimizeLegibility;
 }
 
+.embedded-workbench {
+	background: var(--ant-color-bg-container);
+}
+
+.embedded-robot-heading {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 12px;
+	padding: 12px 16px;
+	border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.embedded-robot-body {
+	height: calc(100vh - 126px);
+	min-height: 520px;
+}
+
+@media (max-width: 1100px) {
+	.embedded-robot-body .hide-on-mobile {
+		display: none !important;
+	}
+}
+
 html[data-theme-mode='light'] body {
 	background-color: #f0f2f5;
 	color: #334155;

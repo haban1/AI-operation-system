@@ -1,3 +1,4 @@
+import { robotUrl } from '@/utils/embedded';
 import { FileImageOutlined, PlusOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import { useRequest } from 'ahooks';
 import { App, Avatar, Col, Form, Image, Input, Modal, Row, Segmented, Select, Spin, Upload } from 'antd';
@@ -120,7 +121,7 @@ const PostMoment = (props: IProps) => {
 			});
 			formData.append('media', media as FileType);
 			formData.append('id', props.robotId.toString());
-			const resp = await axios.post('/api/v1/moments/upload-media?id=' + props.robotId, formData, {
+			const resp = await axios.post(robotUrl('/api/v1/moments/upload-media?id=') + props.robotId, formData, {
 				headers: {
 					'Content-Type': 'multipart/form-data',
 				},

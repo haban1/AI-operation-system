@@ -1,3 +1,4 @@
+import { robotUrl } from '@/utils/embedded';
 import { CloseCircleFilled, DeleteFilled, EllipsisOutlined, HeartFilled, HeartOutlined } from '@ant-design/icons';
 import { useMemoizedFn, useRequest, useSetState } from 'ahooks';
 import { App, Avatar, Button, Col, Drawer, Dropdown, Empty, Flex, List, Row, Space, Spin, Tooltip } from 'antd';
@@ -420,7 +421,7 @@ const SpecifiContactMomentDetail = (props: IProps) => {
 															{media.length === 1 && Number(media[0].Type) === 6 ? (
 																<MediaVideo
 																	dataSource={media[0]}
-																	videoDownloadUrl={`/api/v1/moments/down-media?id=${props.robotId}&url=${encodeURIComponent(media[0]!.URL!.Value!)}`}
+																	videoDownloadUrl={robotUrl(`/api/v1/moments/down-media?id=${props.robotId}&url=${encodeURIComponent(media[0]!.URL!.Value!)}`)}
 																/>
 															) : (
 																<MediaList

@@ -1,3 +1,4 @@
+import { robotUrl } from '@/utils/embedded';
 import { useMemoizedFn, useRequest, useSetState } from 'ahooks';
 import { Alert, Avatar, Button, Col, Drawer, Empty, List, Row, Spin } from 'antd';
 import dayjs from 'dayjs';
@@ -211,7 +212,7 @@ const SpecifiContactMomentList = (props: IProps) => {
 														{media.length === 1 && Number(media[0].Type) === 6 ? (
 															<MediaVideo
 																dataSource={media[0]}
-																videoDownloadUrl={`/api/v1/moments/down-media?id=${props.robotId}&url=${encodeURIComponent(media[0]!.URL!.Value!)}`}
+																videoDownloadUrl={robotUrl(`/api/v1/moments/down-media?id=${props.robotId}&url=${encodeURIComponent(media[0]!.URL!.Value!)}`)}
 															/>
 														) : (
 															<MediaList

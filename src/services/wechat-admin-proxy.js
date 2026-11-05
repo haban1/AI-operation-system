@@ -22,6 +22,9 @@ export async function proxyWechatAdmin(req, res, url) {
     res.end(JSON.stringify(data));
   };
   if (req.method === 'GET' && url.pathname === '/api/wechat/robot-admin' && !url.search) {
+    if (config.wechatRobotAdminInternalUrl && config.wechatRobotAdminLoginToken) {
+      return respond(200, { url: '/wechat-workbench/', embedded: true });
+    }
     try {
       const address = new URL(config.wechatRobotAdminUrl);
       if (!['http:', 'https:'].includes(address.protocol) || address.username || address.password) throw new Error('Invalid address');

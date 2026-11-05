@@ -13,7 +13,7 @@ const isDev = process.env.NODE_ENV === 'development';
 
 const config: RsbuildConfig = {
 	output: {
-		assetPrefix: '/',
+		assetPrefix: 'auto',
 	},
 	tools: {
 		rspack: {

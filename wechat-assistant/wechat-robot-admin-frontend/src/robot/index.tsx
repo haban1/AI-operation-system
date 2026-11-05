@@ -2,6 +2,7 @@ import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { useBoolean, useMemoizedFn, useRequest, useSetState } from 'ahooks';
 import { App, Breadcrumb, Button, Col, Empty, Input, notification, Pagination, Radio, Row, Spin } from 'antd';
 import { useEffect } from 'react';
+import { isEmbedded } from '@/utils/embedded';
 import NewRobot from './NewRobot';
 import Robot from './Robot';
 import {
@@ -21,6 +22,7 @@ const RobotList = () => {
 	const [search, setSearch] = useSetState({ keyword: '', status: 'all', pageIndex: 1 });
 
 	useEffect(() => {
+		if (isEmbedded) return;
 		const closed = localStorage.getItem('robot-chat-room-closed');
 		if (closed && Date.now() - parseInt(closed, 10) < 1000 * 60 * 60 * 24) {
 			// 如果在一天内关闭过提示，则不再提示

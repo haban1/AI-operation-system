@@ -11,6 +11,7 @@ import routers from './AppRoutes';
 import { UrlLogin } from './constant/redirect-url';
 import Login from './login';
 import { Init } from './utils/appInit';
+import { appBasePath, isEmbedded } from './utils/embedded';
 
 dayjs.extend(customParseFormat);
 dayjs.extend(relativeTime);
@@ -19,7 +20,7 @@ Init();
 
 const App = () => {
 	return (
-		<Router>
+		<Router basename={appBasePath || '/'}>
 			<Suspense fallback={<Skeleton active />}>
 				<Routes>
 					<Route element={<AppLayout />}>
@@ -32,10 +33,10 @@ const App = () => {
 							);
 						})}
 					</Route>
-					<Route
+					{!isEmbedded && <Route
 						path={UrlLogin}
 						element={<Login />}
-					/>
+					/>}
 					<Route
 						path="*"
 						element={<App404 />}

@@ -16,7 +16,7 @@ import {
 	WechatFilled,
 } from '@ant-design/icons';
 import { useMemoizedFn, useRequest } from 'ahooks';
-import { App, Avatar, Col, Drawer, Row, Skeleton, Spin, Tabs, Tag } from 'antd';
+import { Alert, App, Avatar, Button, Col, Drawer, Row, Skeleton, Spin, Tabs, Tag } from 'antd';
 import type { TabsProps } from 'antd';
 import dayjs from 'dayjs';
 import React, { Suspense, useEffect } from 'react';
@@ -27,13 +27,17 @@ import SkillsFilled from '@/icons/SkillsFilled';
 import TextKnowledgeFilled from '@/icons/TextKnowledgeFilled';
 import GlobalSettings from '@/settings';
 import RecreateRobotContainer from '../RecreateRobotContainer';
+import Login from '../Login';
+import Logout from '../Logout';
 import Remove from '../Remove';
 import RestartRobotContainer from '../RestartRobotContainer';
+import EmbeddedDetailLayout from './EmbeddedDetailLayout';
 import { BaseContainer, DrawerHeaderActions, DrawerHeaderTitle, LeftPanel } from './RobotDetail.styled';
 
 interface IProps {
 	robotId: number;
 	open: boolean;
+	embedded?: boolean;
 	onListRefresh: () => void;
 	onDetailRefresh: () => void;
 	onClose: () => void;
@@ -71,7 +75,7 @@ const RobotDetail = (props: IProps) => {
 		props.onModuleLoaded?.();
 	}, []);
 
-	const { data, loading, refresh } = useRequest(
+	const { data, loading, error, refresh } = useRequest(
 		async () => {
 			const resp = await window.wechatRobotClient.robot.viewList({
 				id: props.robotId,
@@ -97,6 +101,7 @@ const RobotDetail = (props: IProps) => {
 	});
 
 	if (!data) {
+		if (error) return <Alert type="error" title="微信账号信息加载失败" description={error.message} action={<Button onClick={refresh}>重试</Button>} />;
 		return (
 			<Skeleton
 				avatar
@@ -224,8 +229,10 @@ const RobotDetail = (props: IProps) => {
 		},
 	];
 
+	const DetailLayout = props.embedded ? EmbeddedDetailLayout : Drawer;
+
 	return (
-		<Drawer
+		<DetailLayout
 			title={
 				<DrawerHeaderTitle>
 					<Avatar
@@ -244,6 +251,9 @@ const RobotDetail = (props: IProps) => {
 			}
 			extra={
 				<DrawerHeaderActions className="hide-on-mobile">
+					{props.embedded && (data.status === 'online'
+						? <Logout robotId={data.id!} onRefresh={onRefresh} />
+						: <Login robotId={data.id!} robot={data} onRefresh={onRefresh} />)}
 					<RestartRobotContainer
 						robotId={data.id!}
 						robot={data}
@@ -463,7 +473,7 @@ const RobotDetail = (props: IProps) => {
 					)}
 				</Col>
 			</Row>
-		</Drawer>
+		</DetailLayout>
 	);
 };
 
