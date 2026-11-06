@@ -213,15 +213,15 @@ test('mini processor separates evidence gaps from bounded missing-subject clarif
   }
   const beforeMissing = requests.length;
   const guided = [];
-  for (let n = 0; n < 3; n += 1) guided.push(await server.processMessage(seed('怎么申请', { conversationId: 'missing-subject' }).id));
-  assert.deepEqual(guided.slice(0, 2).map(message => message.decision), ['KNOWLEDGE_GAP_GUIDANCE', 'KNOWLEDGE_GAP_GUIDANCE']);
+  for (let n = 0; n < 5; n += 1) guided.push(await server.processMessage(seed('怎么申请', { conversationId: 'missing-subject' }).id));
+  assert.deepEqual(guided.slice(0, 4).map(message => message.decision), Array(4).fill('KNOWLEDGE_GAP_GUIDANCE'));
   assert.equal(requests.length, beforeMissing);
-  const limit = guided[2];
+  const limit = guided[4];
   assert.equal(limit.status, 'MANUAL_REQUIRED');
   assert.equal(row('SELECT handling_mode FROM conversations WHERE id=?', limit.conversation_id).handling_mode, 'HANDOFF_PENDING');
   assert.equal(row('SELECT COUNT(*) AS n FROM notifications WHERE message_id=?', limit.id).n, 1);
   assert.equal(row('SELECT COUNT(*) AS n FROM mini_program_callback_outbox WHERE message_id=?', limit.id).n, 0);
-  assert.equal(JSON.parse(limit.reply_context_json).guidanceAttempt, 3);
+  assert.equal(JSON.parse(limit.reply_context_json).guidanceAttempt, 5);
   const failed = await server.processMessage(seed('服务异常怎么办').id);
   assert.equal(failed.status, 'MANUAL_REQUIRED');
   assert.equal(row('SELECT handling_mode FROM conversations WHERE id=?', failed.conversation_id).handling_mode, 'HANDOFF_PENDING');

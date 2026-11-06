@@ -160,7 +160,7 @@ test('test runner ignores project .env values and preserves child exit status', 
     assert.equal(probe.status, 0, probe.stderr);
     assert.deepEqual(JSON.parse(probe.stdout), {
       nodeEnv: 'test',
-      businessGuidanceMaxAttempts: 3,
+      businessGuidanceMaxAttempts: 5,
       ragFormalRoutingEnabled: false,
       ragAdminEnabled: false,
       channelSplitEnabled: false,
@@ -199,7 +199,7 @@ test('direct node test runs ignore project .env values', () => {
       import assert from 'node:assert/strict';
       import { config } from './src/config.js';
       test('config remains isolated', () => {
-        assert.equal(config.businessGuidanceMaxAttempts, 3);
+        assert.equal(config.businessGuidanceMaxAttempts, 5);
         assert.equal(config.ragFormalRoutingEnabled, false);
         assert.equal(config.ragAdminEnabled, false);
         assert.equal(config.channelSplitEnabled, false);

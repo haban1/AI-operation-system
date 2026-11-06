@@ -3530,7 +3530,7 @@ function xiaozhiDiagnostic(result){
   const analysis=result.queryAnalysis;
   const queryDetails=analysis?`${analysis.keywords?.length?`<div><b>提取关键词：</b>${esc(analysis.keywords.join('、'))}</div>`:''}<div><b>实际检索问题：</b>${esc(analysis.resolvedQuestion||'—')}</div>`:'';
   const scoreSource=hasRetrievalScore?'<div><b>分数来源：</b>RAG 知识检索与重排序，表示知识匹配程度；是否能回答还需检查答案依据。</div>':'';
-  const guidance=Number(result.guidanceAttempt||0)>0?`<div><b>业务引导：</b>第 ${Number(result.guidanceAttempt)}/${Number(result.maxGuidanceAttempts||3)} 轮${result.handoffRequested?'，已判定转人工':result.handoffOffered?'，已提供“转人工”入口':'，继续确认具体业务'}</div>`:'';
+  const guidance=Number(result.guidanceAttempt||0)>0?`<div><b>业务引导：</b>第 ${Number(result.guidanceAttempt)}/${Number(result.maxGuidanceAttempts||5)} 轮${result.handoffRequested?'，已判定转人工':result.handoffOffered?'，已提供“转人工”入口':'，继续确认具体业务'}</div>`:'';
   const references=xiaozhiSourceReferences(result);
   const sources=references.map(item=>{
     const content=xiaozhiSourceContent(item);

@@ -111,16 +111,16 @@ test('小智与五个平台共用外层路由、引导计数和人工接管状�
     }
   });
 
-  await t.test('问候之后第三次仍未补充业务对象时按澄清上限转人工', async () => {
+  await t.test('问候不清零，默认累计第五次仍未补充业务对象时转人工', async () => {
     const ask = await chat();
-    for (const content of ['怎么申请', '怎么申请', '你好？']) assert.equal((await ask(content)).action, 'REPLY');
+    for (const content of ['怎么申请', '怎么申请', '你好？', '怎么申请', '怎么申请']) assert.equal((await ask(content)).action, 'REPLY');
     const result = await ask('怎么申请');
-    assert.equal(result.action, 'HANDOFF'); assert.equal(result.guidanceAttempt, 3);
+    assert.equal(result.action, 'HANDOFF'); assert.equal(result.guidanceAttempt, 5);
     for (const platform of platforms) {
       const id = crypto.randomUUID();
-      for (const content of ['怎么申请', '怎么申请', '你好？']) await simulate(platform, id, content);
+      for (const content of ['怎么申请', '怎么申请', '你好？', '怎么申请', '怎么申请']) await simulate(platform, id, content);
       const last = await simulate(platform, id, '怎么申请');
-      assert.equal(last.status, 'MANUAL_REQUIRED'); assert.equal(last.reply_job_id, null); assert.equal(attempts(last), 3);
+      assert.equal(last.status, 'MANUAL_REQUIRED'); assert.equal(last.reply_job_id, null); assert.equal(attempts(last), 5);
     }
   });
 

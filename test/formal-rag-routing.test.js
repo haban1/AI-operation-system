@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildFormalRagRequest, formalRagReplyResult, routeBusinessClarification, validateFormalRagResponseSnapshot } from '../src/services/formal-rag-routing.js';
-import { businessGuidanceProgress } from '../src/services/conversation-policy.js';
+import { BUSINESS_GUIDANCE_MAX_ATTEMPTS, CONVERSATION_HISTORY_MAX_TURNS, businessGuidanceProgress, nextBusinessGuidanceAttempt } from '../src/services/conversation-policy.js';
 import { validateFormalRagRequest } from '../src/services/rag-contract.js';
 import { getReplyLimit, validateReplyTextLength } from '../src/services/platform-reply-policy.js';
 
@@ -139,7 +139,7 @@ test('RAG 评论没有可靠答案时直接转人工且不生成公开回复', (
 
 test('私信证据不足独立于澄清预算，不把检索失败变成回问或自动人工', () => {
   for (const status of ['NO_ANSWER', 'REJECTED', 'NEED_CLARIFICATION']) {
-    for (const guidanceAttempt of [1, 2, 3]) {
+    for (const guidanceAttempt of [1, 2, 3, 4, 5]) {
       const result = formalRagReplyResult({ result: status, reasonCode: 'INSUFFICIENT_EVIDENCE' }, {
         question: '适合初学者的课程有哪些？', guidanceAttempt
       });
@@ -158,7 +158,7 @@ test('私信证据不足独立于澄清预算，不把检索失败变成回问�
   }
 });
 
-test('真正缺申请对象仍可澄清，第三次缺对象才消耗完澄清预算', () => {
+test('显式三次上限仍兼容：缺申请对象第三次耗尽澄清预算', () => {
   for (const platformCode of ['douyin', 'wechat_channels', 'weibo', 'bilibili', 'xiaohongshu']) {
     const result = formalRagReplyResult({ result: 'NEED_CLARIFICATION' }, {
       platformCode, question: '怎么申请？'
@@ -167,14 +167,75 @@ test('真正缺申请对象仍可澄清，第三次缺对象才消耗完澄清�
     assert.match(result.replyText, /哪项业务.*申请流程/);
     assert.equal(result.guidanceAttempt, 1);
   }
-  const third = formalRagReplyResult({ result: 'NEED_CLARIFICATION' }, { question: '怎么申请', guidanceAttempt: 3 });
+  const third = formalRagReplyResult({ result: 'NEED_CLARIFICATION' }, { question: '怎么申请', guidanceAttempt: 3, maxGuidanceAttempts: 3 });
   assert.equal(third.action, 'HANDOFF');
   assert.equal(third.decision, 'RAG_CLARIFICATION_LIMIT');
   assert.equal(third.replyText, null);
   const resolved = formalRagReplyResult({ result: 'NEED_CLARIFICATION' }, {
-    question: '怎么申请', context: [{ role: 'USER', text: '我想了解澳车北上' }], guidanceAttempt: 3
+    question: '怎么申请', context: [{ role: 'USER', text: '我想了解澳车北上' }], guidanceAttempt: 3, maxGuidanceAttempts: 3
   });
   assert.equal(resolved.decision, 'RAG_KNOWLEDGE_GAP', '用户历史已明确对象时不再回问同一个对象');
+});
+
+test('默认累计五次缺对象才转人工，前三轮历史窗口不限制累计计数', () => {
+  assert.equal(BUSINESS_GUIDANCE_MAX_ATTEMPTS, 5);
+  assert.equal(CONVERSATION_HISTORY_MAX_TURNS, 3);
+  let attempts = 0;
+  const context = [];
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const result = routeBusinessClarification({
+      question: '怎么申请', context: context.slice(-CONVERSATION_HISTORY_MAX_TURNS * 2),
+      guidanceAttempt: nextBusinessGuidanceAttempt(attempts)
+    });
+    assert.equal(result.maxGuidanceAttempts, 5);
+    assert.equal(result.guidanceAttempt, attempt);
+    assert.equal(result.action, attempt < 5 ? 'REPLY' : 'HANDOFF');
+    assert.equal(result.handoffRequested === true, attempt === 5);
+    if (attempt < 5) {
+      assert.match(result.replyText, /哪项业务.*申请流程/);
+      assert.equal(result.handoffOffered, false);
+    } else {
+      assert.equal(result.decision, 'KNOWLEDGE_GUIDANCE_LIMIT');
+      assert.equal(result.replyText, null);
+      assert.match(result.reason, /5次.*转人工/);
+    }
+    attempts = businessGuidanceProgress(result, attempts).attempts;
+    assert.equal(attempts, attempt);
+    context.push({ role: 'USER', text: '怎么申请' });
+    if (result.replyText) context.push({ role: 'ASSISTANT', text: result.replyText });
+  }
+});
+
+test('默认五次预算也约束真正缺对象的 RAG 澄清，前四次仍正常回问', () => {
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const result = formalRagReplyResult({ result: 'NEED_CLARIFICATION' }, {
+      question: '怎么申请', guidanceAttempt: attempt
+    });
+    assert.equal(result.maxGuidanceAttempts, 5);
+    assert.equal(result.guidanceAttempt, attempt);
+    assert.equal(result.action, attempt < 5 ? 'REPLY' : 'HANDOFF');
+    assert.equal(result.decision, attempt < 5 ? 'RAG_NEED_CLARIFICATION' : 'RAG_CLARIFICATION_LIMIT');
+    if (attempt < 5) assert.match(result.replyText, /哪项业务.*申请流程/);
+    else assert.equal(result.replyText, null);
+  }
+});
+
+test('连续五次证据不足不消耗五次澄清预算，也不把已有四次澄清误推到人工', () => {
+  for (const initialAttempts of [0, 4]) {
+    let attempts = initialAttempts;
+    for (let index = 0; index < 5; index += 1) {
+      const result = formalRagReplyResult({ result: 'NO_ANSWER', reasonCode: 'INSUFFICIENT_EVIDENCE' }, {
+        question: '社区入驻有什么要求？', guidanceAttempt: nextBusinessGuidanceAttempt(attempts)
+      });
+      assert.equal(result.action, 'REPLY');
+      assert.equal(result.decision, 'RAG_KNOWLEDGE_GAP');
+      assert.equal(result.maxGuidanceAttempts, 5);
+      assert.equal(result.guidanceAttempt, 0);
+      assert.equal(result.handoffRequested, false);
+      attempts = businessGuidanceProgress(result, attempts).attempts;
+      assert.equal(attempts, initialAttempts);
+    }
+  }
 });
 
 test('检索候选不能制造用户意图歧义，也不能当作已可靠作答的引用', () => {
@@ -199,7 +260,7 @@ test('政策对象不明时先确认，已明确的业务和评论仍进入知�
   assert.equal(routeBusinessClarification({ question: '港澳社区有什么政策？' }), null);
   assert.equal(routeBusinessClarification({ question: '这个有什么政策？', context: [{ role: 'USER', text: '我想了解港澳服务社区' }] }), null);
   assert.equal(routeBusinessClarification({ question: '这个有什么政策？', messageType: 'COMMENT' }), null);
-  const repeated = routeBusinessClarification({ question: '这个有什么政策？', guidanceAttempt: 3, context: [{ role: 'USER', text: '这个有什么政策？' }] });
+  const repeated = routeBusinessClarification({ question: '这个有什么政策？', guidanceAttempt: 3, maxGuidanceAttempts: 3, context: [{ role: 'USER', text: '这个有什么政策？' }] });
   assert.equal(repeated.action, 'HANDOFF');
   assert.equal(repeated.replyText, null);
 });

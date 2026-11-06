@@ -62,7 +62,7 @@ test('知识缺口话术能提取“是否可以带孩子”的主题', () => {
   assert.equal(questionTopic('能不能带娃一起去'), '是否可以带孩子');
 });
 
-test('兜底话术默认在第三次澄清提示转人工，前两次不提前提示', () => {
+test('兜底话术默认在第五次澄清提示转人工，前四次不提前提示', () => {
   const commentReply = knowledgeGapReply('这个活动具体怎么安排？', { messageType: 'COMMENT' });
   assert.equal(commentReply, '你说的是哪场活动？把活动名字发我，再告诉我想问哪方面。');
   assert.doesNotMatch(commentReply, /转人工|请输入|无法确认|私信/);
@@ -70,10 +70,12 @@ test('兜底话术默认在第三次澄清提示转人工，前两次不提前�
   const privateReply = knowledgeGapReply('这个活动具体怎么安排？', { messageType: 'PRIVATE_MESSAGE', attempt: 1 });
   assert.match(privateReply, /哪场活动|活动名字/);
   assert.doesNotMatch(privateReply, /转人工/);
-  assert.doesNotMatch(knowledgeGapReply('这个活动具体怎么安排？', { messageType: 'PRIVATE_MESSAGE', attempt: 2 }), /转人工/);
-  assert.doesNotMatch(smallTalkFallbackReply('CASUAL_CHAT', { attempt: 2 }), /转人工/);
-  assert.match(smallTalkFallbackReply('CASUAL_CHAT', { attempt: 3 }), /转人工/);
-  const escalatedReply = knowledgeGapReply('这个活动具体怎么安排？', { messageType: 'PRIVATE_MESSAGE', attempt: 3 });
+  for (const attempt of [1, 2, 3, 4]) {
+    assert.doesNotMatch(knowledgeGapReply('这个活动具体怎么安排？', { messageType: 'PRIVATE_MESSAGE', attempt }), /转人工/);
+    assert.doesNotMatch(smallTalkFallbackReply('CASUAL_CHAT', { attempt }), /转人工/);
+  }
+  assert.match(smallTalkFallbackReply('CASUAL_CHAT', { attempt: 5 }), /转人工/);
+  const escalatedReply = knowledgeGapReply('这个活动具体怎么安排？', { messageType: 'PRIVATE_MESSAGE', attempt: 5 });
   assert.match(escalatedReply, /转人工/);
   assert.equal((escalatedReply.match(/转人工/g) || []).length, 1);
 });
@@ -218,9 +220,9 @@ test('回复引擎的纯闲聊真实走千问闲聊通道，不进入知识库',
   assert.deepEqual(result.matches, []);
 });
 
-test('第三次仍无法明确业务时提供转人工入口，可靠知识答复会重置计数', async () => {
-  const previous = [1, 2].map(id => ({ id, content: '你好', decision: id % 2 ? 'SMALL_TALK' : 'KNOWLEDGE_GAP_GUIDANCE' }));
-  assert.equal(consecutiveBusinessGuidanceAttempts(previous), 2);
+test('第五次仍无法明确业务时提供转人工入口，可靠知识答复会重置计数', async () => {
+  const previous = [1, 2, 3, 4].map(id => ({ id, content: '你好', decision: id % 2 ? 'SMALL_TALK' : 'KNOWLEDGE_GAP_GUIDANCE' }));
+  assert.equal(consecutiveBusinessGuidanceAttempts(previous), 4);
   assert.equal(consecutiveBusinessGuidanceAttempts([...previous, { id: 5, decision: 'AUTO_REPLY' }]), 0);
   const result = await evaluateReply({
     message: { content: '你能做什么？' },
@@ -229,7 +231,7 @@ test('第三次仍无法明确业务时提供转人工入口，可靠知识答�
     recentMessages: previous,
     composeSmallTalkReplyFn: async () => ({ text: '我可以陪你聊聊。', businessDetected: false, model: 'unit-model' })
   });
-  assert.equal(result.guidanceAttempt, 3);
+  assert.equal(result.guidanceAttempt, 5);
   assert.equal(result.handoffOffered, true);
   assert.match(result.replyText, /转人工/);
   assert.doesNotMatch(result.replyText, /陪你聊/);

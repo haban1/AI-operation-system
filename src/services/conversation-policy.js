@@ -1,7 +1,7 @@
 // One historical round is a collected user question and its visible reply, if any.
 // The current question is separate; this limit never counts clarification attempts.
 export const CONVERSATION_HISTORY_MAX_TURNS = 3;
-export const BUSINESS_GUIDANCE_MAX_ATTEMPTS = 3;
+export const BUSINESS_GUIDANCE_MAX_ATTEMPTS = 5;
 
 const GUIDANCE_DECISIONS = new Set(['SMALL_TALK', 'GREETING_GUIDANCE', 'KNOWLEDGE_GAP_GUIDANCE', 'AUTO_REPLY_PARTIAL_KNOWLEDGE', 'RAG_NEED_CLARIFICATION', 'RAG_CLARIFICATION_LIMIT', 'KNOWLEDGE_GUIDANCE_LIMIT']);
 
@@ -31,7 +31,7 @@ export function enforceBusinessGuidanceLimit(result, { messageType = 'PRIVATE_ME
     ...result, action: 'HANDOFF',
     decision: result.decision === 'RAG_CLARIFICATION_LIMIT' ? result.decision : 'KNOWLEDGE_GUIDANCE_LIMIT',
     replyText: null, confidence: 0,
-    reason: `连续${limit}轮引导后仍没有可靠知识答案，转人工处理`,
+    reason: `累计${limit}次引导后仍未解决问题，转人工处理`,
     responseMode: 'BUSINESS_GUIDANCE_HANDOFF', guidanceAttempt: limit, maxGuidanceAttempts: limit,
     handoffOffered: false, handoffRequested: true
   };
