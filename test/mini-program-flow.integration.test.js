@@ -347,7 +347,7 @@ test('mini program channel preserves the end-to-end RAG, callback, handoff and r
     ]);
   });
 
-  await t.test('the third unresolved round hands off automatically, and notification confirmation terminates collection and marks user history', async () => {
+  await t.test('the third missing-subject clarification hands off automatically, and notification confirmation terminates collection and marks user history', async () => {
     const conversationId = 'clarification-flow';
     const userId = 'clarification-user';
     const clarificationValues = [];
@@ -356,7 +356,7 @@ test('mini program channel preserves the end-to-end RAG, callback, handoff and r
         conversationId,
         messageId: `clarification-${index}`,
         userId,
-        text: `无答案问题第${index}轮`
+        text: '怎么申请'
       });
       clarificationValues.push(value);
       const result = await submit(value);
@@ -366,8 +366,8 @@ test('mini program channel preserves the end-to-end RAG, callback, handoff and r
 
     const clarificationCallbacks = clarificationValues.slice(0, 2).map(value => callbacksFor(value.messageId)[0].payload);
     assert.deepEqual(clarificationCallbacks.map(item => item.text), [
-      '你想问哪件事？把业务或活动名字发我，再说下你想了解什么就行。',
-      '你想问哪件事？把业务或活动名字发我，再说下你想了解什么就行。'
+      '请问你想申请哪项业务？把业务名称发我，我再说明申请流程。',
+      '请问你想申请哪项业务？把业务名称发我，我再说明申请流程。'
     ]);
     assert.doesNotMatch(clarificationCallbacks[0].text, /转人工/);
     assert.doesNotMatch(clarificationCallbacks[1].text, /转人工/);
@@ -378,7 +378,7 @@ test('mini program channel preserves the end-to-end RAG, callback, handoff and r
       { timeoutMs: 5_000, label: 'automatic guidance handoff completion' }
     );
     assert.equal(callbacksFor(handoffValue.messageId).length, 0);
-    assert.deepEqual(clarificationValues.map(value => ragForText(value.text).length), [1, 1, 1]);
+    assert.deepEqual(clarificationValues.map(value => ragForText(value.text).length), [0, 0, 0]);
 
     const conversation = row('SELECT * FROM conversations WHERE namespace=?', `mini-program:${appId}:${conversationId}`);
     assert.equal(conversation.clarification_attempts, 3);
@@ -388,7 +388,7 @@ test('mini program channel preserves the end-to-end RAG, callback, handoff and r
       timeoutMs: 5_000,
       label: 'automatic guidance handoff notification'
     });
-    assert.equal(notification.type, 'RAG_CLARIFICATION_LIMIT');
+    assert.equal(notification.type, 'KNOWLEDGE_GUIDANCE_LIMIT');
     const pendingConversation = row('SELECT * FROM conversations WHERE id=?', conversation.id);
     assert.equal(pendingConversation.handling_mode, 'HANDOFF_PENDING');
     assert.equal(notification.message_id, storedMessage(handoffValue.messageId).id);

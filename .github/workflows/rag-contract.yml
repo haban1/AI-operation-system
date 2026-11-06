@@ -1,0 +1,65 @@
+name: RAG contract regression
+
+on:
+  push:
+    paths:
+      - 'rag-service/**'
+      - 'src/services/*rag*'
+      - 'src/services/conversation-*'
+      - 'src/services/mini-program-admin.js'
+      - 'src/server.js'
+      - 'public/**'
+      - 'test/*rag*'
+      - 'test/mini-program-reply-dispatch.test.js'
+      - '.github/workflows/rag-contract.yml'
+  pull_request:
+    paths:
+      - 'rag-service/**'
+      - 'src/services/*rag*'
+      - 'src/services/conversation-*'
+      - 'src/services/mini-program-admin.js'
+      - 'src/server.js'
+      - 'public/**'
+      - 'test/*rag*'
+      - 'test/mini-program-reply-dispatch.test.js'
+      - '.github/workflows/rag-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  python-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install uv
+      - run: uv sync --frozen --extra dev
+        working-directory: rag-service
+      - run: .venv/bin/python -m pytest -q --disable-warnings
+        working-directory: rag-service
+  operations-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --no-audit --no-fund
+      - name: Routing, persona, snapshots, publication and human takeover
+        env:
+          CHROME_EXECUTABLE_PATH: /usr/bin/google-chrome
+        run: >-
+          node scripts/run-tests.mjs --test --test-concurrency=1
+          test/formal-rag-routing.test.js test/formal-rag-context.test.js
+          test/message-router.test.js test/rag-answer-profile-client.test.js
+          test/rag-answer-profile-proxy.test.js test/rag-answer-profile-ui.test.js
+          test/rag-formal-routing-integration.test.js test/rag-guidance-parity.test.js
+          test/reply-routing-parity.test.js test/conversation-isolation.test.js
+          test/conversation-handoff-claim-guard.test.js test/security-runtime.test.js
+          test/rag-release-rollback.test.js test/rag-admin-proxy.test.js
+          test/mini-program-reply-dispatch.test.js

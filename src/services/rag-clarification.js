@@ -35,7 +35,9 @@ export function businessSubjectClarificationReply(question, { script = 'auto' } 
   if (/^(?:(?:怎么|怎麼|如何|怎样|怎樣)(?:报名|報名)|(?:我)?(?:想|要)(?:报名|報名)|(?:在)?(?:哪里|哪裡|哪儿|哪兒)(?:报名|報名|申请|申請|办理|辦理))$/u.test(text)) {
     return traditional ? '您想報名或申請哪項業務、活動？請補充名稱，我再說明申請方式。' : '你想报名或申请哪项业务、活动？请补充名称，我再说明申请方式。';
   }
-  const vaguePolicy = /^(?:请问|請問)?(?:这个|這個|这边|這邊|那个|那個|这里|這裡)?(?:(?:有)?(?:什么|什麼|哪些|哪一些)政策|政策(?:有)?(?:什么|什麼|哪些|哪一些))(?:吗|嗎|呢)?$/u;
+  // A broad catalogue question has a useful default scope: the selected KB.
+  // Only an unresolved explicit referent needs the customer to name its object.
+  const vaguePolicy = /^(?:请问|請問)?(?:这个|這個|那个|那個)(?:(?:有)?(?:什么|什麼|哪些|哪一些)政策|政策(?:有)?(?:什么|什麼|哪些|哪一些))(?:吗|嗎|呢)?$/u;
   if (!vaguePolicy.test(compact(question))) return null;
   return script === 'traditional'
     ? '您想了解哪方面的政策？請補充政策名稱或涉及的業務，我再幫您查。'

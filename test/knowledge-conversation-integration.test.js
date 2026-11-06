@@ -126,7 +126,7 @@ test('知识缺口先引导、转人工后每条新增消息通知人工，并�
   assert.equal(answeredComment.status, 'REPLY_QUEUED');
   assert.equal(answeredComment.reply_text, '近期活动请查看账号置顶内容或最新发布的活动通知。');
   const unanswerableComments = [];
-  for (const [suffix, content] of [['missing', '可以带孩子吗'], ['partial', '最近有什么活动，能带小孩参加吗'], ['greeting', '你好']]) {
+  for (const [suffix, content] of [['missing', '可以带孩子吗'], ['partial', '最近有什么活动，能带小孩参加吗']]) {
     const message = await simulate(content, `comment-${suffix}`, `comment-${suffix}`, 'COMMENT');
     assert.equal(message.status, 'MANUAL_REQUIRED', JSON.stringify(message));
     assert.match(message.decision, /HUMAN_FOLLOWUP_NOTIFICATION_PENDING|HUMAN_FOLLOWUP_NOTIFIED/);
@@ -134,6 +134,12 @@ test('知识缺口先引导、转人工后每条新增消息通知人工，并�
     assert.equal(message.reply_job_id, null);
     unanswerableComments.push(message);
   }
+  // Pure social comments follow the existing static greeting route, not the business gap route.
+  const greetingComment = await simulate('你好', 'comment-greeting', 'comment-greeting', 'COMMENT');
+  assert.equal(greetingComment.decision, 'COMMENT_SOCIAL_REPLY');
+  assert.equal(greetingComment.status, 'REPLY_QUEUED');
+  assert.match(greetingComment.reply_text, /你好/);
+  assert.ok(greetingComment.reply_job_id);
   const commentDb = new DatabaseSync(dbPath, { readOnly: true });
   try {
     for (const message of unanswerableComments) {

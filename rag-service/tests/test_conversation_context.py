@@ -225,8 +225,12 @@ async def test_generation_receives_all_six_turns_and_retrieves_materials_for_the
     )
     assert response.result == "ANSWERED", response.model_dump()
     assert response.grounding.sourceReferences[0].chunkId == expected_chunk["chunk_id"]
-    assert len(requests) == 1  # No extra remote rewrite needed for ordinary follow-ups.
-    prompt = requests[0]["messages"][-1]["content"]
+    # Ordinary follow-ups still need no remote rewrite. A gray-zone evidence
+    # audit may precede the one synthesis request; it is a separate decision.
+    generation_requests = [item for item in requests if "<untrusted-context>" in item["messages"][-1]["content"]]
+    assert len(generation_requests) == 1
+    assert all("审核器" in item["messages"][0]["content"] for item in requests if item not in generation_requests)
+    prompt = generation_requests[0]["messages"][-1]["content"]
     passed_context = prompt.split("<untrusted-context>")[1].split("</untrusted-context>")[0]
     assert passed_context.strip().splitlines() == [f"{item.role}: {item.text}" for item in context]
     assert "用户问题:\n那需要什么材料？" in prompt

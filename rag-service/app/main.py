@@ -39,6 +39,7 @@ from .models import (
 from .pipeline import RagError, RagService
 from .published_retrieval import PublishedRetrievalRequest, retrieve_published
 from .embeddings import EmbeddingRequest, embed_local
+from .persona_api import router as persona_router
 
 
 settings = get_settings()
@@ -98,6 +99,9 @@ async def require_auth(
     supplied = credentials.credentials if credentials else ""
     if not supplied or not hmac.compare_digest(supplied, service.settings.bearer_token):
         raise RagError("UNAUTHORIZED", "Bearer token无效", 401)
+
+
+app.include_router(persona_router, dependencies=[Depends(require_auth)])
 
 
 @app.post("/rag-admin-api/v1/embeddings", dependencies=[Depends(require_auth)])

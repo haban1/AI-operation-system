@@ -174,14 +174,14 @@ test('业务后端代理 RAG 文档、发布和小智测试管理接口', { skip
       assert.ok(observed.testQuery.context.some(item => item.role === 'USER' && item.text === '澳车北上'));
 
       testQueryResult = noAnswer;
-      assert.equal((await chat('其他业务怎么申请')).guidanceAttempt, 1, '有可靠答案后重新计算引导次数');
+      assert.equal((await chat('其他业务怎么申请')).guidanceAttempt, 0, '有对象但证据不足不增加澄清次数');
       const isolatedChat = await createChat();
       const queryBeforeIsolated = observed.testQuery.requestId;
       assert.equal((await isolatedChat('怎么申请')).guidanceAttempt, 1);
       assert.equal(observed.testQuery.requestId, queryBeforeIsolated);
     } finally { testQueryResult = null; }
   });
-  await t.test('小智保留关键词、补全后的追问和检索分数，检索分数不改变无答案引导', async () => {
+  await t.test('小智保留关键词、补全后的追问和检索分数，检索分数不把证据不足改成澄清', async () => {
     const queryAnalysis = { originalQuestion: 'App在哪？', resolvedQuestion: '澳车北上 APP 下载入口', keywords: ['澳车北上', 'APP', '下载', '获取入口'], contextUsed: true };
     try {
       testQueryResult = { ...noAnswer, meta: { queryAnalysis }, grounding: { confidence: 0.84, confidenceType: 'DIAGNOSTIC_NOT_CALIBRATED_PROBABILITY', sourceReferences: [] } };
@@ -192,8 +192,9 @@ test('业务后端代理 RAG 文档、发布和小智测试管理接口', { skip
       assert.deepEqual(result.queryAnalysis, queryAnalysis);
       assert.equal(result.contextUsed, true);
       assert.equal(result.ragStatus, 'NO_ANSWER');
-      assert.equal(result.decision, 'RAG_NEED_CLARIFICATION');
-      assert.equal(result.guidanceAttempt, 1);
+      assert.equal(result.decision, 'RAG_KNOWLEDGE_GAP');
+      assert.equal(result.guidanceAttempt, 0);
+      assert.doesNotMatch(result.replyText, /[？?]|哪方面|对吗/);
       const outer = await (await createChat())('怎么申请');
       assert.equal(outer.retrievalConfidence, null, '尚未检索时没有检索分数');
     } finally { testQueryResult = null; }

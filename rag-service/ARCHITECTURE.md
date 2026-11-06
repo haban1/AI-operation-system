@@ -17,9 +17,11 @@ Query API
   -> constrained query rewrite
   -> vector + BM25 retrieval
   -> reciprocal-rank fusion
-  -> local cross-encoder rerank
-  -> deterministic evidence gate
-  -> bounded Deep Agent synthesis
+  -> local cross-encoder: global rerank Top 6
+  -> single-hop: score floor then at most 4 / multi-hop: retain all at most 6
+  -> evidence gate over exactly that frozen set
+  -> at most one retry (up to 4 queries), scoped merge/rerank/re-audit
+  -> bounded Deep Agent synthesis over the same audited set
   -> citation validation
   -> ANSWERED or NO_ANSWER
 ```
@@ -67,7 +69,16 @@ Selection is deterministic and traceable. Operators can override it when uploadi
 2. Gather vector and BM25 candidate pools.
 3. Fuse ranks with reciprocal-rank fusion.
 4. Run `BAAI/bge-reranker-base` once over the merged pool.
-5. Apply evidence sufficiency, missing-detail, conflict, negative-case, and prompt-attack gates.
+5. Freeze the evidence set before sufficiency, missing-detail, conflict, negative-case, and prompt-attack gates.
+6. If evidence is insufficient, retry once within the same scope, merging first-round candidates.
+7. Generate from the audited set without a second selection or tool-driven retrieval.
+
+The operations RRF candidate cap remains 16 (with up to 6 first-round seed hits retained on retry),
+with Dense/BM25 caps of 20 each and a global rerank output capped at 6. Single-hop uses
+`max(0.02, top1_normalized * 0.10)` and at most 4; multi-hop retains all 6 without a floor.
+The existing raw/sigmoid score semantics and channel minima remain unchanged. Coverage is
+the union over the selected set; source diversity and gray-zone classification inspect all
+selected chunks. Gray-zone classification can tighten, never relax, a channel minimum.
 
 Response score meanings:
 
@@ -82,7 +93,7 @@ No score is advertised as a correctness probability. A calibrated probability or
 
 ## Deep Agent Boundary
 
-The query agent receives one custom read-only `search_knowledge` tool scoped by a request-local `ContextVar`. Deep Agents filesystem tools, command execution, planning, and subagents are excluded. Safety-profile registration is fail-closed, tool calls are capped, model calls have a timeout, and any citation not present in retrieved evidence causes `NO_ANSWER` rather than automatic citation repair.
+The query agent receives one custom read-only `search_knowledge` tool scoped by request-local `ContextVar` values. It can only re-read the frozen Gate evidence; it cannot retrieve new chunks or initiate a third retrieval round. Deep Agents filesystem tools, command execution, planning, and subagents are excluded. Safety-profile registration is fail-closed, tool calls are capped, model calls have a timeout, and any citation not present in retrieved evidence causes `NO_ANSWER` rather than automatic citation repair.
 
 ## Version And Release Model
 
@@ -106,3 +117,17 @@ OpenTelemetry, LangSmith, or Langfuse can be added as exporters. They are not re
 The evaluation runner accepts a caller-provided, versioned dataset. A useful suite should mix directly answerable questions, paraphrases, partial-evidence questions, missing-detail questions, malicious or prompt-injection inputs, and unrelated inputs. The data file and run outputs stay outside this framework repository.
 
 Every run freezes the dataset hash and release ID. Assertions cover result, allowed reason codes, source identity, verified citations, answer/reference overlap, required facts, and actual model execution. Each failed assertion has a code and a query Trace ID.
+
+## Conversation and Presentation Boundary
+
+The original question and resolved search query remain separate. Search reformulation may
+not add enrollment, current schedules, prices or complete-catalog requirements to a broad
+overview. Missing evidence returns `NO_ANSWER`; the operations layer distinguishes it
+from missing user intent. Direct-message evidence gaps do not consume clarification rounds.
+Comment handoff, human requests, risk routes, snapshots and published-only scope remain
+operations-owned.
+
+An immutable per-knowledge-base answer profile is read at request start and only enters
+answer generation. Its default brand is 智慧驱动. Grounding/citations and honest AI identity
+take priority over style. Trace stores profile hash/version, not the custom style text.
+See [operations integration guide](../docs/运营RAG兼容接入-20261106.md).

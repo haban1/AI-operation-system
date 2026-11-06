@@ -66,6 +66,12 @@ export class RagClient {
   }
 
   async systemStatus() { return this.request('/rag-admin-api/v1/system/status'); }
+  async getAnswerProfile({ knowledgeBaseId = 'main-business-kb' } = {}) {
+    return this.request(`/rag-admin-api/v1/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/answer-profile`);
+  }
+  async saveAnswerProfile({ knowledgeBaseId = 'main-business-kb', profile } = {}) {
+    return this.request(`/rag-admin-api/v1/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/answer-profile`, { method: 'PUT', body: profile });
+  }
   async listDocuments({ knowledgeBaseId = 'main-business-kb' } = {}) { return this.request(`/rag-admin-api/v1/documents${queryString({ knowledge_base_id: knowledgeBaseId })}`); }
   async getDocument({ documentId, version = null } = {}) {
     if (!String(documentId || '').trim()) throw new Error('documentId 不能为空');

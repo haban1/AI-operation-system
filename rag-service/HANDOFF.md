@@ -1,3 +1,5 @@
+> 2026-11-06: bounded two-round retrieval, frozen Gate/generation evidence, and configurable answer style are integrated. Start with [developer handoff](../dev-notes/README.md) and [operations guide](../docs/运营RAG兼容接入-20261106.md). Earlier counts and runtime observations below are historical.
+
 # RAG Service Handoff
 
 ## Current State

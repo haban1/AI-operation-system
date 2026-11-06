@@ -46,6 +46,7 @@ class SearchHit:
     reranker_score_normalized: float
     question_match: float = 0.0
     selected: bool = False
+    rrf_score: float = 0.0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -60,6 +61,7 @@ class SearchHit:
             "metadata": self.chunk.get("metadata", {}),
             "rank": self.rank,
             "retrieval_score": self.retrieval_score,
+            "rrf_score": self.rrf_score,
             "vector_score": self.vector_score,
             "lexical_score": self.lexical_score,
             "reranker_score": self.reranker_score,
@@ -327,6 +329,7 @@ class HybridRetriever:
                     reranker_score=None if skip_rerank else raw,
                     reranker_score_normalized=normalized,
                     question_match=question_match,
+                    rrf_score=item["rrf"],
                 )
             )
         hits.sort(key=lambda hit: hit.retrieval_score, reverse=True)
@@ -355,46 +358,83 @@ class HybridRetriever:
         scope: SearchScope,
         *,
         top_k: int | None = None,
+        seed_hits: list[dict[str, Any]] | None = None,
+        rerank_query: str | None = None,
+        include_tail: bool = False,
     ) -> dict[str, Any]:
-        """Union cheap hybrid candidate pools, then run one expensive cross-encoder pass."""
+        """Recall within the frozen scope, deduplicate, then globally rerank once.
+
+        ``include_tail`` leaves evidence filtering to the workflow before its Gate.
+        Scores retain their existing raw/sigmoid meanings; no calibration is implied.
+        """
+        queries = list(dict.fromkeys(query.strip() for query in queries if query.strip()))[:4]
         if not queries:
-            return self.search("", scope, top_k=top_k)
+            queries = [rerank_query or ""]
         pools = [
-            self.search(
-                query,
-                scope,
-                top_k=max(self.settings.rerank_top_k, top_k or self.settings.default_top_k),
-                skip_rerank=True,
-            )
+            self.search(query, scope, top_k=self.settings.rerank_top_k, skip_rerank=True)
             for query in queries
         ]
-        candidate_ids: list[str] = []
+        # Recheck seed IDs against exactly the original release/test scope. A retry
+        # must never expand to unpublished versions or another knowledge base.
+        allowed = {item["chunk_id"] for item in self._load_scope_chunks(scope)}
+        merged: dict[str, dict[str, Any]] = {}
+        fusion: dict[str, float] = {}
         for pool in pools:
-            for item in pool.get("hits", []):
+            for rank, item in enumerate(pool.get("hits", []), start=1):
                 chunk_id = item.get("chunk_id")
-                if chunk_id and chunk_id not in candidate_ids:
-                    candidate_ids.append(chunk_id)
-        if not candidate_ids:
-            return {"query": queries[0], "queries": queries, "variantPools": pools, "hits": [], "selected": [], "retrievedCount": 0, "selectedCount": 0, "scope": scope.mode}
-        final = self.search(
-            queries[0],
-            SearchScope(
-                knowledge_base_id=scope.knowledge_base_id,
-                release_id=None,
-                chunk_ids=candidate_ids,
-                mode=scope.mode,
-            ),
-            top_k=top_k,
-        )
-        final["queries"] = queries
-        final["candidatePool"] = final.get("hits", [])
-        final["variantPools"] = [
-            {
-                "query": pool.get("query"),
-                "retrievedCount": pool.get("retrievedCount", 0),
-                "selectedCount": pool.get("selectedCount", 0),
-                "vectorStore": pool.get("vectorStore"),
-            }
-            for pool in pools
-        ]
-        return final
+                if chunk_id not in allowed:
+                    continue
+                merged.setdefault(chunk_id, dict(item))
+                fusion[chunk_id] = fusion.get(chunk_id, 0.0) + 1.0 / (60 + rank)
+        for item in seed_hits or []:
+            chunk_id = item.get("chunk_id")
+            if chunk_id in allowed:
+                merged.setdefault(chunk_id, dict(item))
+                fusion.setdefault(chunk_id, float(item.get("rrf_score") or 0.0))
+        candidates = sorted(merged.values(), key=lambda item: fusion[item["chunk_id"]], reverse=True)
+        # Seed candidates were already recalled in this same immutable scope. Keep
+        # them in the rerank pool so a retry can combine first/second-round facts.
+        pool_limit = self.settings.rerank_top_k
+        pool_by_id = {item["chunk_id"]: item for item in candidates[:pool_limit]}
+        for item in seed_hits or []:
+            chunk_id = item.get("chunk_id")
+            if chunk_id in allowed:
+                pool_by_id.setdefault(chunk_id, merged[chunk_id])
+        candidates = list(pool_by_id.values())
+        target = rerank_query or queries[0]
+        raw_scores = self.reranker.rerank(target, [item.get("text", "") for item in candidates]) if candidates else []
+        if len(raw_scores) != len(candidates):
+            raise ValueError("Reranker returned a mismatched candidate count")
+        fallback = bool(getattr(self.reranker, "status", None) and self.reranker.status.fallback)
+        for item, raw in zip(candidates, raw_scores):
+            normalized = self._reranker_normalize(float(raw), raw_scores, fallback)
+            item.update(
+                reranker_score=float(raw),
+                reranker_score_normalized=normalized,
+                rrf_score=fusion[item["chunk_id"]],
+                question_match=self._question_match(target, item),
+                retrieval_score=normalized,
+            )
+        candidates.sort(key=lambda item: (item["reranker_score_normalized"], item["rrf_score"]), reverse=True)
+        limit = min(6, top_k or self.settings.default_top_k) if include_tail else (top_k or self.settings.default_top_k)
+        selected = []
+        for rank, item in enumerate(candidates, start=1):
+            item["rank"] = rank
+            item["selected"] = rank <= limit and (include_tail or item["reranker_score_normalized"] >= self.settings.rerank_min_score)
+            if item["selected"]:
+                selected.append(item)
+        return {
+            "query": target,
+            "queries": queries,
+            "scope": scope.mode,
+            "hits": candidates,
+            "candidatePool": candidates,
+            "selected": selected,
+            "retrievedCount": len(candidates),
+            "selectedCount": len(selected),
+            "variantPools": [
+                {"query": pool.get("query"), "retrievedCount": pool.get("retrievedCount", 0),
+                 "selectedCount": pool.get("selectedCount", 0), "vectorStore": pool.get("vectorStore")}
+                for pool in pools
+            ],
+        }

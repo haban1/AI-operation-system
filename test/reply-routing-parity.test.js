@@ -90,10 +90,10 @@ test('小智与五个平台共用外层路由、引导计数和人工接管状�
     assert.equal(requests.length, before);
   });
 
-  await t.test('插入问候不占引导次数，有答案后重新计数', async () => {
+  await t.test('插入问候不占澄清次数，有答案后清零，已明确对象的证据缺口不计数', async () => {
     const ask = await chat();
     const questionSequence = ['怎么申请', '你好', '怎么申请', '社区入驻需要什么材料？', '多少钱'];
-    const expected = [1, 0, 2, 0, 1];
+    const expected = [1, 0, 2, 0, 0];
     const results = [];
     for (let i = 0; i < questionSequence.length; i++) {
       const result = await ask(questionSequence[i]); results.push(result);
@@ -111,16 +111,16 @@ test('小智与五个平台共用外层路由、引导计数和人工接管状�
     }
   });
 
-  await t.test('问候之后的第三次无答案业务引导仍转人工', async () => {
+  await t.test('问候不清零，默认累计第五次仍未补充业务对象时转人工', async () => {
     const ask = await chat();
-    for (const content of ['怎么申请', '怎么申请', '你好？']) assert.equal((await ask(content)).action, 'REPLY');
+    for (const content of ['怎么申请', '怎么申请', '你好？', '怎么申请', '怎么申请']) assert.equal((await ask(content)).action, 'REPLY');
     const result = await ask('怎么申请');
-    assert.equal(result.action, 'HANDOFF'); assert.equal(result.guidanceAttempt, 3);
+    assert.equal(result.action, 'HANDOFF'); assert.equal(result.guidanceAttempt, 5);
     for (const platform of platforms) {
       const id = crypto.randomUUID();
-      for (const content of ['怎么申请', '怎么申请', '你好？']) await simulate(platform, id, content);
+      for (const content of ['怎么申请', '怎么申请', '你好？', '怎么申请', '怎么申请']) await simulate(platform, id, content);
       const last = await simulate(platform, id, '怎么申请');
-      assert.equal(last.status, 'MANUAL_REQUIRED'); assert.equal(last.reply_job_id, null); assert.equal(attempts(last), 3);
+      assert.equal(last.status, 'MANUAL_REQUIRED'); assert.equal(last.reply_job_id, null); assert.equal(attempts(last), 5);
     }
   });
 
