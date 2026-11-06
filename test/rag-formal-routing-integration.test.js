@@ -242,56 +242,43 @@ test('正式 RAG 链路只查询正常业务消息，并覆盖回答、澄清、
 
   const commentNoAnswer = await simulate({ content: '无答案的评论问题', messageType: 'COMMENT', conversationId: 'formal-rag-comment-empty' });
   const commentGreeting = await simulate({ content: '你好', messageType: 'COMMENT', conversationId: 'formal-rag-comment-greeting' });
-  for (const message of [commentNoAnswer, commentGreeting]) {
+  for (const message of [commentNoAnswer]) {
     assert.equal(message.status, 'MANUAL_REQUIRED', JSON.stringify(message));
     assert.match(message.decision, /HUMAN_FOLLOWUP_NOTIFICATION_PENDING|HUMAN_FOLLOWUP_NOTIFIED/);
     assert.equal(message.reply_text, null);
     assert.equal(message.reply_job_id, null);
   }
 
-  const clarificationConversation = 'formal-rag-clarification';
-  const clarificationReplies = [];
-  for (let index = 1; index <= 3; index += 1) {
-    clarificationReplies.push(await simulate({ content: `无答案问题第${index}轮`, conversationId: clarificationConversation }));
-  }
-  assert.deepEqual(clarificationReplies.slice(0, 2).map(item => item.decision), ['RAG_NEED_CLARIFICATION', 'RAG_NEED_CLARIFICATION']);
-  assert.doesNotMatch(clarificationReplies[0].reply_text, /转人工/);
-  assert.equal(clarificationReplies[2].status, 'MANUAL_REQUIRED');
-  assert.equal(clarificationReplies[2].reply_text, null);
-  assert.equal(clarificationReplies[2].reply_job_id, null);
-  const thirdContext = JSON.parse(clarificationReplies[2].reply_context_json || '{}');
-  assert.equal(thirdContext.guidanceAttempt, 3);
-  assert.equal(thirdContext.handoffRequested, true);
-
-  await t.test('五个平台第三轮仍无知识时实际转人工，通知待重试也不再自动回复', async () => {
+  const evidenceGapIds = [];
+  await t.test('五个平台连续三次证据不足仍给诚实边界提示，不累计澄清、不自动转人工', async () => {
     for (const platformCode of ['douyin', 'wechat_channels', 'weibo', 'bilibili', 'xiaohongshu']) {
-      const conversationId = `guidance-handoff-${platformCode}`;
+      const conversationId = `evidence-gap-${platformCode}`;
       const fixture = new DatabaseSync(dbPath);
       fixture.exec('PRAGMA busy_timeout=15000');
       try {
         fixture.prepare('UPDATE accounts SET enabled=1 WHERE platform_code=?').run(platformCode);
-        for (let attempt = 1; attempt <= 2; attempt += 1) {
-          const guidance = await simulate({ platformCode, conversationId, content: `无答案问题第${attempt}轮` });
-          assert.equal(guidance.status, 'REPLY_QUEUED', JSON.stringify(guidance));
-          fixture.prepare("UPDATE messages SET status='AUTO_REPLIED',handled_at=? WHERE id=?").run(new Date().toISOString(), guidance.id);
+        let message;
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          message = await simulate({ platformCode, conversationId, content: `无答案问题第${attempt}轮` });
+          assert.equal(message.status, 'REPLY_QUEUED', JSON.stringify(message));
+          evidenceGapIds.push(message.id);
+          assert.equal(message.decision, 'RAG_KNOWLEDGE_GAP');
+          assert.match(message.reply_text, /没有足够依据/);
+          assert.doesNotMatch(message.reply_text, /[？?]|哪方面|对吗/);
+          assert.ok(message.reply_job_id);
+          const context = JSON.parse(message.reply_context_json);
+          assert.equal(context.guidanceAttempt, 0);
+          assert.equal(context.clarificationCandidate, null);
+          fixture.prepare("UPDATE messages SET status='AUTO_REPLIED',handled_at=? WHERE id=?").run(new Date().toISOString(), message.id);
         }
-        const handoff = await simulate({ platformCode, conversationId, content: '第三轮还是无答案' });
-        assert.equal(handoff.status, 'MANUAL_REQUIRED', JSON.stringify(handoff));
-        assert.equal(handoff.reply_job_id, null);
-        assert.equal(handoff.reply_text, null);
-        const conversation = fixture.prepare('SELECT handling_mode,clarification_attempts FROM conversations WHERE id=?').get(handoff.conversation_id);
-        assert.equal(conversation.handling_mode, 'HANDOFF_PENDING');
-        assert.equal(conversation.clarification_attempts, 3);
-        const notifications = fixture.prepare("SELECT type,content FROM notifications WHERE message_id=? AND json_extract(metadata_json,'$.handoff')=1").all(handoff.id);
-        assert.equal(notifications.length, 1);
-        assert.equal(notifications[0].type, 'RAG_CLARIFICATION_LIMIT');
-        assert.match(notifications[0].content, /3轮.*转人工/);
-        assert.doesNotMatch(notifications[0].content, /服务不可用/);
-        const beforeFollowup = ragRequests.length;
+        const conversation = fixture.prepare('SELECT handling_mode,clarification_attempts,pending_intent_json FROM conversations WHERE id=?').get(message.conversation_id);
+        assert.equal(conversation.handling_mode, 'BOT_ACTIVE');
+        assert.equal(conversation.clarification_attempts, 0);
+        assert.equal(conversation.pending_intent_json, null);
+        assert.equal(fixture.prepare("SELECT COUNT(*) AS count FROM notifications WHERE message_id=? AND json_extract(metadata_json,'$.handoff')=1").get(message.id).count, 0);
         const followup = await simulate({ platformCode, conversationId, content: '办理业务需要什么材料？' });
-        assert.equal(followup.status, 'MANUAL_REQUIRED');
-        assert.equal(followup.reply_job_id, null);
-        assert.equal(ragRequests.length, beforeFollowup);
+        assert.equal(followup.decision, 'RAG_ANSWERED');
+        assert.equal(followup.status, 'REPLY_QUEUED');
       } finally { fixture.close(); }
     }
   });
@@ -351,16 +338,16 @@ test('正式 RAG 链路只查询正常业务消息，并覆盖回答、澄清、
     } finally { fixture.close(); }
   });
 
-  await t.test('第三轮查到可靠答案仍自动回复并重置引导次数，新会话独立计数', async () => {
+  await t.test('证据缺口后查到可靠答案仍正常回复，新会话证据不足也不消耗澄清次数', async () => {
     const conversationId = 'guidance-resolved';
     for (let attempt = 1; attempt <= 2; attempt += 1) await simulate({ conversationId, content: `无答案第${attempt}次` });
     const answered = await simulate({ conversationId, content: '办理业务需要什么材料？' });
     assert.equal(answered.decision, 'RAG_ANSWERED');
     const next = await simulate({ conversationId, content: '又一个无答案的问题' });
-    assert.equal(next.decision, 'RAG_NEED_CLARIFICATION');
-    assert.equal(JSON.parse(next.reply_context_json).guidanceAttempt, 1);
+    assert.equal(next.decision, 'RAG_KNOWLEDGE_GAP');
+    assert.equal(JSON.parse(next.reply_context_json).guidanceAttempt, 0);
     const isolated = await simulate({ conversationId: 'guidance-isolated', content: '新会话无答案' });
-    assert.equal(JSON.parse(isolated.reply_context_json).guidanceAttempt, 1);
+    assert.equal(JSON.parse(isolated.reply_context_json).guidanceAttempt, 0);
   });
 
   const beforeRiskRequestCount = ragRequests.length;
@@ -388,12 +375,15 @@ test('正式 RAG 链路只查询正常业务消息，并覆盖回答、澄清、
   assert.equal(ragRequests.length, beforeManagedFollowupCount);
 
   const verifyDb = new DatabaseSync(dbPath, { readOnly: true });
-  for (const message of [commentNoAnswer, commentGreeting]) {
+  assert.equal(commentGreeting.status, 'REPLY_QUEUED', '抖音纯互动评论按既有社交路由自然回应');
+  assert.equal(commentGreeting.decision, 'COMMENT_SOCIAL_REPLY');
+  assert.equal(commentGreeting.reply_text, '你好呀，很高兴见到你！');
+  for (const message of [commentNoAnswer]) {
     assert.equal(verifyDb.prepare("SELECT COUNT(*) AS count FROM agent_jobs WHERE job_type='REPLY' AND CAST(json_extract(payload,'$.messageId') AS INTEGER)=?").get(message.id).count, 0);
     assert.equal(verifyDb.prepare("SELECT COUNT(*) AS count FROM notifications WHERE message_id=? AND type='COMMENT_KNOWLEDGE_GAP' AND json_extract(metadata_json,'$.handoff')=1").get(message.id).count, 1);
     assert.equal(verifyDb.prepare('SELECT handling_mode FROM conversations WHERE id=?').get(message.conversation_id).handling_mode, 'HANDOFF_PENDING');
   }
-  assert.equal(verifyDb.prepare("SELECT COUNT(*) AS count FROM knowledge_gaps WHERE message_id IN (?,?,?)").get(...clarificationReplies.map(item => item.id)).count, 0);
+  assert.equal(verifyDb.prepare(`SELECT COUNT(*) AS count FROM knowledge_gaps WHERE message_id IN (${evidenceGapIds.map(() => '?').join(',')})`).get(...evidenceGapIds).count, 0);
   assert.ok(verifyDb.prepare("SELECT COUNT(*) AS count FROM notifications WHERE message_id=? AND json_extract(metadata_json,'$.handoff')=1").get(risk.id).count >= 1);
   assert.ok(verifyDb.prepare("SELECT COUNT(*) AS count FROM notifications WHERE message_id=? AND json_extract(metadata_json,'$.handoff')=1").get(managedFollowup.id).count >= 1);
   verifyDb.close();

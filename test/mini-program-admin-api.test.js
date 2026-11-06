@@ -145,6 +145,15 @@ test('message endpoint projects text, decision, knowledge question and safe deli
   assert.ok(item.notification.error);
 });
 
+test('evidence-gap decision remains visible as a knowledge outcome in safe message projections', async () => {
+  const message = seed();
+  run("UPDATE messages SET status='REPLY_QUEUED',decision='RAG_KNOWLEDGE_GAP',reply_text='这次检索没有足够依据。' WHERE id=?", message.id);
+  const data = success(await request(`/conversations/${message.conversation_id}/messages`));
+  assert.equal(data.messages[0].decision, 'RAG_KNOWLEDGE_GAP');
+  assert.equal(data.messages[0].replyText, '这次检索没有足够依据。');
+  safe(data);
+});
+
 test('handoff endpoint cancels durable replies and repeats return one notification with distinct UI and durable keys', async () => {
   const message = seed();
   const cb = callback(message, 'PENDING');

@@ -7,7 +7,7 @@ import { startServer, stopChild, cleanupDir, jsonRequest } from './helpers/runti
 const candidate = { documentId: 'policy-document', documentVersion: 1, chunkId: 'policy-chunk', title: '什么是“七免两低”扶持政策？', sectionPath: ['OPC港澳服务社区介绍及入驻流程', '常见问题'], verificationStatus: 'VERIFIED' };
 const queryAnalysis = question => ({ originalQuestion: question, resolvedQuestion: question, keywords: ['社区', '政策'], contextUsed: true });
 
-test('小智和各平台私信使用相同的主题确认，并保留三轮转人工边界', async t => {
+test('小智和各平台私信区分缺对象澄清与证据缺口，不因候选或三次无答案制造回问循环', async t => {
   const requests = [];
   const rag = http.createServer(async (req, res) => {
     const chunks = [];
@@ -57,37 +57,38 @@ test('小智和各平台私信使用相同的主题确认，并保留三轮转�
     }
     return message;
   };
-  const questions = ['这个有什么政策？', '就是社区政策有哪一些'];
+  const questions = ['这个有什么政策？', '就是社区政策有哪一些', '不是，还有其他政策吗？'];
   const chat = await createChat();
-  const testFirst = await chat(questions[0]);
-  const testSecond = await chat(questions[1]);
-  assert.match(testFirst.replyText, /政策/);
-  assert.match(testSecond.replyText, /七免两低/);
-  assert.match(testSecond.replyText, /[？?]/);
-  assert.notEqual(testFirst.replyText, testSecond.replyText);
-  assert.doesNotMatch(testSecond.replyText, /具体说明一下想咨询的业务/);
-  assert.equal(testSecond.confidence, 0, '确认候选不能冒充可靠知识答案');
-  assert.equal(testFirst.matchMethod, 'OUTER_ROUTER', '未明确对象的政策问题先在业务层确认');
-  for (const platform of ['douyin', 'weibo', 'wechat_channels', 'bilibili', 'xiaohongshu']) {
-    const first = await simulate(platform, `${platform}-guidance`, questions[0]);
-    const second = await simulate(platform, `${platform}-guidance`, questions[1]);
-    assert.equal(first.reply_text, testFirst.replyText, platform);
-    assert.equal(second.reply_text, testSecond.replyText, platform);
-    assert.equal(JSON.parse(second.reply_context_json).clarificationCandidate.candidateQuestion, candidate.title);
-    const third = await simulate(platform, `${platform}-guidance`, '不是，还有其他政策吗？');
-    assert.equal(third.status, 'MANUAL_REQUIRED', platform);
-    assert.equal(third.reply_job_id, null, platform);
-    assert.equal(third.reply_text, null, platform);
+  const results = [];
+  for (const question of questions) results.push(await chat(question));
+  assert.equal(results[0].matchMethod, 'OUTER_ROUTER', '未解析的“这个”才在业务层确认');
+  for (const result of results.slice(1)) {
+    assert.equal(result.decision, 'RAG_KNOWLEDGE_GAP');
+    assert.equal(result.guidanceAttempt, 0);
+    assert.equal(result.handoffRequested, false);
+    assert.equal(result.clarificationCandidate, null);
+    assert.doesNotMatch(result.replyText, /七免两低|[？?]|具体说明一下想咨询的业务/);
   }
-  assert.equal((await chat('不是，还有其他政策吗？')).handoffRequested, true);
-  const confirmed = await createChat();
-  await confirmed(questions[0]); await confirmed(questions[1]);
-  assert.equal((await confirmed('是的')).decision, 'RAG_ANSWERED', '第三轮能查到答案时正常回复');
-  const actual = await simulate('douyin', 'confirmed-policy', questions[0]);
-  await simulate('douyin', 'confirmed-policy', questions[1]);
-  const answer = await simulate('douyin', 'confirmed-policy', '是的');
-  assert.equal(answer.decision, 'RAG_ANSWERED');
-  assert.ok(requests.at(-1).context.some(item => item.role === 'ASSISTANT' && item.text.includes('七免两低')));
-  assert.equal(db.prepare('SELECT clarification_attempts FROM conversations WHERE id=?').get(actual.conversation_id).clarification_attempts, 0);
-  assert.ok(!requests.some(item => item.question === questions[0]), '没有业务对象时不能让 RAG 猜测政策');
+  for (const platform of ['douyin', 'weibo', 'wechat_channels', 'bilibili', 'xiaohongshu']) {
+    const conversationId = `${platform}-guidance`;
+    let message;
+    for (let index = 0; index < questions.length; index += 1) {
+      message = await simulate(platform, conversationId, questions[index]);
+      assert.equal(message.reply_text, results[index].replyText, platform);
+      assert.ok(message.reply_job_id, platform);
+    }
+    const conversation = db.prepare('SELECT handling_mode,clarification_attempts,pending_intent_json FROM conversations WHERE id=?').get(message.conversation_id);
+    assert.equal(conversation.handling_mode, 'BOT_ACTIVE');
+    assert.equal(conversation.clarification_attempts, 1, '只有第一条真缺对象问题计数');
+    assert.equal(conversation.pending_intent_json, null, '候选不能被写为待用户确认对象');
+    const answer = await simulate(platform, conversationId, '什么是七免两低政策');
+    assert.equal(answer.decision, 'RAG_ANSWERED');
+    assert.equal(db.prepare('SELECT clarification_attempts FROM conversations WHERE id=?').get(answer.conversation_id).clarification_attempts, 0);
+  }
+  assert.equal((await chat('什么是七免两低政策')).decision, 'RAG_ANSWERED');
+  assert.ok(!requests.some(item => item.question === questions[0]), '真缺对象的首问仍不让 RAG 猜测');
+  assert.ok(requests.some(item => item.formal && item.question === questions[1]));
+  const broad = await createChat();
+  assert.equal((await broad('有哪些政策？')).decision, 'RAG_KNOWLEDGE_GAP');
+  assert.ok(requests.some(item => item.question === '有哪些政策？'), '宽泛目录请求按知识库默认范围查询');
 });

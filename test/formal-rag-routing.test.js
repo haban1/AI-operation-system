@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildFormalRagRequest, formalRagReplyResult, routeBusinessClarification, validateFormalRagResponseSnapshot } from '../src/services/formal-rag-routing.js';
+import { businessGuidanceProgress } from '../src/services/conversation-policy.js';
 import { validateFormalRagRequest } from '../src/services/rag-contract.js';
 import { getReplyLimit, validateReplyTextLength } from '../src/services/platform-reply-policy.js';
 
@@ -136,43 +137,61 @@ test('RAG 评论没有可靠答案时直接转人工且不生成公开回复', (
   }
 });
 
-test('RAG 私信无答案先澄清，第三轮直接转人工且不再要求用户确认', () => {
-  const first = formalRagReplyResult({ result: 'NO_ANSWER' }, { messageType: 'PRIVATE_MESSAGE' });
-  assert.equal(first.action, 'REPLY');
-  assert.equal(first.decision, 'RAG_NEED_CLARIFICATION');
-  const privateResult = formalRagReplyResult({ result: 'NO_ANSWER' }, { messageType: 'PRIVATE_MESSAGE', guidanceAttempt: 3, maxGuidanceAttempts: 3 });
-  assert.equal(privateResult.decision, 'RAG_CLARIFICATION_LIMIT');
-  assert.equal(privateResult.action, 'HANDOFF');
-  assert.equal(privateResult.replyText, null);
-  assert.equal(privateResult.handoffRequested, true);
-  assert.equal(privateResult.handoffOffered, false);
-  assert.match(privateResult.reason, /3轮.*转人工/);
-});
-
-test('各平台私信的申请引导只补问业务名称并保留申请流程意图', () => {
-  for (const platformCode of ['douyin', 'wechat_channels', 'weibo', 'bilibili', 'xiaohongshu']) {
-    const result = formalRagReplyResult({ result: 'NO_ANSWER', reasonCode: 'INSUFFICIENT_EVIDENCE' }, {
-      platformCode, messageType: 'PRIVATE_MESSAGE', question: '怎么申请？'
-    });
-    assert.equal(result.decision, 'RAG_NEED_CLARIFICATION');
-    assert.match(result.replyText, /哪项业务/);
-    assert.match(result.replyText, /申请流程/);
-    assert.doesNotMatch(result.replyText, /INSUFFICIENT_EVIDENCE|转人工/);
+test('私信证据不足独立于澄清预算，不把检索失败变成回问或自动人工', () => {
+  for (const status of ['NO_ANSWER', 'REJECTED', 'NEED_CLARIFICATION']) {
+    for (const guidanceAttempt of [1, 2, 3]) {
+      const result = formalRagReplyResult({ result: status, reasonCode: 'INSUFFICIENT_EVIDENCE' }, {
+        question: '适合初学者的课程有哪些？', guidanceAttempt
+      });
+      assert.equal(result.action, 'REPLY');
+      assert.equal(result.decision, 'RAG_KNOWLEDGE_GAP');
+      assert.equal(result.responseMode, 'FORMAL_RAG_KNOWLEDGE_GAP');
+      assert.equal(result.guidanceAttempt, 0);
+      assert.equal(result.handoffRequested, false);
+      assert.equal(result.handoffOffered, false);
+      assert.equal(result.clarificationCandidate, null);
+      assert.match(result.replyText, /没有足够依据/);
+      assert.doesNotMatch(result.replyText, /[？?]|哪方面|兴趣|偏好|INSUFFICIENT_EVIDENCE/);
+      const progress = businessGuidanceProgress(result, 2);
+      assert.deepEqual(progress, { answered: false, guiding: false, attempts: 2 });
+    }
   }
 });
 
-test('私信引导不使用无关候选，也不会重复刚确认过的候选问题', () => {
+test('真正缺申请对象仍可澄清，第三次缺对象才消耗完澄清预算', () => {
+  for (const platformCode of ['douyin', 'wechat_channels', 'weibo', 'bilibili', 'xiaohongshu']) {
+    const result = formalRagReplyResult({ result: 'NEED_CLARIFICATION' }, {
+      platformCode, question: '怎么申请？'
+    });
+    assert.equal(result.decision, 'RAG_NEED_CLARIFICATION');
+    assert.match(result.replyText, /哪项业务.*申请流程/);
+    assert.equal(result.guidanceAttempt, 1);
+  }
+  const third = formalRagReplyResult({ result: 'NEED_CLARIFICATION' }, { question: '怎么申请', guidanceAttempt: 3 });
+  assert.equal(third.action, 'HANDOFF');
+  assert.equal(third.decision, 'RAG_CLARIFICATION_LIMIT');
+  assert.equal(third.replyText, null);
+  const resolved = formalRagReplyResult({ result: 'NEED_CLARIFICATION' }, {
+    question: '怎么申请', context: [{ role: 'USER', text: '我想了解澳车北上' }], guidanceAttempt: 3
+  });
+  assert.equal(resolved.decision, 'RAG_KNOWLEDGE_GAP', '用户历史已明确对象时不再回问同一个对象');
+});
+
+test('检索候选不能制造用户意图歧义，也不能当作已可靠作答的引用', () => {
   const reference = { documentId: 'doc-policy', chunkId: 'chunk-policy', title: '什么是“七免两低”扶持政策？', sectionPath: ['OPC港澳服务社区'], verificationStatus: 'VERIFIED' };
-  const response = { result: 'NO_ANSWER', grounding: { sourceReferences: [reference] } };
-  const unrelated = formalRagReplyResult(response, { question: 'App在哪里下载？' });
-  assert.doesNotMatch(unrelated.replyText, /七免两低/);
-  const context = [{ role: 'USER', text: '社区有哪些政策？' }, { role: 'ASSISTANT', text: '你是想了解“七免两低”扶持政策吗？' }];
-  const rejected = formalRagReplyResult(response, { question: '不是', context, guidanceAttempt: 2 });
-  assert.doesNotMatch(rejected.replyText, /七免两低/);
-  assert.match(rejected.replyText, /明白/);
-  const repeated = formalRagReplyResult(response, { question: '社区政策有哪些？', context, guidanceAttempt: 2 });
-  assert.doesNotMatch(repeated.replyText, /七免两低/);
-  assert.match(repeated.replyText, /社区/);
+  const response = { result: 'NO_ANSWER', grounding: { sourceReferences: [reference] }, diagnostics: { selectedCandidates: [{ ...reference, selected: true }] } };
+  for (const question of ['App在哪里下载？', '社区有哪些政策？', '不是，还有其他政策吗？']) {
+    const result = formalRagReplyResult(response, { question, guidanceAttempt: 3 });
+    assert.equal(result.decision, 'RAG_KNOWLEDGE_GAP');
+    assert.doesNotMatch(result.replyText, /七免两低|对吗|哪方面/);
+    assert.deepEqual(result.sourceReferences, []);
+  }
+});
+
+test('宽泛但有意义的业务与学习咨询默认在当前知识范围检索', () => {
+  for (const question of ['有哪些政策？', '这里有什么政策', '这边有哪些课程', '我想学习AI，有什么建议', '适合初学者的课程有哪些？']) {
+    assert.equal(routeBusinessClarification({ question }), null, question);
+  }
 });
 
 test('政策对象不明时先确认，已明确的业务和评论仍进入知识检索', () => {
@@ -180,7 +199,7 @@ test('政策对象不明时先确认，已明确的业务和评论仍进入知�
   assert.equal(routeBusinessClarification({ question: '港澳社区有什么政策？' }), null);
   assert.equal(routeBusinessClarification({ question: '这个有什么政策？', context: [{ role: 'USER', text: '我想了解港澳服务社区' }] }), null);
   assert.equal(routeBusinessClarification({ question: '这个有什么政策？', messageType: 'COMMENT' }), null);
-  const repeated = routeBusinessClarification({ question: '有哪些政策？', guidanceAttempt: 3, context: [{ role: 'USER', text: '这个有什么政策？' }] });
+  const repeated = routeBusinessClarification({ question: '这个有什么政策？', guidanceAttempt: 3, context: [{ role: 'USER', text: '这个有什么政策？' }] });
   assert.equal(repeated.action, 'HANDOFF');
   assert.equal(repeated.replyText, null);
 });

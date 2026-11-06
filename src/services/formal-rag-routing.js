@@ -4,7 +4,7 @@ import { RAG_RESULT } from './rag-client.js';
 import { getReplyLimit, validateReplyTextLength } from './platform-reply-policy.js';
 import { BUSINESS_GUIDANCE_MAX_ATTEMPTS, CONVERSATION_HISTORY_MAX_TURNS, enforceBusinessGuidanceLimit } from './conversation-policy.js';
 import { detectSmallTalkIntent, isAffirmativeReply, isNegativeReply } from './conversation-intent.js';
-import { businessSubjectClarificationReply, ragClarificationReply } from './rag-clarification.js';
+import { businessSubjectClarificationReply } from './rag-clarification.js';
 import { ragQuestionForMessage } from './message-source-context.js';
 import { isAiReplyTimeout } from './ai-reply-error.js';
 
@@ -151,15 +151,28 @@ export function formalRagReplyResult(response, { platformCode = '', messageType 
   }
   if ([RAG_RESULT.NO_ANSWER, RAG_RESULT.NEED_CLARIFICATION, RAG_RESULT.REJECTED].includes(status)) {
     if (isComment) return { action: 'HANDOFF', decision: 'COMMENT_KNOWLEDGE_GAP', replyText: null, confidence: 0, reason: `评论知识库未提供可靠答案，直接转人工：${status}`, responseMode: 'COMMENT_HANDOFF', guidanceAttempt: 0, maxGuidanceAttempts: safeMax, handoffOffered: false, handoffRequested: true, ragStatus: status };
-    const handoffOffered = safeAttempt >= safeMax;
-    const clarification = handoffOffered ? null : ragClarificationReply(response, { question, context, script });
-    return enforceBusinessGuidanceLimit({
-      action: 'REPLY', decision: handoffOffered ? 'RAG_CLARIFICATION_LIMIT' : 'RAG_NEED_CLARIFICATION',
-      replyText: clarification?.replyText || null,
-      clarificationCandidate: clarification?.clarificationCandidate || null,
-      confidence: 0, reason: `RAG 无可靠答案：${status}`, responseMode: 'RAG_CLARIFICATION', guidanceAttempt: safeAttempt,
-      maxGuidanceAttempts: safeMax, handoffOffered, ragStatus: status
-    }, { messageType, maxGuidanceAttempts: safeMax });
+    // A retrieval/evidence failure does not mean the customer omitted their intent.
+    // Only a genuine missing subject may consume the bounded clarification budget;
+    // never turn a low-confidence candidate into a question asking for confirmation.
+    const missingSubject = status === RAG_RESULT.NEED_CLARIFICATION
+      ? routeBusinessClarification({ question, context, messageType, script, guidanceAttempt: safeAttempt, maxGuidanceAttempts: safeMax })
+      : null;
+    if (missingSubject) return {
+      ...missingSubject,
+      decision: missingSubject.action === 'HANDOFF' ? 'RAG_CLARIFICATION_LIMIT' : 'RAG_NEED_CLARIFICATION',
+      responseMode: missingSubject.action === 'HANDOFF' ? 'BUSINESS_GUIDANCE_HANDOFF' : 'RAG_CLARIFICATION',
+      matchMethod: 'FORMAL_RAG', ragStatus: status
+    };
+    return {
+      action: 'REPLY', decision: 'RAG_KNOWLEDGE_GAP',
+      replyText: script === 'traditional'
+        ? '這次檢索還沒有足夠依據確認這個問題，暫時無法給出可靠答覆。如需進一步核實，可以輸入「轉人工」。'
+        : '这次检索还没有足够依据确认这个问题，暂时无法给出可靠答复。如需进一步核实，可以输入“转人工”。',
+      confidence: 0, reason: `RAG 检索或证据不足：${status}`,
+      responseMode: 'FORMAL_RAG_KNOWLEDGE_GAP', guidanceAttempt: 0,
+      maxGuidanceAttempts: safeMax, handoffOffered: false, handoffRequested: false,
+      clarificationCandidate: null, sourceReferences: [], ragStatus: status
+    };
   }
   const timeout = isAiReplyTimeout(response?.error || {});
   return {

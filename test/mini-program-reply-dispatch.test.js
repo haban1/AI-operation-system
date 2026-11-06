@@ -190,7 +190,7 @@ test('mini business queries enter handoff instead of legacy replies when formal 
   assert.equal(row("SELECT COUNT(*) AS n FROM agent_jobs WHERE job_type='REPLY'").n, 0);
 `, '', { RAG_FORMAL_ROUTING_ENABLED: null }));
 
-test('mini processor keeps formal RAG answer, clarification and failure handoff behavior', () => scenario(`
+test('mini processor separates evidence gaps from bounded missing-subject clarification and failure handoff', () => scenario(`
   assert.equal(config.ragFormalRoutingEnabled, false);
   const answered = await server.processMessage(seed('办理业务需要什么材料？').id);
   assert.equal(answered.decision, 'RAG_ANSWERED');
@@ -198,9 +198,24 @@ test('mini processor keeps formal RAG answer, clarification and failure handoff 
   assert.equal(answered.reply_job_id, null);
   assert.equal(requests[0].source.platform, 'DOUYIN');
   assert.equal(requests[0].source.channelType, 'DIRECT_MESSAGE');
+  const gaps = [];
+  for (let n = 0; n < 3; n += 1) gaps.push(await server.processMessage(seed('无答案问题' + n, { conversationId: 'evidence-gap' }).id));
+  for (const gap of gaps) {
+    assert.equal(gap.decision, 'RAG_KNOWLEDGE_GAP');
+    assert.equal(gap.status, 'REPLY_QUEUED');
+    assert.match(gap.reply_text, /没有足够依据/);
+    assert.doesNotMatch(gap.reply_text, /[？?]|哪方面|对吗/);
+    assert.equal(JSON.parse(gap.reply_context_json).guidanceAttempt, 0);
+    assert.equal(row('SELECT handling_mode FROM conversations WHERE id=?', gap.conversation_id).handling_mode, 'BOT_ACTIVE');
+    assert.equal(row('SELECT clarification_attempts FROM conversations WHERE id=?', gap.conversation_id).clarification_attempts, 0);
+    assert.equal(row('SELECT COUNT(*) AS n FROM notifications WHERE message_id=?', gap.id).n, 0);
+    assert.equal(row('SELECT COUNT(*) AS n FROM mini_program_callback_outbox WHERE message_id=?', gap.id).n, 1);
+  }
+  const beforeMissing = requests.length;
   const guided = [];
-  for (let n = 0; n < 3; n += 1) guided.push(await server.processMessage(seed('无答案问题' + n, { conversationId: 'clarify' }).id));
-  assert.deepEqual(guided.slice(0, 2).map(message => message.decision), ['RAG_NEED_CLARIFICATION', 'RAG_NEED_CLARIFICATION']);
+  for (let n = 0; n < 3; n += 1) guided.push(await server.processMessage(seed('怎么申请', { conversationId: 'missing-subject' }).id));
+  assert.deepEqual(guided.slice(0, 2).map(message => message.decision), ['KNOWLEDGE_GAP_GUIDANCE', 'KNOWLEDGE_GAP_GUIDANCE']);
+  assert.equal(requests.length, beforeMissing);
   const limit = guided[2];
   assert.equal(limit.status, 'MANUAL_REQUIRED');
   assert.equal(row('SELECT handling_mode FROM conversations WHERE id=?', limit.conversation_id).handling_mode, 'HANDOFF_PENDING');

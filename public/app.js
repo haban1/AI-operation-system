@@ -79,7 +79,7 @@ const STATUS_LABELS = Object.freeze({
   HANDOFF_PENDING:'转人工通知中', HUMAN_MANAGED:'已转人工', NOT_CONFIGURED:'未配置回调', RETRY_WAIT:'等待重试', SENDING:'发送中',
   ACCEPTED:'已接收', IGNORED_HANDOFF_COMPLETED:'已转人工，停止采集', BOT_ACTIVE:'AI 服务中',
   SIMPLE_GREETING:'简单问候', ROUTER_IGNORED:'路由忽略',
-  RAG_ANSWERED:'知识库已回复', RAG_NEED_CLARIFICATION:'需要补充信息', RAG_CLARIFICATION_LIMIT:'引导已达上限，转人工', KNOWLEDGE_GUIDANCE_LIMIT:'引导已达上限，转人工', RAG_SERVICE_UNAVAILABLE:'知识服务不可用',
+  RAG_ANSWERED:'知识库已回复', RAG_KNOWLEDGE_GAP:'知识证据不足', RAG_NEED_CLARIFICATION:'需要补充信息', RAG_CLARIFICATION_LIMIT:'引导已达上限，转人工', KNOWLEDGE_GUIDANCE_LIMIT:'引导已达上限，转人工', RAG_SERVICE_UNAVAILABLE:'知识服务不可用',
   HUMAN_HANDOFF:'转人工', HUMAN_FOLLOWUP_NOTIFIED:'已通知历史对接人工', HUMAN_FOLLOWUP_NOTIFICATION_PENDING:'历史人工通知中',
   REPLIED:'已回复', NOT_REPLIED:'未回复', MANUAL_REPLY:'人工回复',
   KNOWLEDGE_GAP:'知识不足', MANUAL_REQUIRED:'需人工处理', MANUAL_HANDLED:'人工已处理', PLATFORM_REPLY_DETECTED:'平台已有回复',
@@ -368,6 +368,7 @@ const workspaceGroups=[
   {id:'knowledge',label:'知识与回复',icon:'knowledge',section:'work',description:'维护知识和应答规则，通过回复测试验证效果后再发布。',items:[
     {key:'documents',label:'知识资料',page:'knowledge',view:'rag'},
     {key:'aliases',label:'相似问法',page:'aliases'},
+    {key:'answer-style',label:'回答风格',page:'knowledge',view:'persona'},
     {key:'handoff-rules',label:'转人工说法',page:'knowledge',view:'handoff'},
     {key:'reply-test',label:'回复测试',page:'xiaozhi',hint:'小智'}]},
   {id:'channels',label:'平台与账号',icon:'accounts',section:'manage',description:'管理平台启停、账号、登录状态与浏览器执行环境。',items:[
@@ -1993,7 +1994,7 @@ const miniProgramStatusLabels=Object.freeze({
   callback:Object.freeze({PENDING:'等待发送',SENDING:'发送中',RETRY_WAIT:'等待重试',NOT_CONFIGURED:'未配置回调',FAILED:'发送失败',SENT:'已发送',CANCELLED:'已取消',UNKNOWN:'未知状态'}),
   notification:Object.freeze({PENDING:'等待通知',SENDING:'通知中',RETRY_WAIT:'等待重试',FAILED:'通知失败',SENT:'已通知',CONFIRMED:'已确认',UNKNOWN:'未知状态'}),
   message:Object.freeze({NEW:'新消息',REPLY_QUEUED:'待发送',REPLY_RUNNING:'发送中',AUTO_REPLIED:'已自动回复',MANUAL_REQUIRED:'需人工处理',MANUAL_HANDLED:'人工已处理',CLOSED:'已关闭',SUPERSEDED:'已被新消息替代',UNKNOWN:'未知状态'}),
-  decision:Object.freeze({AUTO_REPLY:'高可信自动回复',AUTO_REPLY_PARTIAL_KNOWLEDGE:'部分问题已回复，仍有问题待确认',SMALL_TALK:'闲聊回复',GREETING_GUIDANCE:'问候引导',KNOWLEDGE_GAP_GUIDANCE:'知识库未命中，正在引导用户补充',SIMPLE_GREETING:'简单问候',ROUTER_IGNORED:'路由忽略',AUTO_REPLY_INELIGIBLE:'不满足自动回复条件',SUPERSEDED_BY_NEW_MESSAGE:'新消息已到达，旧回复已作废',RAG_ANSWERED:'知识库已回复',RAG_NEED_CLARIFICATION:'需要补充信息',RAG_CLARIFICATION_LIMIT:'引导已达上限，转人工',KNOWLEDGE_GUIDANCE_LIMIT:'引导已达上限，转人工',RAG_SERVICE_UNAVAILABLE:'知识服务不可用',HUMAN_HANDOFF:'转人工',HUMAN_FOLLOWUP_NOTIFIED:'已通知历史对接人工',HUMAN_FOLLOWUP_NOTIFICATION_PENDING:'历史人工通知中',MANUAL_HANDLED:'人工已处理',UNKNOWN:'未知状态'})
+  decision:Object.freeze({AUTO_REPLY:'高可信自动回复',AUTO_REPLY_PARTIAL_KNOWLEDGE:'部分问题已回复，仍有问题待确认',SMALL_TALK:'闲聊回复',GREETING_GUIDANCE:'问候引导',KNOWLEDGE_GAP_GUIDANCE:'知识库未命中，正在引导用户补充',SIMPLE_GREETING:'简单问候',ROUTER_IGNORED:'路由忽略',AUTO_REPLY_INELIGIBLE:'不满足自动回复条件',SUPERSEDED_BY_NEW_MESSAGE:'新消息已到达，旧回复已作废',RAG_ANSWERED:'知识库已回复',RAG_KNOWLEDGE_GAP:'知识证据不足', RAG_NEED_CLARIFICATION:'需要补充信息',RAG_CLARIFICATION_LIMIT:'引导已达上限，转人工',KNOWLEDGE_GUIDANCE_LIMIT:'引导已达上限，转人工',RAG_SERVICE_UNAVAILABLE:'知识服务不可用',HUMAN_HANDOFF:'转人工',HUMAN_FOLLOWUP_NOTIFIED:'已通知历史对接人工',HUMAN_FOLLOWUP_NOTIFICATION_PENDING:'历史人工通知中',MANUAL_HANDLED:'人工已处理',UNKNOWN:'未知状态'})
 });
 function miniProgramStatusMeta(value,kind='message'){
   const labels=miniProgramStatusLabels[kind]||miniProgramStatusLabels.message;
@@ -2325,7 +2326,7 @@ async function renderMessages(prefetchedData=null){
 }
 
 function renderKnowledgeTabs(){
-  return `<div class="knowledge-section-tabs" role="tablist" aria-label="知识库内容切换"><button class="knowledge-section-tab ${state.knowledgeView==='rag'?'active':''}" type="button" data-knowledge-view="rag" role="tab" aria-selected="${state.knowledgeView==='rag'}"><span class="knowledge-tab-icon">▤</span><span><b>知识库内容</b><small>资料上传、测试与发布</small></span></button><button class="knowledge-section-tab ${state.knowledgeView==='handoff'?'active':''}" type="button" data-knowledge-view="handoff" role="tab" aria-selected="${state.knowledgeView==='handoff'}"><span class="knowledge-tab-icon">↗</span><span><b>转人工说法</b><small>自定义私信触发语句</small></span></button></div>`;
+  return `<div class="knowledge-section-tabs" role="tablist" aria-label="知识库内容切换"><button class="knowledge-section-tab ${state.knowledgeView==='rag'?'active':''}" type="button" data-knowledge-view="rag" role="tab" aria-selected="${state.knowledgeView==='rag'}"><span class="knowledge-tab-icon">▤</span><span><b>知识库内容</b><small>资料上传、测试与发布</small></span></button><button class="knowledge-section-tab ${state.knowledgeView==='handoff'?'active':''}" type="button" data-knowledge-view="handoff" role="tab" aria-selected="${state.knowledgeView==='handoff'}"><span class="knowledge-tab-icon">↗</span><span><b>转人工说法</b><small>自定义私信触发语句</small></span></button><button class="knowledge-section-tab ${state.knowledgeView==='persona'?'active':''}" type="button" data-knowledge-view="persona" role="tab" aria-selected="${state.knowledgeView==='persona'}"><span class="knowledge-tab-icon">✦</span><span><b>回答风格</b><small>称呼、语气与表达</small></span></button></div>`;
 }function bindKnowledgeTabs(){
   document.querySelectorAll('[data-knowledge-view]').forEach(button=>button.onclick=()=>{const next=button.dataset.knowledgeView;if(next===state.knowledgeView)return;state.knowledgeView=next;renderKnowledge().then(()=>window.scrollTo({top:0,left:0,behavior:'smooth'})).catch(error=>toast(error.message,true))});
 }
@@ -2813,7 +2814,53 @@ async function renderRagKnowledge(){
   scheduleRagKnowledgePoll(allDocuments,releases);
 }
 
+const RAG_DEFAULT_ANSWER_PROFILE = Object.freeze({
+  assistantName: '智慧驱动答疑助手',
+  companyName: '智慧驱动',
+  stylePrompt: '',
+  greeting: '你好，有什么想了解的？直接问就好。',
+});
+
+async function renderRagAnswerProfile(){
+  clearRagKnowledgePoll();
+  $('#content').innerHTML=`${renderKnowledgeTabs()}<section class="panel"><div class="panel-head"><div><h2>回答风格</h2><p>调整助手的称呼和表达。保存后从下一次回答生效。</p></div></div><div class="rag-answer-profile-body" id="ragAnswerProfileBody"><p class="muted" role="status">正在加载已保存的设置…</p></div></section>`;
+  bindKnowledgeTabs();
+  const container=$('#ragAnswerProfileBody');
+  try{
+    const data=await api('/api/rag/answer-profile');
+    if(state.page!=='knowledge'||state.knowledgeView!=='persona'||!document.contains(container))return;
+    let saved=data.profile;
+    if(!saved||['assistantName','companyName','stylePrompt','greeting'].some(key=>typeof saved[key]!=='string'))throw new Error('设置格式不完整，请重新加载。');
+    container.innerHTML=`<form id="ragAnswerProfileForm" class="rag-answer-profile-form"><fieldset><label>助手称呼<input name="assistantName" required maxlength="60" value="${esc(saved.assistantName)}"></label><label>公司称呼<input name="companyName" required maxlength="80" value="${esc(saved.companyName)}"></label><label class="full">回答风格<textarea name="stylePrompt" maxlength="4000" rows="5" placeholder="例如：像耐心的同事一样，先直接回答，再补必要条件；少用套话。">${esc(saved.stylePrompt)}</textarea></label><label class="full">问候语<input name="greeting" required maxlength="240" value="${esc(saved.greeting)}"></label><p class="muted full">这些设置只调整表达，不更改知识依据、资料发布、检索范围或权限。助手仍会如实说明 AI 身份，不编造事实、已完成的动作或服务承诺。智慧驱动是公司称呼，周周有课是课程系列。</p><div class="button-row full"><button class="btn" type="submit">保存设置</button><button class="btn secondary" id="ragAnswerProfileCancel" type="button">取消修改</button><button class="btn secondary" id="ragAnswerProfileDefaults" type="button">填入默认值</button></div></fieldset><p id="ragAnswerProfileStatus" class="muted" role="status" aria-live="polite">已加载保存的设置。</p></form>`;
+    const form=container.querySelector('form');
+    const fields=form.querySelector('fieldset');
+    const status=form.querySelector('#ragAnswerProfileStatus');
+    const fill=profile=>Object.keys(RAG_DEFAULT_ANSWER_PROFILE).forEach(key=>{form.elements[key].value=profile[key]});
+    form.querySelector('#ragAnswerProfileCancel').onclick=()=>{fill(saved);status.textContent='已恢复保存的设置，未提交修改。'};
+    form.querySelector('#ragAnswerProfileDefaults').onclick=()=>{fill(RAG_DEFAULT_ANSWER_PROFILE);status.textContent='已填入默认值，点击“保存设置”后生效。'};
+    form.onsubmit=async event=>{
+      event.preventDefault();
+      if(fields.disabled||!form.reportValidity())return;
+      const profile=Object.fromEntries(Object.keys(RAG_DEFAULT_ANSWER_PROFILE).map(key=>[key,form.elements[key].value.trim()]));
+      fields.disabled=true;status.textContent='正在保存…';
+      try{
+        const response=await api('/api/rag/answer-profile',{method:'PUT',body:JSON.stringify(profile)});
+        if(!response.profile||Object.keys(RAG_DEFAULT_ANSWER_PROFILE).some(key=>typeof response.profile[key]!=='string'))throw new Error('保存结果格式不完整，请重新加载核对。');
+        saved=response.profile;
+        fill(saved);
+        status.textContent='已保存，下次回答生效。知识资料和当前测试记录保持不变。';
+      }catch(error){status.textContent=`保存未确认，当前输入已保留，请重试或重新加载核对：${error.message}`}
+      finally{fields.disabled=false}
+    };
+  }catch(error){
+    if(!document.contains(container))return;
+    container.innerHTML=`<div class="notice warn" role="status">设置加载失败，尚未修改已保存内容。${esc(error.message)}</div><button class="btn secondary" id="ragAnswerProfileRetry" type="button">重新加载</button>`;
+    container.querySelector('#ragAnswerProfileRetry').onclick=()=>renderRagAnswerProfile();
+  }
+}
+
 async function renderKnowledge(){
+  if(state.knowledgeView==='persona')return renderRagAnswerProfile();
   if(state.knowledgeView==='handoff')return renderManualHandoffPhrases();
   if(state.knowledgeView!=='rag')state.knowledgeView='rag';
   return renderRagKnowledge();

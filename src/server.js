@@ -4064,6 +4064,17 @@ async function api(req, res, url) {
     const result = requireRagAdminResult(await formalRagClient.systemStatus(), '读取 RAG 系统状态失败');
     return ok(res, { rag: { enabled: true, configured: true, knowledgeBaseId: config.ragKnowledgeBaseId, ...result } });
   }
+  if (req.method === 'GET' && pathname === '/api/rag/answer-profile') {
+    requireRagAdminEnabled();
+    const result = requireRagAdminResult(await formalRagClient.getAnswerProfile({ knowledgeBaseId: config.ragKnowledgeBaseId }), '读取回答风格失败');
+    return ok(res, result);
+  }
+  if (req.method === 'PUT' && pathname === '/api/rag/answer-profile') {
+    requireRagAdminEnabled();
+    const data = await body(req, 24 * 1024);
+    const result = requireRagAdminResult(await formalRagClient.saveAnswerProfile({ knowledgeBaseId: config.ragKnowledgeBaseId, profile: data }), '保存回答风格失败');
+    return ok(res, result);
+  }
   if (req.method === 'GET' && pathname === '/api/rag/documents') {
     requireRagAdminEnabled();
     const result = requireRagAdminResult(await formalRagClient.listDocuments({ knowledgeBaseId: config.ragKnowledgeBaseId }), '读取 RAG 文档失败');
