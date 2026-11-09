@@ -232,6 +232,47 @@ class HybridRetriever:
             return 0.65
         return 0.0
 
+    def scope_vocabulary(self, scope: SearchScope, limit: int = 32) -> list[str]:
+        """Bounded title hints from the exact frozen scope, without reading vectors/text.
+
+        These are search vocabulary, never answer evidence or an exhaustive catalog.
+        """
+        limit = max(0, min(32, limit))
+        if not limit or scope.chunk_ids == []:
+            return []
+        sql = (
+            "SELECT DISTINCT v.title FROM chunks c JOIN document_versions v ON "
+            "v.document_id=c.document_id AND v.document_version=c.document_version "
+        )
+        params: list[Any] = []
+        if scope.chunk_ids is not None:
+            placeholders = ",".join("?" for _ in scope.chunk_ids)
+            sql += f"WHERE c.chunk_id IN ({placeholders}) AND v.knowledge_base_id=? "
+            params.extend([*scope.chunk_ids, scope.knowledge_base_id])
+        elif scope.release_id:
+            sql += (
+                "JOIN release_members rm ON rm.chunk_id=c.chunk_id "
+                "JOIN releases r ON r.release_id=rm.release_id "
+                "WHERE rm.release_id=? AND r.knowledge_base_id=? AND v.knowledge_base_id=? "
+            )
+            params.extend([scope.release_id, scope.knowledge_base_id, scope.knowledge_base_id])
+        else:
+            # A scope must be frozen before exposing even document titles.
+            return []
+        sql += "AND trim(v.title)<>'' ORDER BY v.title LIMIT ?"
+        params.append(limit)
+        with self.db.connection() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        titles, remaining = [], 2500
+        for row in rows:
+            title = str(row["title"]).strip()[:min(120, remaining)]
+            if title and title not in titles:
+                titles.append(title)
+                remaining -= len(title)
+            if remaining <= 0:
+                break
+        return titles
+
     def _load_scope_chunks(self, scope: SearchScope) -> list[dict[str, Any]]:
         if scope.chunk_ids is not None:
             return self.db.get_chunks_by_ids(scope.chunk_ids, scope.knowledge_base_id)

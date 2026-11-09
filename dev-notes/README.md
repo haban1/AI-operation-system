@@ -1,6 +1,7 @@
 # 开发交接入口
 
-先读 [规范](POLICY.md)，最新调整见
+先读 [规范](POLICY.md)，当前口语修复见
+[查询改写与重排对齐](changes/20261109-colloquial-query-alignment.md)，此前调整见
 [五次澄清上限](changes/20261106-five-clarification-attempts.md)，本次接入记录见
 [20261106 Traceable RAG](changes/20261106-traceable-rag-integration.md)，长期边界见
 [兼容接入决定](decisions/0001-operations-rag-boundary.md)。
