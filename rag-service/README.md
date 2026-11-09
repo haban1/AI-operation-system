@@ -124,3 +124,38 @@ Short follow-ups are combined with the latest conversation topic before both ret
 - The service never receives platform cookies, platform credentials, or enterprise messaging secrets.
 - Trace payloads are redacted and bounded by default. Full raw prompts are not stored by default.
 - Publication and rollback are explicit operator actions; a failed build never moves the active pointer.
+
+## Colloquial query normalization
+
+With `RAG_QUERY_REWRITE_ENABLED=true`, the existing rewrite call now produces a
+`canonical_question` and a bounded `queries` list. The canonical question removes
+spoken filler, corrects clear technical typos, and resolves references from the
+supplied conversation without answering or adding facts. The rewrite prompt also
+receives at most 32 document-version titles from the frozen release/test IDs and
+knowledge base (120 characters each, 2500 total), so terms match the actual scope.
+This SQL lookup reads metadata only, not source bodies or vectors. Titles are
+search vocabulary, never answer evidence or identity proof; multiple institutions
+must not be arbitrarily resolved, and an explicit current/context subject wins. The validated canonical
+is used for first-round recall and global reranking. If its top relevance score
+is below the existing channel threshold, the existing second round tries the
+deterministic context-resolved question, retaining first-round seeds and the
+four-query retry cap. Each round records its actual rerank question. The original
+question, first canonical and deterministic resolution remain in the plan/Trace.
+Formal queries and debug retrieval share that same planner.
+
+The prompt requires preservation of explicit entities, numbers, time limits,
+negations, and comparisons. Deterministic validation rejects malformed output and
+certain lost or invented anchors; it is a conservative guard, not a proof of
+semantic equivalence. Title hints cannot authorize new numbers, amounts, dates,
+URLs or promises. Both canonical and auxiliary queries also pass the existing
+prompt-attack boundary. On rejection, provider failure, or disabled rewriting, the
+existing deterministic question is used. Safe original/context variants remain in
+the maximum four retrieval queries. No additional model call or rerank pass is
+introduced, although the rewrite prompt/output budget is larger.
+
+The original question still governs Evidence Gate, exact-detail checks, negative
+cases, and grounded generation. A normalized query is only a relevance hint. The
+channel threshold, two-round/four-retry-query budgets, published knowledge scope,
+single-hop four/multi-hop six evidence limits, and audited-context identity stay
+unchanged. A higher rerank score does not establish factual correctness; evaluate
+supported answers and unsupported requests separately on a fixed corpus.

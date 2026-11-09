@@ -1,9 +1,13 @@
 """Channel gates and single-turn comments, using local deterministic retrieval."""
 import asyncio
+
 import pytest
 from pydantic import ValidationError
+
 from app.config import Settings
-from app.models import Snapshot, SourceInfo, QueryMessage, DebugQueryRequest, TestCandidate as Candidate, TestSessionCreate as Session
+from app.models import DebugQueryRequest, QueryMessage, Snapshot, SourceInfo
+from app.models import TestCandidate as Candidate
+from app.models import TestSessionCreate as Session
 from app.pipeline import RagService
 
 
@@ -61,10 +65,10 @@ async def test_query_uses_channel_gate_and_comment_ignores_history(tmp_path, mon
         session = service.create_test_session(Session(requestId="session", candidateDocuments=[Candidate(documentId=upload.documentId, documentVersion=1)]))
         real_retrieve = service._retrieve
         seen_contexts = []
-        real_analyze = service._rewrite
-        async def analyze(question, context, trace):
+        real_analyze = service._query_plan
+        async def analyze(question, context, trace, **kwargs):
             seen_contexts.append(context)
-            return await real_analyze(question, context, trace)
+            return await real_analyze(question, context, trace, **kwargs)
         async def scored_retrieve(*args, **kwargs):
             selected, runs = await real_retrieve(*args, **kwargs)
             assert selected, "短问法必须能从真实 Markdown 索引召回知识"
@@ -72,7 +76,7 @@ async def test_query_uses_channel_gate_and_comment_ignores_history(tmp_path, mon
                 hit["reranker_score_normalized"] = 0.34
             return selected, runs
         monkeypatch.setattr(service, "_retrieve", scored_retrieve)
-        monkeypatch.setattr(service, "_rewrite", analyze)
+        monkeypatch.setattr(service, "_query_plan", analyze)
         for channel, expected in [("COMMENT", "ANSWERED"), ("DIRECT_MESSAGE", "NO_ANSWER")]:
             response = await service.run_query(question="怎么加入", snapshot=Snapshot(conversationKey=channel, conversationVersion=1, inputFingerprint=channel),
                 source=SourceInfo(platform="DOUYIN", channelType=channel), knowledge_base_id="main-business-kb",

@@ -14,24 +14,22 @@ from typing import Any
 from .agent import AgentAnswer, BoundedDeepAgent
 from .chunking import POLICY_PROFILES, build_chunks
 from .config import Settings, get_settings
-from .conversation_context import analyze_query, contextual_query, prepare_history
-from .db import Database, DatabaseConflict, dumps
+from .conversation_context import analyze_query, prepare_history
+from .db import Database, DatabaseConflict
 from .models import (
     AnswerBody,
     Citation,
     DebugQueryRequest,
     DocumentResponse,
     Grounding,
-    KnowledgeScope,
-    QueryConstraints,
     QueryMessage,
     QueryMeta,
     QueryRequest,
     QueryResponse,
     ReleaseCreate,
     ReleaseResponse,
-    SourceInfo,
     Snapshot,
+    SourceInfo,
     TestAnswerResponse,
     TestCandidate,
     TestQueryRequest,
@@ -49,8 +47,13 @@ from .providers import (
     build_embedding_provider,
     build_reranker_provider,
 )
+from .query_rewrite import (
+    QUERY_REWRITE_PROMPT_VERSION,
+    QUERY_REWRITE_SYSTEM_PROMPT,
+    parse_rewrite,
+)
 from .retrieval import HybridRetriever, SearchScope, tokenize
-from .tracing import TraceHandle, TraceRecorder, redact_text, safe_summary, stable_hash
+from .tracing import TraceHandle, TraceRecorder, redact_text, stable_hash
 
 
 class RagError(RuntimeError):
@@ -658,35 +661,82 @@ class RagService:
             raise RagError("RAG_NOT_READY", "没有已发布知识版本", 503, True)
         return PreparedScope(SearchScope(knowledge_base_id, release_id=release["release_id"], mode="PUBLISHED"), release)
 
-    async def _rewrite(self, question: str, context: list[QueryMessage], trace: TraceHandle) -> list[str]:
+    async def _query_plan(
+        self, question: str, context: list[QueryMessage], trace: TraceHandle, *, use_rewrite: bool = True,
+        vocabulary: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Resolve once; use the same validated question for recall and reranking.
+
+        The original request remains authoritative for Gate and generation. This
+        plan is request-local; no mutable instance state is shared by callers.
+        """
         normalized = _normalize_query(question)
-        context = prepare_history(normalized, context)
-        resolved = contextual_query(normalized, context)
-        # search_many reranks on its FIRST query. Resolve the subject here so a
-        # generic follow-up is not ranked against a different business's FAQ.
-        variants = [resolved]
-        # Add a punctuation-normalized variant without inventing domain facts.
-        compact = re.sub(r"[，。！？；：、,.!?;:]", " ", resolved)
-        compact = _normalize_query(compact)
-        if compact and compact not in variants:
-            variants.append(compact)
-        if self.settings.query_rewrite_enabled and self.llm.enabled:
-            with trace.span("query.rewrite.llm", "llm", {"question": normalized}) as span:
+        vocabulary = list(vocabulary or [])[:32] if use_rewrite else []
+        context = prepare_history(normalized, context) if use_rewrite else []
+        analysis = analyze_query(normalized, context) if use_rewrite else {
+            "originalQuestion": normalized, "resolvedQuestion": normalized, "keywords": [], "contextUsed": False,
+        }
+        resolved = analysis["resolvedQuestion"]
+        compact = _normalize_query(re.sub(r"[，。！？；：、,.!?;:]", " ", resolved))
+        variants = list(dict.fromkeys(value for value in [resolved, normalized, compact] if value))
+        analysis.update(
+            contextResolvedQuestion=resolved, rerankQueryMethod="deterministic",
+            deterministicContextUsed=analysis["contextUsed"], contextProvided=bool(context),
+            vocabularyCount=len(vocabulary), vocabularyScope="frozen_release_or_test_ids",
+            promptVersion=QUERY_REWRITE_PROMPT_VERSION,
+            rewriteValidation={"status": "disabled" if not use_rewrite or not self.settings.query_rewrite_enabled else "unavailable"},
+        )
+        if use_rewrite and self.settings.query_rewrite_enabled and self.llm.enabled:
+            with trace.span("query.rewrite.llm", "llm", {
+                "question": normalized, "contextResolvedQuestion": resolved,
+                "promptVersion": QUERY_REWRITE_PROMPT_VERSION,
+            }) as span:
                 try:
                     payload, data = await self.llm.json_complete(
-                        "你是检索查询改写器。只做同义改写和必要的上下文补全，不回答问题，不添加原问题没有的事实。输出JSON对象 {\"queries\":[string]}，最多3条。宽泛但有主题的问题先检索，可用资料中的学习主题或业务概览作答；不要要求用户先选课程或个人偏好。不要把学习主题改为必须包含报名入口、实时开课或完整目录，除非用户明确询问。",
-                        json.dumps({"question": normalized, "context": [item.model_dump() for item in context]}, ensure_ascii=False),
-                        max_tokens=240,
+                        QUERY_REWRITE_SYSTEM_PROMPT,
+                        json.dumps({
+                            "question": normalized, "context_resolved_question": resolved,
+                            "context": [item.model_dump() for item in context],
+                            "retrieval_vocabulary": vocabulary,
+                        }, ensure_ascii=False), max_tokens=600,
                     )
-                    generated = payload.get("queries", []) if isinstance(payload, dict) else []
-                    for item in generated[:3]:
-                        value = _normalize_query(str(item))
-                        if value and value not in variants:
-                            variants.append(value)
-                    span.set_output({"queries": variants[:5], "provider": data.get("model", self.settings.effective_llm_model)})
+                    canonical, generated, validation = parse_rewrite(
+                        payload, original_question=normalized, resolved_question=resolved,
+                        context_text="\n".join(item.text for item in context),
+                        retrieval_vocabulary="\n".join(vocabulary), max_chars=self.settings.max_query_chars,
+                    )
+                    # Reuse the existing attack boundary for model-produced
+                    # search text too; a title hint cannot launder an instruction.
+                    if canonical and _is_prompt_attack(canonical):
+                        canonical = None
+                        validation.update(canonicalAccepted=False, canonicalRejectionReason="existing_prompt_attack_guard")
+                    safe_generated = [value for value in generated if not _is_prompt_attack(value)]
+                    if len(safe_generated) != len(generated):
+                        validation.setdefault("queryRejections", []).append({"reason": "existing_prompt_attack_guard"})
+                    generated = safe_generated
+                    analysis["rewriteValidation"] = validation
+                    analysis["llmContextUsedReported"] = validation.get("contextUsedReported")
+                    if canonical:
+                        analysis["contextUsed"] = analysis["contextUsed"] or bool(context and validation.get("contextUsedReported"))
+                        analysis.update(resolvedQuestion=canonical, rerankQueryMethod="validated_llm_canonical")
+                        variants = list(dict.fromkeys([canonical, resolved, normalized, *generated]))[:4]
+                    else:
+                        # Keep the original query plus independent lexical views;
+                        # malformed rewrites never choose the rerank question.
+                        variants = list(dict.fromkeys([resolved, normalized, *generated, compact]))[:4]
+                    span.set_output({
+                        "queries": variants, "canonicalQuestion": canonical,
+                        "rerankQuery": analysis["resolvedQuestion"], "validation": validation,
+                        "provider": data.get("model", self.settings.effective_llm_model),
+                    })
                 except Exception as exc:
-                    span.set_output({"fallback": True, "error": redact_text(str(exc), 300)})
-        return variants[:4]
+                    analysis["rewriteValidation"] = {"status": "llm_error", "reason": redact_text(str(exc), 300)}
+                    span.set_output({"fallback": True, **analysis["rewriteValidation"], "rerankQuery": resolved})
+        return {"variants": variants[:4], "analysis": analysis}
+
+    async def _rewrite(self, question: str, context: list[QueryMessage], trace: TraceHandle) -> list[str]:
+        """Compatibility helper for callers that only need retrieval variants."""
+        return (await self._query_plan(question, context, trace))["variants"]
 
     async def _retrieve(
         self,
@@ -699,7 +749,7 @@ class RagService:
         rerank_query: str | None = None,
         round_number: int = 1,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        with trace.span("retrieval.hybrid", "retriever", {"variants": variants, "scope": scope.mode, "round": round_number}) as span:
+        with trace.span("retrieval.hybrid", "retriever", {"variants": variants, "rerankQuery": rerank_query, "scope": scope.mode, "round": round_number}) as span:
             result = await asyncio.to_thread(
                 self.retriever.search_many, variants, scope, top_k=min(6, top_k),
                 seed_hits=seed_hits, rerank_query=rerank_query, include_tail=True,
@@ -708,7 +758,7 @@ class RagService:
             selected = result.get("selected", [])
             runs = result.get("variantPools", [])
             span.add_candidates(candidates[:40])
-            span.set_output({"variantCount": len(variants), "candidateCount": len(candidates), "selectedCount": len(selected)})
+            span.set_output({"variantCount": len(variants), "candidateCount": len(candidates), "selectedCount": len(selected), "rerankQuery": result.get("query", rerank_query)})
         return selected, runs
 
     def _citation(self, hit: dict[str, Any], verification: str = "VERIFIED") -> Citation:
@@ -1044,10 +1094,9 @@ class RagService:
                     span.set_output({"normalizedLength": len(question), "contextCount": len(context),
                                      "presentationProfile": profile_trace(answer_profile)})
                 with trace.span("query.rewrite", "workflow", {"question": question}) as span:
-                    variants = await self._rewrite(question, context, trace) if use_rewrite else [question]
-                    query_analysis = analyze_query(question, context) if use_rewrite else {
-                        "originalQuestion": question, "resolvedQuestion": question, "keywords": [], "contextUsed": False,
-                    }
+                    vocabulary = self.retriever.scope_vocabulary(prepared.scope) if use_rewrite and self.settings.query_rewrite_enabled and self.llm.enabled else []
+                    plan = await self._query_plan(question, context, trace, use_rewrite=use_rewrite, vocabulary=vocabulary)
+                    variants, query_analysis = plan["variants"], plan["analysis"]
                     resolved_question = query_analysis["resolvedQuestion"]
                     multihop = _looks_multihop(question)
                     query_analysis.update(
@@ -1062,6 +1111,9 @@ class RagService:
                 gate = {}
                 reason = None
                 allowed = False
+                query_analysis["canonicalQuestion"] = resolved_question
+                query_analysis["initialRerankQueryMethod"] = query_analysis["rerankQueryMethod"]
+                query_analysis["rerankQueriesByRound"] = []
                 for round_number in (1, 2):
                     if round_number == 1:
                         candidates, round_runs = await self._retrieve(
@@ -1069,11 +1121,28 @@ class RagService:
                         )
                         first_round_candidates = candidates
                     else:
+                        # A valid paraphrase can still lower a cross-encoder's
+                        # relevance score. Spend the existing second round on the
+                        # deterministic intent view instead of repeating it.
+                        deterministic_question = query_analysis["contextResolvedQuestion"]
+                        use_original_view = (
+                            query_analysis["rerankQueryMethod"] == "validated_llm_canonical"
+                            and deterministic_question != resolved_question
+                            and float(gate.get("topScore", 1.0)) < float(gate.get("threshold", 0.0))
+                        )
+                        if use_original_view:
+                            query_analysis["retryRerankFallback"] = "canonical_below_channel_threshold"
+                            query_analysis["rerankQueryMethod"] = "deterministic_retry_fallback"
+                            resolved_question = deterministic_question
+                            query_analysis["resolvedQuestion"] = resolved_question
                         round_queries = await self._plan_retry(question, resolved_question, gate, trace)
+                        if use_original_view:
+                            round_queries = list(dict.fromkeys([resolved_question, *round_queries]))[:4]
                         candidates, round_runs = await self._retrieve(
                             round_queries, prepared.scope, trace, top_k,
                             seed_hits=first_round_candidates, rerank_query=resolved_question, round_number=2,
                         )
+                    query_analysis["rerankQueriesByRound"].append({"round": round_number, "query": resolved_question})
                     retrieval_runs.extend({**item, "round": round_number} for item in round_runs)
                     selected, evidence_set = _build_evidence_set(candidates, multihop=multihop)
                     evidence_set["round"] = round_number
@@ -1087,7 +1156,9 @@ class RagService:
                             question, resolved_question, selected, require_grounding=require_grounding,
                             channel_type=source.channelType, multihop=multihop, round_number=round_number,
                         )
-                        negative = self._negative_block(resolved_question, selected, knowledge_base_id)
+                        negative = next((blocked for view in dict.fromkeys([
+                            question, query_analysis["contextResolvedQuestion"], query_analysis["canonicalQuestion"], resolved_question,
+                        ]) if (blocked := self._negative_block(view, selected, knowledge_base_id))), None)
                         if negative:
                             allowed, reason = False, "DISABLED_TEST_CASE"
                             gate.update(blocked=True, negativeCaseId=negative.get("negative_case_id"), decision="reject")
@@ -1377,9 +1448,15 @@ class RagService:
         )
         with trace:
             with trace.span("query.rewrite", "workflow", {"question": request.question}) as span:
-                variants = await self._rewrite(request.question, [] if request.channelType == "COMMENT" else request.context, trace) if request.useRewrite else [_normalize_query(request.question)]
-                resolved_question = analyze_query(request.question, [] if request.channelType == "COMMENT" else request.context)["resolvedQuestion"] if request.useRewrite else variants[0]
-                span.set_output({"variants": variants})
+                context = [] if request.channelType == "COMMENT" else request.context
+                if any(_is_prompt_attack(item.text) for item in context):
+                    context = []
+                context = _bound_context(context, self.settings.max_context_messages, self.settings.max_context_chars)
+                vocabulary = self.retriever.scope_vocabulary(prepared.scope) if request.useRewrite and self.settings.query_rewrite_enabled and self.llm.enabled else []
+                plan = await self._query_plan(request.question, context, trace, use_rewrite=request.useRewrite, vocabulary=vocabulary)
+                variants, query_analysis = plan["variants"], plan["analysis"]
+                resolved_question = query_analysis["resolvedQuestion"]
+                span.set_output({"variants": variants, "queryAnalysis": query_analysis})
             with trace.span("retrieval.hybrid", "retriever", {"variants": variants, "scope": prepared.scope.mode}) as retrieval_span:
                 retrieval_result = await asyncio.to_thread(
                     self.retriever.search_many, variants, prepared.scope, top_k=min(6, request.topK),
@@ -1409,6 +1486,7 @@ class RagService:
                 "releaseId": prepared.release.get("release_id") if prepared.release else None,
                 "knowledgeVersion": prepared.release.get("knowledge_version") if prepared.release else None,
                 "variants": variants,
+                "queryAnalysis": query_analysis,
                 "retrievalRuns": runs,
                 "selected": [_public_hit(item, include_excerpt=True) for item in selected],
                 "candidates": [_public_hit(item, include_excerpt=True) for item in retrieval_result.get("candidatePool", selected)],

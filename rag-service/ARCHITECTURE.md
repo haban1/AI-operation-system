@@ -131,3 +131,31 @@ An immutable per-knowledge-base answer profile is read at request start and only
 answer generation. Its default brand is 智慧驱动. Grounding/citations and honest AI identity
 take priority over style. Trace stores profile hash/version, not the custom style text.
 See [operations integration guide](../docs/运营RAG兼容接入-20261106.md).
+
+## Query plan and colloquial inputs
+
+The planner emits a request-local plan with the original question, deterministic
+context resolution, validated LLM canonical question, auxiliary queries, and
+rejection diagnostics. The existing rewrite call receives bounded document-version
+titles from the already frozen release or test chunk IDs, constrained by KB.
+Titles help align terminology; they are not answer evidence or permission to add
+prices, dates, identities, URLs, commitments, or unrelated user requirements.
+
+Both formal queries and debug retrieval use that one plan. Recall retains the
+original/context question and uses at most four variants; global reranking uses
+the accepted canonical first. If its top score is below the existing channel
+threshold, the already budgeted second round uses deterministic context resolution
+for recall and reranking; other retry reasons retain the same intent view. The
+actual query for each round is traced. A failed/disabled/invalid rewrite also uses
+deterministic context resolution. The original question still governs Gate,
+detail checks, negative cases, and generation. A rewrite cannot launder an original
+attack or a disabled case; model-produced search text also passes the existing
+attack filter. No shared mutable query-plan state or additional LLM call is added.
+
+Flow: frozen scope → bounded title vocabulary + original/history → rewrite and
+surface validation → recall/global rerank → single-hop up to four / multi-hop up
+to six → Gate on original intent → identical evidence context → cited answer.
+This keeps thresholds and budgets intact while fixing the former mismatch where
+LLM rewrites influenced recall but the original colloquial query still controlled
+final relevance scoring. Conservative validation is not semantic equivalence
+proof; fixed-set answer review and unseen future data remain necessary.
