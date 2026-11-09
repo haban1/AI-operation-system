@@ -8,3 +8,11 @@ bundled/content-library/media/** -text
 dev-notes export-ignore
 dev-notes/** export-ignore
 AGENTS.md export-ignore
+.agents export-ignore
+.agents/** export-ignore
+.githooks export-ignore
+.githooks/** export-ignore
+docs/development export-ignore
+docs/development/** export-ignore
+docs/changes export-ignore
+docs/changes/** export-ignore

@@ -1,0 +1,296 @@
+{
+  "date": "2026-11-09",
+  "timezone": "Asia/Shanghai",
+  "kind": "standalone-design-preview",
+  "pageCount": 44,
+  "screenshots": 44,
+  "allTitlesMatch": true,
+  "horizontalOverflow": [],
+  "brokenImages": [],
+  "removedHeaderControls": true,
+  "sourceFilesUnchanged": true,
+  "interfaceChecks": {
+    "prototypeNextPage": true,
+    "moduleNavigation": true,
+    "taskStatusFilter": true,
+    "localChatDemo": true,
+    "galleryNextPage": true,
+    "galleryPageSelector": true,
+    "galleryLastPageBoundary": true,
+    "galleryImageLoaded": true,
+    "browserConsoleErrors": 0
+  },
+  "platformDataAccess": "none",
+  "deployment": "not-deployed",
+  "limitations": [
+    "截图与交互均为示意数据，不代表真实平台状态。",
+    "第三方创作工具仅预览关键工作区，不复刻其全部内部弹窗。",
+    "截图检查基于本次桌面浏览器尺寸，未执行生产系统功能测试。"
+  ],
+  "pictures": [
+    {
+      "page": "overview",
+      "width": 1265,
+      "height": 1252,
+      "bytes": 81920
+    },
+    {
+      "page": "content",
+      "width": 1265,
+      "height": 944,
+      "bytes": 73213
+    },
+    {
+      "page": "topics",
+      "width": 1265,
+      "height": 871,
+      "bytes": 64747
+    },
+    {
+      "page": "research",
+      "width": 1265,
+      "height": 914,
+      "bytes": 54793
+    },
+    {
+      "page": "comparison",
+      "width": 1265,
+      "height": 962,
+      "bytes": 70755
+    },
+    {
+      "page": "video",
+      "width": 1265,
+      "height": 944,
+      "bytes": 57664
+    },
+    {
+      "page": "editing",
+      "width": 1265,
+      "height": 1118,
+      "bytes": 76701
+    },
+    {
+      "page": "aigc",
+      "width": 1265,
+      "height": 889,
+      "bytes": 63060
+    },
+    {
+      "page": "assets",
+      "width": 1265,
+      "height": 1128,
+      "bytes": 87089
+    },
+    {
+      "page": "creation-settings",
+      "width": 1265,
+      "height": 787,
+      "bytes": 54757
+    },
+    {
+      "page": "publish",
+      "width": 1265,
+      "height": 1244,
+      "bytes": 73499
+    },
+    {
+      "page": "schedule",
+      "width": 1265,
+      "height": 766,
+      "bytes": 51120
+    },
+    {
+      "page": "tasks",
+      "width": 1265,
+      "height": 800,
+      "bytes": 52533
+    },
+    {
+      "page": "comments",
+      "width": 1265,
+      "height": 1022,
+      "bytes": 57482
+    },
+    {
+      "page": "private",
+      "width": 1265,
+      "height": 842,
+      "bytes": 47218
+    },
+    {
+      "page": "mini",
+      "width": 1265,
+      "height": 841,
+      "bytes": 48518
+    },
+    {
+      "page": "handoffs",
+      "width": 1265,
+      "height": 751,
+      "bytes": 47822
+    },
+    {
+      "page": "wx-chat",
+      "width": 1265,
+      "height": 842,
+      "bytes": 49444
+    },
+    {
+      "page": "wx-broadcast",
+      "width": 1265,
+      "height": 750,
+      "bytes": 51077
+    },
+    {
+      "page": "wx-contacts",
+      "width": 1265,
+      "height": 782,
+      "bytes": 49463
+    },
+    {
+      "page": "wx-moments",
+      "width": 1265,
+      "height": 845,
+      "bytes": 46628
+    },
+    {
+      "page": "wx-persona",
+      "width": 1265,
+      "height": 760,
+      "bytes": 51746
+    },
+    {
+      "page": "wx-knowledge",
+      "width": 1280,
+      "height": 720,
+      "bytes": 42916
+    },
+    {
+      "page": "wx-accounts",
+      "width": 1280,
+      "height": 720,
+      "bytes": 40838
+    },
+    {
+      "page": "wx-global",
+      "width": 1265,
+      "height": 936,
+      "bytes": 52351
+    },
+    {
+      "page": "wx-system",
+      "width": 1265,
+      "height": 765,
+      "bytes": 47315
+    },
+    {
+      "page": "wx-mcp",
+      "width": 1280,
+      "height": 720,
+      "bytes": 38291
+    },
+    {
+      "page": "wx-skills",
+      "width": 1280,
+      "height": 720,
+      "bytes": 38615
+    },
+    {
+      "page": "wx-storage",
+      "width": 1280,
+      "height": 720,
+      "bytes": 39775
+    },
+    {
+      "page": "wx-logs",
+      "width": 1280,
+      "height": 720,
+      "bytes": 43508
+    },
+    {
+      "page": "wx-overview",
+      "width": 1280,
+      "height": 720,
+      "bytes": 43324
+    },
+    {
+      "page": "documents",
+      "width": 1265,
+      "height": 1093,
+      "bytes": 70358
+    },
+    {
+      "page": "versions",
+      "width": 1265,
+      "height": 850,
+      "bytes": 52325
+    },
+    {
+      "page": "aliases",
+      "width": 1280,
+      "height": 720,
+      "bytes": 45050
+    },
+    {
+      "page": "rules",
+      "width": 1265,
+      "height": 822,
+      "bytes": 50851
+    },
+    {
+      "page": "reply-test",
+      "width": 1265,
+      "height": 842,
+      "bytes": 56060
+    },
+    {
+      "page": "accounts",
+      "width": 1265,
+      "height": 1146,
+      "bytes": 65845
+    },
+    {
+      "page": "browser",
+      "width": 1265,
+      "height": 1005,
+      "bytes": 57128
+    },
+    {
+      "page": "ai",
+      "width": 1265,
+      "height": 765,
+      "bytes": 50364
+    },
+    {
+      "page": "notifications",
+      "width": 1265,
+      "height": 922,
+      "bytes": 55695
+    },
+    {
+      "page": "usage",
+      "width": 1265,
+      "height": 818,
+      "bytes": 53763
+    },
+    {
+      "page": "issues",
+      "width": 1280,
+      "height": 720,
+      "bytes": 41073
+    },
+    {
+      "page": "runtime",
+      "width": 1280,
+      "height": 720,
+      "bytes": 44482
+    },
+    {
+      "page": "login",
+      "width": 1265,
+      "height": 803,
+      "bytes": 33441
+    }
+  ]
+}

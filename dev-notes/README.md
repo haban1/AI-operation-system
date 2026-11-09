@@ -1,5 +1,9 @@
 # 开发交接入口
 
+2026-11-09：新增 [44 页客户端精简预览交付](changes/20261109-client-simplification-preview.md)。
+本轮仅交付独立设计预览，未替换平台界面。Git 文档检查补充规则见
+[Docs as Code](../docs/development/docs-as-code.md)。
+
 先读 [规范](POLICY.md)，最新调整见
 [五次澄清上限](changes/20261106-five-clarification-attempts.md)，本次接入记录见
 [20261106 Traceable RAG](changes/20261106-traceable-rag-integration.md)，长期边界见
