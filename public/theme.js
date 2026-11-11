@@ -50,12 +50,13 @@
         applyFx(fx);write('ui-fx',fx);
       }
       renderTools(box);
+      window.dispatchEvent(new CustomEvent('tk-theme-change'));
     });
   }
 
   /* 卡片光效：进入卡片时测量一次位置，移动时只更新变量 */
-  var CARD='.panel,.operations-surface,.operations-ai-panel,.preview-stat,.metric,.dashboard-device-card,.platform-login-item,.publish-queue-board,.task-command-center,.task-stream,.message-command-center,.message-channel-poll-card,.mini-link-card,.mini-program-summary,.mini-program-workbench,.platform-runtime-card,.settings-status-card,.settings-mini-card,.ai-visual-card,.browser-device-card,.task-card,.interaction-card,.publish-action-card,.ai-status-card,.knowledge-category-card,.account-card,.message-card,.check-card';
-  var TILT={'preview-stat':10,'metric':6,'platform-runtime-card':5,'settings-mini-card':5,'dashboard-device-card':5,'publish-action-card':6,'ai-status-card':6};
+  var CARD='.panel,.v2-card,.v2-kpi,.v2-action,.v2-inbox-detail,.operations-surface,.operations-ai-panel,.preview-stat,.metric,.dashboard-device-card,.platform-login-item,.publish-queue-board,.task-command-center,.task-stream,.message-command-center,.message-channel-poll-card,.mini-link-card,.mini-program-summary,.mini-program-workbench,.platform-runtime-card,.settings-status-card,.settings-mini-card,.ai-visual-card,.browser-device-card,.task-card,.interaction-card,.publish-action-card,.ai-status-card,.knowledge-category-card,.account-card,.message-card,.check-card';
+  var TILT={'v2-kpi':10,'v2-action':6,'preview-stat':10,'metric':6,'platform-runtime-card':5,'settings-mini-card':5,'dashboard-device-card':5,'publish-action-card':6,'ai-status-card':6};
   var hot=null,rect=null,frame=0,last=null;
   function tiltOf(el){for(var k in TILT){if(el.classList.contains(k))return TILT[k]}return 0}
   function release(el){if(!el)return;el.classList.remove('tk-live');if(el.classList.contains('tk-tilt'))el.style.transform=''}

@@ -1,8 +1,10 @@
 import { browserStatusModel, browserStatusMarkup, bindBrowserStatus } from './browser-status.js?v=20261110-browser-status';
-import { renderKnowledgeFiles, cleanupKnowledgeFiles } from './knowledge-files.js?v=20261110-files';
-import { renderAnswerProfile, renderRagPlayground, cleanupKnowledgeTools, resetKnowledgeTools } from './knowledge-tools.js?v=20261110-playground-2';
-import { applyWorkspacePresentation } from './workspace-presentation.js?v=20261110-publish-steps';
-import { applyInteractionPresentation } from './workspace-interactions.js';
+import { renderKnowledgeFiles, cleanupKnowledgeFiles } from './knowledge-files.js?v=20261111-v2c';
+import { renderAnswerProfile, renderRagPlayground, cleanupKnowledgeTools, resetKnowledgeTools } from './knowledge-tools.js?v=20261111-v2c';
+import { patchBackgroundContent } from './background-dom.js?v=20261112-refresh';
+import { applyWorkspacePresentation, refreshDashboardOrb } from './workspace-presentation.js?v=20261111-v2b';
+import { applyInteractionPresentation } from './workspace-interactions.js?v=20261111-v2c';
+import { platformLogo } from './platform-icons.js?v=20261111-v2';
 import { aiConnectionPresentation, bindAiModelSettings } from './ai-model-settings.js';
 import { renderWechatAdmin, cleanupWechatAdmin } from './wechat-admin.js';
 import { renderHotTopicStudio, hideHotTopicStudio } from './hot-topic-studio.js?v=20261111-creation-nav';
@@ -201,6 +203,48 @@ function confirmDelete({title,message,details=[],requiredText='',inputLabel='确
     submit.onclick=()=>close(true);
   });
 }
+/* 页内输入/确认弹窗，替代浏览器原生 prompt/confirm：取消返回 null / false，与原生行为一致。 */
+function uiDialog({title,message='',label='',value='',input=false,multiline=true,maxLength=0,required=false,confirmLabel='确定',danger=false}){
+  return new Promise(resolve=>{
+    const overlay=document.createElement('div');overlay.className='confirm-overlay ui-dialog-overlay';
+    const field=input?(multiline?`<textarea class="ui-dialog-input" rows="4" ${maxLength?`maxlength="${maxLength}"`:''}>${esc(value)}</textarea>`:`<input class="ui-dialog-input" autocomplete="off" value="${esc(value)}" ${maxLength?`maxlength="${maxLength}"`:''}>`):'';
+    overlay.innerHTML=`<div class="confirm-dialog ui-dialog ${danger?'is-danger':''}" role="dialog" aria-modal="true" aria-labelledby="uiDialogTitle"><h3 id="uiDialogTitle">${esc(title)}</h3>${message?`<p>${esc(message)}</p>`:''}${input?`<label class="ui-dialog-field"><span>${esc(label)}</span>${field}${maxLength?`<small class="ui-dialog-count"></small>`:''}</label>`:''}<div class="confirm-actions"><button type="button" class="btn secondary confirm-cancel">取消</button><button type="button" class="btn ${danger?'danger':''} confirm-submit">${esc(confirmLabel)}</button></div></div>`;
+    document.body.appendChild(overlay);
+    const control=overlay.querySelector('.ui-dialog-input'),submit=overlay.querySelector('.confirm-submit'),count=overlay.querySelector('.ui-dialog-count');
+    const sync=()=>{if(!control)return;const length=control.value.length;if(count)count.textContent=`${length} / ${maxLength}`;submit.disabled=required&&!control.value.trim()};
+    const close=result=>{document.removeEventListener('keydown',onKey);overlay.remove();resolve(result)};
+    const accept=()=>{if(submit.disabled)return;close(control?control.value:true)};
+    const onKey=event=>{if(event.key==='Escape')close(control?null:false);else if(event.key==='Enter'&&(!control||control.tagName==='INPUT'||event.metaKey||event.ctrlKey)){event.preventDefault();accept()}};
+    document.addEventListener('keydown',onKey);
+    overlay.querySelector('.confirm-cancel').onclick=()=>close(control?null:false);
+    overlay.onclick=event=>{if(event.target===overlay)close(control?null:false)};
+    submit.onclick=accept;
+    if(control){control.oninput=sync;sync();setTimeout(()=>{control.focus();control.setSelectionRange?.(control.value.length,control.value.length)},0)}else setTimeout(()=>submit.focus(),0);
+  });
+}
+const uiPrompt=(label,value='',options={})=>uiDialog({input:true,label,value,title:options.title||label,...options});
+const uiConfirm=(message,options={})=>uiDialog({message,title:options.title||'确认操作',...options});
+/* 问题记录“误判”：说明、平台实际结果、可选链接/ID 合并为一个弹窗；提交字段与原流程一致。 */
+function falsePositiveDialog(type){
+  const outcome=type==='PUBLISH_TARGET'?{yes:'PUBLISHED',yesLabel:'平台上已发布成功',yesHint:'会锁定投稿，防止重复发布',noLabel:'未发布或不确定'}:type==='MESSAGE'?{yes:'SENT',yesLabel:'平台上已发送成功',yesHint:'会标记人工已处理，防止重复发送',noLabel:'未发送或不确定'}:null;
+  return new Promise(resolve=>{
+    const overlay=document.createElement('div');overlay.className='confirm-overlay ui-dialog-overlay';
+    overlay.innerHTML=`<div class="confirm-dialog ui-dialog" role="dialog" aria-modal="true" aria-labelledby="fpTitle"><h3 id="fpTitle">标记为误判</h3><label class="ui-dialog-field"><span>误判说明</span><textarea class="ui-dialog-input" rows="3" data-fp="resolution">已人工核对，确认属于误判</textarea></label>${outcome?`<fieldset class="ui-dialog-choice"><legend>平台上的实际结果</legend><label><input type="radio" name="fpOutcome" value="${outcome.yes}"><span><b>${outcome.yesLabel}</b><small>${outcome.yesHint}</small></span></label><label><input type="radio" name="fpOutcome" value="UNKNOWN" checked><span><b>${outcome.noLabel}</b></span></label></fieldset>${type==='PUBLISH_TARGET'?`<div class="ui-dialog-optional" hidden><label class="ui-dialog-field"><span>平台内容链接（可选）</span><input class="ui-dialog-input" data-fp="url" autocomplete="off"></label><label class="ui-dialog-field"><span>平台内容 ID（可选）</span><input class="ui-dialog-input" data-fp="id" autocomplete="off"></label></div>`:''}`:''}<div class="confirm-actions"><button type="button" class="btn secondary confirm-cancel">取消</button><button type="button" class="btn confirm-submit">确认误判</button></div></div>`;
+    document.body.appendChild(overlay);
+    const get=key=>overlay.querySelector(`[data-fp="${key}"]`);const optional=overlay.querySelector('.ui-dialog-optional');
+    const close=value=>{document.removeEventListener('keydown',onKey);overlay.remove();resolve(value)};
+    const onKey=event=>{if(event.key==='Escape')close(null)};document.addEventListener('keydown',onKey);
+    overlay.querySelectorAll('input[name="fpOutcome"]').forEach(radio=>radio.onchange=()=>{if(optional)optional.hidden=radio.value!=='PUBLISHED'||!radio.checked});
+    overlay.querySelector('.confirm-cancel').onclick=()=>close(null);
+    overlay.onclick=event=>{if(event.target===overlay)close(null)};
+    overlay.querySelector('.confirm-submit').onclick=()=>{
+      const actualOutcome=overlay.querySelector('input[name="fpOutcome"]:checked')?.value||'UNKNOWN';
+      const published=actualOutcome==='PUBLISHED';
+      close({resolution:get('resolution').value,actualOutcome,platformUrl:published?(get('url')?.value.trim()||null):null,platformPostId:published?(get('id')?.value.trim()||null):null});
+    };
+    setTimeout(()=>get('resolution').focus(),0);
+  });
+}
 function agentResourceUrl(resourcePath){
   if(!resourcePath)return null;
   const base=(state.bootstrap?.config?.localAgentBaseUrl||'/api/local-agent').replace(/\/+$/,'');
@@ -229,7 +273,7 @@ function chooseReplyExportPlatforms(defaultPlatformCode){
     if(!platforms.length)return resolve([]);
     const initialCode=platforms.some(item=>item.code===defaultPlatformCode)?defaultPlatformCode:platforms[0].code;
     const overlay=document.createElement('div');overlay.className='confirm-overlay reply-export-overlay';
-    overlay.innerHTML=`<div class="confirm-dialog reply-export-dialog" role="dialog" aria-modal="true" aria-labelledby="replyExportTitle"><div class="reply-export-heading"><div class="reply-export-icon" aria-hidden="true">导</div><div><h3 id="replyExportTitle">导出回复记录</h3><p>选择要导出的平台，文件会包含评论和私信中已经完成的 AI 回复、人工回复记录。</p></div><button class="knowledge-edit-close reply-export-close" type="button" aria-label="关闭">×</button></div><label class="reply-export-select-all"><input type="checkbox" class="reply-export-all"><span><b>一键全选</b><small>选择全部平台的回复记录</small></span></label><div class="reply-export-platforms">${platforms.map(item=>`<label class="reply-export-platform"><input type="checkbox" name="replyExportPlatform" value="${esc(item.code)}" ${item.code===initialCode?'checked':''}><span><b>${esc(item.name)}</b><small>导出该平台全部已完成回复</small></span><i>✓</i></label>`).join('')}</div><div class="reply-export-note">导出格式为 CSV，可直接使用 Excel 打开。只导出已经确认回复成功或已人工处理且未删除的记录，不会把“待回复”“回复失败”或已删除记录混在里面。</div><div class="confirm-actions"><button class="btn secondary reply-export-cancel" type="button">取消</button><button class="btn reply-export-submit" type="button">导出所选平台</button></div></div>`;
+    overlay.innerHTML=`<div class="confirm-dialog reply-export-dialog" role="dialog" aria-modal="true" aria-labelledby="replyExportTitle"><div class="reply-export-heading"><div class="reply-export-icon" aria-hidden="true">导</div><div><h3 id="replyExportTitle">导出回复记录</h3><p>选择要导出的平台，文件会包含评论和私信中已经完成的 AI 回复、人工回复记录。</p></div><button class="knowledge-edit-close reply-export-close" type="button" aria-label="关闭">×</button></div><label class="reply-export-select-all"><input type="checkbox" class="reply-export-all"><span><b>一键全选</b><small>选择全部平台的回复记录</small></span></label><div class="reply-export-platforms">${platforms.map(item=>`<label class="reply-export-platform"><input type="checkbox" name="replyExportPlatform" value="${esc(item.code)}" ${item.code===initialCode?'checked':''}>${platformLogo(item.code,28)}<span><b>${esc(item.name)}</b></span><i>✓</i></label>`).join('')}</div><div class="reply-export-note">导出格式为 CSV，可直接使用 Excel 打开。只导出已经确认回复成功或已人工处理且未删除的记录，不会把“待回复”“回复失败”或已删除记录混在里面。</div><div class="confirm-actions"><button class="btn secondary reply-export-cancel" type="button">取消</button><button class="btn reply-export-submit" type="button">导出所选平台</button></div></div>`;
     document.body.appendChild(overlay);
     const allBox=overlay.querySelector('.reply-export-all');const submit=overlay.querySelector('.reply-export-submit');const boxes=[...overlay.querySelectorAll('input[name="replyExportPlatform"]')];
     const sync=()=>{const checked=boxes.filter(box=>box.checked).length;allBox.checked=checked===boxes.length;allBox.indeterminate=checked>0&&checked<boxes.length;submit.disabled=checked===0;boxes.forEach(box=>box.closest('.reply-export-platform')?.classList.toggle('is-selected',box.checked))};
@@ -584,6 +628,20 @@ const operationsRangeLabels={'7d':'近 7 天','30d':'近 30 天'};
 let operationsDashboardKey=null;
 let operationsAnalyticsRefreshTimer=null;
 let operationsDashboardRequest=0;
+let operationsDashboardSignatureValue='';
+let operationsDashboardRefreshOwner=null;
+// Response generation time changes on every read; only displayed data should rebuild the dashboard.
+function operationsDashboardSignature(data){
+  const values={...data,updatedAt:undefined,analytics:{...data.analytics,updatedAt:undefined}};
+  return JSON.stringify({range:state.dashboardRange,platform:state.dashboardPlatform,data:values,bootstrap:state.bootstrap});
+}
+function scheduleOperationsDashboardRefresh(){
+  if(operationsAnalyticsRefreshTimer)clearTimeout(operationsAnalyticsRefreshTimer);
+  operationsAnalyticsRefreshTimer=setTimeout(()=>{
+    operationsAnalyticsRefreshTimer=null;
+    void refreshOperationsDashboard({background:true});
+  },30000);
+}
 function operationsFormat(key,value){
   const rounded=Math.round(Number(value)||0);
   if(key==='exposure'&&rounded>=10000)return `${(rounded/10000).toFixed(1).replace(/\.0$/,'')}万`;
@@ -662,7 +720,7 @@ function operationsConversion(from,to){
   if(a===null||b===null||a===0)return operationsPending('需要曝光的完整转化数据');
   return `${(b/Math.max(1,a)*100).toFixed(2)}%`;
 }
-async function renderDashboard(){
+async function renderDashboard({background=false}={}){
   const generation=pageRenderGeneration;
   const key=`${state.dashboardRange}|${state.dashboardPlatform}`;
   if(operationsDashboardKey!==key){
@@ -671,6 +729,13 @@ async function renderDashboard(){
     if(generation!==pageRenderGeneration||state.page!=='dashboard'||key!==`${state.dashboardRange}|${state.dashboardPlatform}`)return;
   }
   const data=operationsDashboardData();
+  const signature=operationsDashboardSignature(data);
+  if(background&&$('#content .operations-dashboard')&&signature===operationsDashboardSignatureValue){
+    const stamp=$('[data-operations-updated-at]');
+    const updated= data.updatedAt ? fmt(data.updatedAt) : '刚刚';
+    if(stamp&&stamp.textContent!==updated)stamp.textContent=updated;
+    return;
+  }
   const running=state.bootstrap.config.masterSwitch?.enabled!==false;
   const publishedKpi=data.published;
   const maxPublished=Math.max(...data.channels.map(item=>Number(item.published)||0),1);
@@ -684,9 +749,10 @@ async function renderDashboard(){
     {code:'bilibili',name:'B站'},{code:'weibo',name:'微博'}
   ];
   const channelOptions=data.channels.length?data.channels:defaultPlatforms;
-  $('#content').innerHTML=`<div class="operations-dashboard">
+  const target=background?document.createElement('section'):$('#content');
+  target.innerHTML=`<div class="operations-dashboard">
     <div class="operations-overview-head">
-      <div><h2>运营指标</h2><p>口径：${esc(operationsRangeLabels[state.dashboardRange]||'近 7 天')} · ${state.dashboardPlatform==='all'?'全部平台':'单平台'} · 数据更新时间：${esc(updatedText)}</p></div>
+      <div><h2>运营指标</h2><p>口径：${esc(operationsRangeLabels[state.dashboardRange]||'近 7 天')} · ${state.dashboardPlatform==='all'?'全部平台':'单平台'} · 数据更新时间：<span data-operations-updated-at>${esc(updatedText)}</span></p></div>
       <div class="operations-filters">
         <label><span>平台</span><select id="operationsPlatformFilter" aria-label="平台筛选"><option value="all">全部平台</option>${channelOptions.map(item=>`<option value="${esc(item.code)}"${state.dashboardPlatform===item.code?' selected':''}>${esc(item.name)}</option>`).join('')}</select></label>
         <label><span>周期</span><select id="operationsRangeFilter" aria-label="统计周期"><option value="7d"${state.dashboardRange==='7d'?' selected':''}>近 7 天</option><option value="30d"${state.dashboardRange==='30d'?' selected':''}>近 30 天</option></select></label>
@@ -732,9 +798,15 @@ async function renderDashboard(){
     </section>
   </div>
   ${dashboardRuntimeMarkup()}`;
-  presentWorkspace({data,stats:state.bootstrap.stats});
+  const context={page:'dashboard',onNavigate:openWorkspaceItem,data,stats:state.bootstrap.stats,accounts:state.bootstrap.accounts||[],localAgent:state.bootstrap.localAgent||{}};
+  applyWorkspacePresentation(target,context);
+  if(background){
+    patchBackgroundContent($('#content'),target);
+    refreshDashboardOrb($('#content'),context);
+  }
   bindOperationsDashboard();
   bindDashboardRuntime();
+  operationsDashboardSignatureValue=signature;
 }
 function bindOperationsDashboard(){
   document.querySelectorAll('#content [data-go]').forEach(button=>button.onclick=()=>navigate(button.dataset.go));
@@ -752,14 +824,28 @@ function bindOperationsDashboard(){
       await refreshOperationsDashboard();
     }catch(error){toast(error.message,true)}finally{if(collectAnalytics.isConnected)collectAnalytics.disabled=false}
   };
-  if(operationsAnalyticsRefreshTimer)clearTimeout(operationsAnalyticsRefreshTimer);
-  operationsAnalyticsRefreshTimer=setTimeout(()=>{operationsAnalyticsRefreshTimer=null;if(state.page==='dashboard')void refreshOperationsDashboard()},30000);
+  scheduleOperationsDashboardRefresh();
 }
-async function refreshOperationsDashboard(){
+async function refreshOperationsDashboard({background=false}={}){
   if(state.page!=='dashboard')return;
-  $('#content').setAttribute('aria-busy','true');
-  try{operationsDashboardKey=null;await renderDashboard()}catch(error){toast(error.message,true)}
-  finally{$('#content').setAttribute('aria-busy','false')}
+  if(background&&(operationsDashboardRefreshOwner||document.hidden||document.querySelector('.confirm-overlay,#collectOperationsAnalytics:disabled,#dashboardOpenPlatforms:disabled,#dashboardCheckPlatforms:disabled')||messageFormHasEditingFocus())){
+    scheduleOperationsDashboardRefresh();
+    return;
+  }
+  const owner=capturePageOwner();
+  operationsDashboardRefreshOwner=owner;
+  if(!background)$('#content').setAttribute('aria-busy','true');
+  try{
+    operationsDashboardKey=null;
+    await renderDashboard({background});
+  }catch(error){if(ownsPageOwner(owner))toast(error.message,true)}
+  finally{
+    if(operationsDashboardRefreshOwner===owner)operationsDashboardRefreshOwner=null;
+    if(ownsPageOwner(owner)){
+      if(!background)$('#content').setAttribute('aria-busy','false');
+      scheduleOperationsDashboardRefresh();
+    }
+  }
 }
 function dashboardRuntimeMarkup(){
   const s=state.bootstrap.stats;
@@ -1563,7 +1649,7 @@ function taskPlatformTabs(platformCounts,total){
     const assisted=mode==='five_platform_assisted'||(mode==='xiaohongshu_assisted'&&item.code==='xiaohongshu');
     return {...item,task_count:countMap.get(item.code)||0,ready:assisted,simulated:!assisted};
   })];
-  return `<div class="task-platform-tabs" role="tablist" aria-label="按发布平台筛选任务">${tabs.map(item=>{const active=state.taskPlatform===item.code;const hint=item.code==='ALL'?'查看所有平台任务':item.ready?'辅助浏览器链路已接入':'当前使用模拟适配器';return `<button type="button" class="task-platform-tab ${active?'active':''} ${item.ready?'ready':'pending'}" data-task-platform="${esc(item.code)}" role="tab" aria-selected="${active}"><span class="task-platform-icon">${esc(taskPlatformIcon(item.code))}</span><span><b>${esc(item.name)}</b><small>${esc(hint)}</small></span><em>${item.task_count}</em></button>`}).join('')}</div>`;
+  return `<div class="task-platform-tabs" role="tablist" aria-label="按发布平台筛选任务">${tabs.map(item=>{const active=state.taskPlatform===item.code;const hint=item.code==='ALL'?'查看所有平台任务':item.ready?'辅助浏览器链路已接入':'当前使用模拟适配器';return `<button type="button" class="task-platform-tab ${active?'active':''} ${item.ready?'ready':'pending'}" data-task-platform="${esc(item.code)}" role="tab" aria-selected="${active}"><span class="task-platform-icon">${item.code==='ALL'?'全':platformLogo(item.code,26)}</span><span><b>${esc(item.name)}</b><small>${esc(hint)}</small></span><em>${item.task_count}</em></button>`}).join('')}</div>`;
 }
 
 function taskFailureMessage(task){
@@ -2445,7 +2531,7 @@ async function renderMessages(prefetchedData=null){
   });
   document.querySelectorAll('.mark-handled').forEach(b=>b.onclick=async()=>{
     const platform=selectedAccount?.platform_name||'原平台';
-    const note=prompt('填写在原平台App中的处理说明',`已在${platform} App人工回复`);
+    const note=await uiPrompt('处理说明',`已在${platform} App人工回复`,{title:'标记为人工已处理',message:'确认已在原平台 App 中人工处理这条消息。标记后系统不会再自动补发回复。',confirmLabel:'标记已处理'});
     if(note===null)return;
     await api(`/api/messages/${b.dataset.id}/handled`,{method:'POST',body:JSON.stringify({note,handledBy:'运营人员'})});
     toast('已标记人工处理，自动回复任务已禁止补发');
@@ -2455,7 +2541,7 @@ async function renderMessages(prefetchedData=null){
     const message=messages.find(item=>Number(item.id)===Number(b.dataset.id));
     const policy=data.replyLimits?.[message?.platform_code]?.[message?.message_type];
     const limit=policy?.safeMax;
-    const replyText=prompt(`请输入要发送到微博的完整人工回复${limit?`（最多 ${limit} 字符）`:''}`,'');
+    const replyText=await uiPrompt('回复内容','',{title:'人工回复',message:'输入要发送到微博的完整回复，提交后由系统代为发送。',maxLength:limit||0,required:true,confirmLabel:'发送回复'});
     if(replyText===null)return;
     const normalized=replyText.trim().normalize('NFC');
     if(!normalized)return toast('人工回复不能为空',true);
@@ -2471,7 +2557,7 @@ async function renderMessages(prefetchedData=null){
   });
   document.querySelectorAll('.detect-manual').forEach(b=>b.onclick=async()=>{
     const platform=selectedAccount?.platform_name||'原平台';
-    const expectedReply=prompt(`请粘贴你在${platform} App中已经发送的完整回复内容（系统只核验，不会再次发送）`,'');
+    const expectedReply=await uiPrompt('已发送的回复内容','',{title:'核验 App 中的人工回复',message:`粘贴你在${platform} App 中已经发送的完整回复，系统只核验，不会再次发送。`,required:true,confirmLabel:'开始核验'});
     if(expectedReply===null)return;
     try{const d=await api(`/api/messages/${b.dataset.id}/detect-manual`,{method:'POST',body:JSON.stringify({expectedReply})});toast(`人工回复检测任务 Job#${d.jobId} 已创建`)}catch(e){toast(e.message,true)}
   });
@@ -2603,8 +2689,8 @@ async function renderIssues(){
     </article>`;
   }).join('');
   $('#content').innerHTML=`<div class="panel" style="margin-top:0"><div class="panel-head"><div><h2>问题汇总</h2><p>发布、采集、回复、登录、RPA、AI 与知识库异常在此统一查看和处理。</p></div></div><div class="notice warn"><b>处理说明：</b>请核对问题关联的平台、账号与页面证据，并使用“人工已处理”或“误判”完成确认。</div><div class="card-list">${cards||'<div class="empty">当前没有系统异常。</div>'}</div></div>`;
-  document.querySelectorAll('.manual-resolve-issue').forEach(button=>button.onclick=async()=>{const pageOwner=capturePageOwner();const resolution=prompt('填写人工处理结果','已人工核对并处理，软件恢复正常运行逻辑');if(resolution===null)return;try{await api(`/api/issues/${button.dataset.id}/manual-resolve`,{method:'POST',body:JSON.stringify({resolution,resolvedBy:state.auth?.username||'管理员'})});if(!await refreshBootstrap(pageOwner))return;toast('已标记人工处理并释放本问题阻断');renderIssues()}catch(error){if(ownsPageOwner(pageOwner))toast(error.message,true)}});
-  document.querySelectorAll('.false-positive-issue').forEach(button=>button.onclick=async()=>{const pageOwner=capturePageOwner();const resolution=prompt('填写误判说明','已人工核对，确认属于误判');if(resolution===null)return;let actualOutcome='UNKNOWN',platformUrl=null,platformPostId=null;if(button.dataset.type==='PUBLISH_TARGET'&&confirm('平台侧是否已经实际发布成功？\n选择“确定”会锁定投稿，防止重复发布。')){actualOutcome='PUBLISHED';platformUrl=prompt('可选：填写平台内容链接','')||null;platformPostId=prompt('可选：填写平台内容 ID','')||null}else if(button.dataset.type==='MESSAGE'&&confirm('平台侧是否已经实际发送成功？\n选择“确定”会标记人工已处理，防止重复发送。'))actualOutcome='SENT';try{await api(`/api/issues/${button.dataset.id}/false-positive`,{method:'POST',body:JSON.stringify({resolution,resolvedBy:state.auth?.username||'管理员',actualOutcome,platformUrl,platformPostId})});if(!await refreshBootstrap(pageOwner))return;toast('已标记误判并恢复本问题关联运行逻辑');renderIssues()}catch(error){if(ownsPageOwner(pageOwner))toast(error.message,true)}});
+  document.querySelectorAll('.manual-resolve-issue').forEach(button=>button.onclick=async()=>{const pageOwner=capturePageOwner();const resolution=await uiPrompt('处理结果','已人工核对并处理，软件恢复正常运行逻辑',{title:'标记问题已人工处理',confirmLabel:'确认已处理'});if(resolution===null)return;try{await api(`/api/issues/${button.dataset.id}/manual-resolve`,{method:'POST',body:JSON.stringify({resolution,resolvedBy:state.auth?.username||'管理员'})});if(!await refreshBootstrap(pageOwner))return;toast('已标记人工处理并释放本问题阻断');renderIssues()}catch(error){if(ownsPageOwner(pageOwner))toast(error.message,true)}});
+  document.querySelectorAll('.false-positive-issue').forEach(button=>button.onclick=async()=>{const pageOwner=capturePageOwner();const answer=await falsePositiveDialog(button.dataset.type);if(!answer)return;const {resolution,actualOutcome,platformUrl,platformPostId}=answer;try{await api(`/api/issues/${button.dataset.id}/false-positive`,{method:'POST',body:JSON.stringify({resolution,resolvedBy:state.auth?.username||'管理员',actualOutcome,platformUrl,platformPostId})});if(!await refreshBootstrap(pageOwner))return;toast('已标记误判并恢复本问题关联运行逻辑');renderIssues()}catch(error){if(ownsPageOwner(pageOwner))toast(error.message,true)}});
 }
 const wecomNotificationCategories=[
   {key:'ALL',label:'全部'},
@@ -2845,18 +2931,31 @@ async function renderWecom(prefetchedData=null,changedPanel=null){
   presentWorkspace();
   $('#wecomForm').onsubmit=async event=>{event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));if(!String(values.webhookUrl||'').trim())return toast('\u8bf7\u8f93\u5165\u65b0\u7684\u673a\u5668\u4eba Webhook \u5730\u5740',true);try{await api('/api/settings/wecom',{method:'POST',body:JSON.stringify(values)});toast('\u4f01\u5fae Webhook \u5df2\u5b89\u5168\u4fdd\u5b58');renderWecom(null,'wecom')}catch(error){toast(error.message,true)}};
   $('#wecomTest').onclick=async()=>{const button=$('#wecomTest');button.disabled=true;button.textContent='\u53d1\u9001\u4e2d\u2026';try{await api('/api/settings/wecom/test',{method:'POST',body:'{}'});toast('\u6d4b\u8bd5\u6d88\u606f\u53d1\u9001\u6210\u529f');renderWecom()}catch(error){toast(`${error.message}${error.detail?'\uff1a'+error.detail:''}`,true);button.disabled=false;button.textContent='\u53d1\u9001\u6d4b\u8bd5\u6d88\u606f'}};
-  $('#wecomClear').onclick=async()=>{if(!confirm('\u786e\u5b9a\u6e05\u9664\u7ba1\u7406\u9875\u9762\u4fdd\u5b58\u7684\u4f01\u5fae Webhook \u5417\uff1f'))return;try{await api('/api/settings/wecom/clear',{method:'POST',body:'{}'});toast('\u4f01\u5fae\u9875\u9762\u914d\u7f6e\u5df2\u6e05\u9664');renderWecom(null,'wecom')}catch(error){toast(error.message,true)}};
+  $('#wecomClear').onclick=async()=>{if(!await uiConfirm('\u786e\u5b9a\u6e05\u9664\u7ba1\u7406\u9875\u9762\u4fdd\u5b58\u7684\u4f01\u5fae Webhook \u5417\uff1f',{title:'清除企微 Webhook',danger:true,confirmLabel:'清除'}))return;try{await api('/api/settings/wecom/clear',{method:'POST',body:'{}'});toast('\u4f01\u5fae\u9875\u9762\u914d\u7f6e\u5df2\u6e05\u9664');renderWecom(null,'wecom')}catch(error){toast(error.message,true)}};
   $('#selectAiOnlineMode').onclick=()=>{const form=$('#aiSettingsForm'),mode=form?.querySelector('[name="mode"]'),key=form?.querySelector('[name="apiKey"]');if(mode){mode.value='online';mode.dispatchEvent(new Event('change',{bubbles:true}));}if(key&&!key.value&&ai.configured!==true)key.focus();toast(ai.configured?'已选择 Online 在线模式，请点击“保存 AI 配置”使其生效':'已选择 Online 在线模式，请填写 AI Key 后点击“保存 AI 配置”');};
   $('#aiSettingsForm').onsubmit=async event=>{event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));try{await api('/api/settings/ai',{method:'POST',body:JSON.stringify(values)});toast('AI 配置已保存，天河、知识库与微信服务的后续调用将使用新配置');renderWecom(null,'ai')}catch(error){toast(error.message,true)}};
   bindAiModelSettings({form:$('#aiSettingsForm'),ai,api,toast,refresh:renderWecom});
   restoreSettingsDraft($('#aiSettingsForm'),drafts.ai);
   restoreSettingsDraft($('#wecomForm'),drafts.wecom);
-  $('#aiKeyClear').onclick=async()=>{if(!confirm('\u786e\u5b9a\u6e05\u9664\u7ba1\u7406\u9875\u9762\u4fdd\u5b58\u7684 AI Key \u5417\uff1f\u5728\u7ebf\u6a21\u5f0f\u5c06\u65e0\u6cd5\u8c03\u7528 AI\u3002'))return;try{await api('/api/settings/ai/clear-key',{method:'POST',body:'{}'});toast('AI Key \u5df2\u6e05\u9664');renderWecom(null,'ai')}catch(error){toast(error.message,true)}};
+  $('#aiKeyClear').onclick=async()=>{if(!await uiConfirm('\u786e\u5b9a\u6e05\u9664\u7ba1\u7406\u9875\u9762\u4fdd\u5b58\u7684 AI Key \u5417\uff1f\u5728\u7ebf\u6a21\u5f0f\u5c06\u65e0\u6cd5\u8c03\u7528 AI\u3002',{title:'清除 AI Key',danger:true,confirmLabel:'清除'}))return;try{await api('/api/settings/ai/clear-key',{method:'POST',body:'{}'});toast('AI Key \u5df2\u6e05\u9664');renderWecom(null,'ai')}catch(error){toast(error.message,true)}};
 }
 function renderLoginBadge(code,status,prefix='platformStatus-'){const el=document.getElementById(`${prefix}${code}`);if(!el)return;const m=loginStatusMeta(status);el.textContent=m.text;el.className=`badge ${m.cls}`;el.title=[status?.message,status?.checkedAt?`\u68c0\u67e5\u65f6\u95f4\uff1a${fmt(status.checkedAt)}`:''].filter(Boolean).join('\n')}
 function dashboardPlatformLoginView(platform){const account=(state.bootstrap?.accounts||[]).find(item=>item.platform_code===platform.code);const runtime=(state.bootstrap?.platforms||[]).find(item=>item.code===platform.code);const planned=runtime?.lifecycle_state==='PLANNED';return {account,runtime,planned,meta:planned?{text:'RPA\u65b9\u6848\u89c4\u5212\u4e2d',cls:'planned'}:loginStatusMeta(accountLoginState(account)),detail:planned?'\u5e73\u53f0\u5c1a\u672a\u6b63\u5f0f\u63a5\u5165':accountLoginDetail(account)}}
 function refreshDashboardLoginStatus(){if(state.page!=='dashboard'||!state.bootstrap)return;for(const platform of loginPlatforms){const view=dashboardPlatformLoginView(platform);const card=document.getElementById(`dashboardPlatformCard-${platform.code}`);const badgeEl=document.getElementById(`dashboardPlatformStatus-${platform.code}`);const detailEl=document.getElementById(`dashboardPlatformDetail-${platform.code}`);if(card)card.className=`platform-login-item${view.planned?' planned':''}`;if(badgeEl){badgeEl.textContent=view.meta.text;badgeEl.className=`badge ${view.meta.cls}`;badgeEl.title=[view.account?.login_message,view.account?.login_checked_at?`\u68c0\u67e5\u65f6\u95f4\uff1a${fmt(view.account.login_checked_at)}`:''].filter(Boolean).join('\n')}if(detailEl)detailEl.textContent=view.detail}}
-function refreshPlatformLoginStatus(){if(state.page!=='platforms'||!state.bootstrap)return;renderPlatformRuntimePage()}
+let platformRuntimeSignatureValue='';
+let platformActionsInFlight=0;
+async function runPlatformAction(action){
+  platformActionsInFlight+=1;
+  try{return await action()}finally{platformActionsInFlight-=1}
+}
+function platformRuntimeSignature(){
+  const {accounts,platforms,devices,localAgent,config}=state.bootstrap;
+  return JSON.stringify({accounts,platforms,devices,localAgent,activeCodes:config.activePlatformCodes,plannedCodes:config.plannedPlatformCodes,rpaMode:config.rpaMode});
+}
+function refreshPlatformLoginStatus(){
+  if(state.page!=='platforms'||!state.bootstrap||platformActionsInFlight||document.hidden||document.querySelector('.confirm-overlay')||messageFormHasEditingFocus())return;
+  if(!$('#content .platform-runtime-grid')||platformRuntimeSignature()!==platformRuntimeSignatureValue)renderPlatformRuntimePage({background:true});
+}
 async function batchPlatformAction(action,button){
   const pageOwner=capturePageOwner();
   const original=button?.textContent;
@@ -2984,7 +3083,7 @@ async function stopAllPlatforms(button){
     toast(`\u5df2\u505c\u6b62\u5168\u90e8 ${result.platforms?.length||5} \u4e2a\u5e73\u53f0\uff0c\u6392\u961f\u4efb\u52a1\u4fdd\u6301\u7b49\u5f85`);
   }catch(error){if(ownsPageOwner(pageOwner))toast(error.message,true);button.disabled=false;button.classList.remove('is-loading');button.textContent=original}
 }
-function renderPlatformRuntimePage(){
+function renderPlatformRuntimePage({background=false}={}){
   const {devices=[],accounts=[],platforms=[]}=state.bootstrap;
   const activeCodes=state.bootstrap?.config?.activePlatformCodes||['xiaohongshu','douyin','wechat_channels','bilibili','weibo'];
   const plannedCodes=state.bootstrap?.config?.plannedPlatformCodes||[];
@@ -3012,21 +3111,28 @@ function renderPlatformRuntimePage(){
     const smartReplyRunning=runtime.smart_reply_effective_state==='RUNNING';
     const smartReplyText=smartReplyRunning?'\u8fd0\u884c\u4e2d':smartReplyEnabled?'\u5df2\u5f00\u542f \u00b7 \u5f85\u5e73\u53f0\u53ef\u6267\u884c':'\u5df2\u5173\u95ed';
     const smartReplyDetail=smartReplyRunning?'评论和私信将采集后按知识库自动回复。':smartReplyEnabled?'配置已保存；平台停止或存在关联问题阻断时不会领取回复任务。':'消息保留等待，不生成或领取自动回复任务。';
-    return `<article class="platform-runtime-card ${platformRunning?'is-running':'is-stopped'}"><div class="platform-runtime-heading"><div><b>${esc(platform.name)}</b>${platform.acceptanceNote?`<span class="badge warning">${esc(platform.acceptanceNote)}</span>`:''}<span class="badge ${taskRunning?'running':platformRunning?(issueBlocked?'warning':'running'):'stopped'}">${stateText}</span></div><button type="button" class="platform-runtime-toggle ${desiredRunning?'is-on':'is-off'}" data-platform="${platform.code}" data-enable="${desiredRunning?'false':'true'}" aria-pressed="${desiredRunning?'true':'false'}" ${!desiredRunning&&!accountEnabled?'disabled title="\u8bf7\u5148\u542f\u7528\u8d26\u53f7\uff1b\u542f\u7528\u8d26\u53f7\u672c\u8eab\u4e0d\u4f1a\u5524\u9192 Local Agent"':''}><span class="runtime-switch-track"><i></i></span><strong>${desiredRunning?'\u505c\u6b62\u5e73\u53f0':'\u5f00\u542f\u5e73\u53f0'}</strong></button></div><p>${detail}</p><div class="button-row"><button type="button" class="btn ${accountEnabled?'danger':'secondary'} platform-account-toggle" data-account="${account?.id||''}" data-enable="${accountEnabled?'false':'true'}" ${account?'':'disabled'}>${accountEnabled?'\u505c\u7528\u8d26\u53f7':'\u542f\u7528\u8d26\u53f7\uff08\u4e0d\u5524\u9192\uff09'}</button>${accountEnabled&&!desiredRunning?'<small class="muted">\u4e0b\u4e00\u6b65\uff1a\u663e\u5f0f\u5f00\u542f\u5e73\u53f0</small>':''}</div><div class="smart-reply-control ${smartReplyRunning?'is-running':smartReplyEnabled?'is-waiting':'is-stopped'}"><div><b>\u667a\u80fd\u56de\u590d \u00b7 ${smartReplyText}</b><small>${smartReplyDetail}</small></div><button type="button" class="btn ${smartReplyEnabled?'danger':'secondary'} platform-smart-reply-toggle" data-platform="${platform.code}" data-enable="${smartReplyEnabled?'false':'true'}">${smartReplyEnabled?'\u5173\u95ed\u667a\u80fd\u56de\u590d':'\u5f00\u542f\u667a\u80fd\u56de\u590d'}</button></div><div class="platform-runtime-metrics"><span>\u542f\u7528\u8d26\u53f7 <b>${Number(runtime.enabled_account_count||0)}</b></span><span>\u5f85\u6267\u884c <b>${Number(runtime.queued_job_count||0)}</b></span><span>\u8fd0\u884c\u4e2d <b>${Number(runtime.running_job_count||0)}</b></span></div>${issueBlocked?'<div class="section-actions"><button type="button" class="btn secondary" data-go="issues">处理关联问题</button></div>':''}<div class="muted">\u8d26\u53f7\uff1a${esc(account?.display_name||'\u672a\u914d\u7f6e')} \u00b7 Profile\uff1a${esc(account?.profile_name||'\u672a\u914d\u7f6e')}</div><div class="section-actions"><span class="badge">登录状态：${esc(account?.login_status||'UNKNOWN')}</span><button class="btn success platform-login-action" data-platform="${platform.code}" data-action="open-login" ${platformRunning?'':'disabled'}>打开 Chrome 登录 / 切换</button><button class="btn secondary platform-login-action" data-platform="${platform.code}" data-action="check-login" ${platformRunning?'':'disabled'}>检查登录</button></div>${runtime.runtime_updated_at?`<small>\u6700\u540e\u8c03\u6574\uff1a${fmt(runtime.runtime_updated_at)}${runtime.runtime_updated_by?' \u00b7 '+esc(runtime.runtime_updated_by):''}</small>`:''}</article>`;
+    return `<article data-refresh-key="${platform.code}" class="platform-runtime-card ${platformRunning?'is-running':'is-stopped'}"><div class="platform-runtime-heading"><div><b>${esc(platform.name)}</b>${platform.acceptanceNote?`<span class="badge warning">${esc(platform.acceptanceNote)}</span>`:''}<span class="badge ${taskRunning?'running':platformRunning?(issueBlocked?'warning':'running'):'stopped'}">${stateText}</span></div><button type="button" class="platform-runtime-toggle ${desiredRunning?'is-on':'is-off'}" data-platform="${platform.code}" data-enable="${desiredRunning?'false':'true'}" aria-pressed="${desiredRunning?'true':'false'}" ${!desiredRunning&&!accountEnabled?'disabled title="\u8bf7\u5148\u542f\u7528\u8d26\u53f7\uff1b\u542f\u7528\u8d26\u53f7\u672c\u8eab\u4e0d\u4f1a\u5524\u9192 Local Agent"':''}><span class="runtime-switch-track"><i></i></span><strong>${desiredRunning?'\u505c\u6b62\u5e73\u53f0':'\u5f00\u542f\u5e73\u53f0'}</strong></button></div><p>${detail}</p><div class="button-row"><button type="button" class="btn ${accountEnabled?'danger':'secondary'} platform-account-toggle" data-account="${account?.id||''}" data-enable="${accountEnabled?'false':'true'}" ${account?'':'disabled'}>${accountEnabled?'\u505c\u7528\u8d26\u53f7':'\u542f\u7528\u8d26\u53f7\uff08\u4e0d\u5524\u9192\uff09'}</button>${accountEnabled&&!desiredRunning?'<small class="muted">\u4e0b\u4e00\u6b65\uff1a\u663e\u5f0f\u5f00\u542f\u5e73\u53f0</small>':''}</div><div class="smart-reply-control ${smartReplyRunning?'is-running':smartReplyEnabled?'is-waiting':'is-stopped'}"><div><b>\u667a\u80fd\u56de\u590d \u00b7 ${smartReplyText}</b><small>${smartReplyDetail}</small></div><button type="button" class="btn ${smartReplyEnabled?'danger':'secondary'} platform-smart-reply-toggle" data-platform="${platform.code}" data-enable="${smartReplyEnabled?'false':'true'}">${smartReplyEnabled?'\u5173\u95ed\u667a\u80fd\u56de\u590d':'\u5f00\u542f\u667a\u80fd\u56de\u590d'}</button></div><div class="platform-runtime-metrics"><span>\u542f\u7528\u8d26\u53f7 <b>${Number(runtime.enabled_account_count||0)}</b></span><span>\u5f85\u6267\u884c <b>${Number(runtime.queued_job_count||0)}</b></span><span>\u8fd0\u884c\u4e2d <b>${Number(runtime.running_job_count||0)}</b></span></div>${issueBlocked?'<div class="section-actions"><button type="button" class="btn secondary" data-go="issues">处理关联问题</button></div>':''}<div class="muted">\u8d26\u53f7\uff1a${esc(account?.display_name||'\u672a\u914d\u7f6e')} \u00b7 Profile\uff1a${esc(account?.profile_name||'\u672a\u914d\u7f6e')}</div><div class="section-actions"><span class="badge">登录状态：${esc(({READY:'已登录',UNKNOWN:'待检查',DISABLED:'已停用'})[account?.login_status||'UNKNOWN']||statusName(account.login_status))}</span><button class="btn success platform-login-action" data-platform="${platform.code}" data-action="open-login" ${platformRunning?'':'disabled'}>打开 Chrome 登录 / 切换</button><button class="btn secondary platform-login-action" data-platform="${platform.code}" data-action="check-login" ${platformRunning?'':'disabled'}>检查登录</button></div>${runtime.runtime_updated_at?`<small>\u6700\u540e\u8c03\u6574\uff1a${fmt(runtime.runtime_updated_at)}${runtime.runtime_updated_by?' \u00b7 '+esc(runtime.runtime_updated_by):''}</small>`:''}</article>`;
   }).join('');
-  $('#content').innerHTML=`<section class="platform-runtime-page-head"><div><span class="panel-kicker">PLATFORM RUNTIME CONTROL</span><h2>\u4e94\u5e73\u53f0\u8fd0\u884c\u63a7\u5236 \u00b7 \u8d26\u53f7\u4e0e\u667a\u80fd\u56de\u590d\u7ba1\u7406</h2><p>\u5c0f\u7ea2\u4e66\u3001\u6296\u97f3\u3001\u89c6\u9891\u53f7\u3001B\u7ad9\u3001\u5fae\u535a\u5747\u53ef\u72ec\u7acb\u542f\u505c\u3002\u8d26\u53f7\u542f\u7528\u4e0d\u4f1a\u5524\u9192 Local Agent\uff1b\u53ea\u6709\u663e\u5f0f\u5f00\u542f\u5e73\u53f0\u540e\u624d\u5141\u8bb8\u767b\u5f55\u548c\u4efb\u52a1\u6267\u884c\u3002</p></div><span class="runtime-summary">${runnableCount}/${activeCodes.length} \u53ef\u6267\u884c \u00b7 ${openedCount}/${activeCodes.length} \u5df2\u5f00\u542f</span></section><div class="notice warn"><b>\u5b89\u5168\u5173\u95ed\u8bed\u4e49\uff1a</b>STOPPED \u5e73\u53f0\u4e0d\u9886\u53d6\u4efb\u52a1\u3001\u4e0d\u767b\u5f55\u68c0\u67e5\u3001\u4e0d\u91c7\u96c6\u3001\u4e0d\u521b\u5efa\u6216\u6253\u5f00 Chrome/Profile\uff1b\u505c\u6b62\u65f6\u901a\u77e5 Local Agent \u5173\u95ed\u5df2\u6709 Browser Context\u3002</div><div class="panel platform-runtime-panel"><div class="panel-head"><div><h2>\u5e73\u53f0\u8fd0\u884c\u5f00\u5173</h2><p>\u4e94\u4e2a\u5df2\u63a5\u5165\u5e73\u53f0\u5747\u652f\u6301\u8d26\u53f7\u542f\u505c\u3001\u5e73\u53f0\u542f\u505c\u548c\u667a\u80fd\u56de\u590d\u72ec\u7acb\u63a7\u5236\u3002</p></div><div class="button-row"><button type="button" class="btn" id="enableAllPlatforms" title="\u5c06\u4e0b\u65b9\u4e94\u4e2a\u5e73\u53f0\u7684\u8d26\u53f7\u4e0e\u5e73\u53f0\u8fd0\u884c\u5f00\u5173\u7edf\u4e00\u5207\u6362\u4e3a\u5f00\u542f" ${allPlatformsEnabled?'disabled':''}>\u4e00\u952e\u5f00\u542f\u5168\u90e8\u5e73\u53f0</button><button type="button" class="btn success" id="openSelectedPlatforms" title="\u53ea\u6253\u5f00\u4e0b\u65b9\u5df2\u542f\u7528\u8d26\u53f7\u4e14\u8fd0\u884c\u5f00\u5173\u4e3a RUNNING \u7684\u5e73\u53f0\uff1b\u672a\u542f\u7528\u5e73\u53f0\u4e0d\u4f1a\u88ab\u5524\u9192" ${openedCount?'':'disabled'}>\u4e00\u952e\u6253\u5f00\u6240\u9009\u5e73\u53f0</button><button type="button" class="btn danger" id="stopAllPlatforms" ${desiredRunningCount?'':'disabled'}>\u505c\u6b62\u5168\u90e8\u5e73\u53f0</button><button type="button" class="btn secondary" data-go="issues">\u95ee\u9898\u6c47\u603b</button></div></div><div class="platform-runtime-grid">${runtimeCards}</div></div>`;
-  document.querySelectorAll('.platform-runtime-toggle').forEach(button=>button.onclick=()=>togglePlatformRuntime(button.dataset.platform,button.dataset.enable==='true',button));
-  document.querySelectorAll('.platform-account-toggle').forEach(button=>button.onclick=()=>togglePlatformAccount(Number(button.dataset.account),button.dataset.enable==='true',button));
-  document.querySelectorAll('.platform-smart-reply-toggle').forEach(button=>button.onclick=()=>togglePlatformSmartReply(button.dataset.platform,button.dataset.enable==='true',button));
+  const target=background?document.createElement('section'):$('#content');
+  target.innerHTML=`<section class="platform-runtime-page-head"><div><span class="panel-kicker">PLATFORM RUNTIME CONTROL</span><h2>\u4e94\u5e73\u53f0\u8fd0\u884c\u63a7\u5236 \u00b7 \u8d26\u53f7\u4e0e\u667a\u80fd\u56de\u590d\u7ba1\u7406</h2><p>\u5c0f\u7ea2\u4e66\u3001\u6296\u97f3\u3001\u89c6\u9891\u53f7\u3001B\u7ad9\u3001\u5fae\u535a\u5747\u53ef\u72ec\u7acb\u542f\u505c\u3002\u8d26\u53f7\u542f\u7528\u4e0d\u4f1a\u5524\u9192 Local Agent\uff1b\u53ea\u6709\u663e\u5f0f\u5f00\u542f\u5e73\u53f0\u540e\u624d\u5141\u8bb8\u767b\u5f55\u548c\u4efb\u52a1\u6267\u884c\u3002</p></div><span class="runtime-summary">${runnableCount}/${activeCodes.length} \u53ef\u6267\u884c \u00b7 ${openedCount}/${activeCodes.length} \u5df2\u5f00\u542f</span></section><div class="notice warn"><b>\u5b89\u5168\u5173\u95ed\u8bed\u4e49\uff1a</b>STOPPED \u5e73\u53f0\u4e0d\u9886\u53d6\u4efb\u52a1\u3001\u4e0d\u767b\u5f55\u68c0\u67e5\u3001\u4e0d\u91c7\u96c6\u3001\u4e0d\u521b\u5efa\u6216\u6253\u5f00 Chrome/Profile\uff1b\u505c\u6b62\u65f6\u901a\u77e5 Local Agent \u5173\u95ed\u5df2\u6709 Browser Context\u3002</div><div class="panel platform-runtime-panel"><div class="panel-head"><div><h2>\u5e73\u53f0\u8fd0\u884c\u5f00\u5173</h2><p>\u4e94\u4e2a\u5df2\u63a5\u5165\u5e73\u53f0\u5747\u652f\u6301\u8d26\u53f7\u542f\u505c\u3001\u5e73\u53f0\u542f\u505c\u548c\u667a\u80fd\u56de\u590d\u72ec\u7acb\u63a7\u5236\u3002</p></div><div class="button-row"><button type="button" class="btn" id="enableAllPlatforms" title="\u5c06\u4e0b\u65b9\u4e94\u4e2a\u5e73\u53f0\u7684\u8d26\u53f7\u4e0e\u5e73\u53f0\u8fd0\u884c\u5f00\u5173\u7edf\u4e00\u5207\u6362\u4e3a\u5f00\u542f" ${allPlatformsEnabled?'disabled':''}>\u4e00\u952e\u5f00\u542f\u5168\u90e8\u5e73\u53f0</button><button type="button" class="btn success" id="openSelectedPlatforms" title="\u53ea\u6253\u5f00\u4e0b\u65b9\u5df2\u542f\u7528\u8d26\u53f7\u4e14\u8fd0\u884c\u5f00\u5173\u4e3a RUNNING \u7684\u5e73\u53f0\uff1b\u672a\u542f\u7528\u5e73\u53f0\u4e0d\u4f1a\u88ab\u5524\u9192" ${openedCount?'':'disabled'}>\u4e00\u952e\u6253\u5f00\u6240\u9009\u5e73\u53f0</button><button type="button" class="btn danger" id="stopAllPlatforms" ${desiredRunningCount?'':'disabled'}>\u505c\u6b62\u5168\u90e8\u5e73\u53f0</button><button type="button" class="btn secondary" data-go="issues">\u95ee\u9898\u6c47\u603b</button></div></div><div class="platform-runtime-grid">${runtimeCards}</div></div>`;
   const realMode=state.bootstrap?.config?.rpaMode==='five_platform_assisted';
   const browserOnline=isLocalAgentOnline();
-  $('#content').insertAdjacentHTML('afterbegin', '<div class="notice '+(realMode&&browserOnline?'':'warn')+'"><b>'+ (realMode?'真实账号模式':'模拟模式')+'</b> · '+(browserOnline?'浏览器执行端已连接':'浏览器执行端未连接')+'<p>点击平台的“打开 Chrome 登录 / 切换”，在运营电脑弹出的独立 Chrome 窗口中扫码或登录。完成后点击“检查登录”。登录会保存在该平台的专用浏览器中；切换账号时先在平台内退出，再登录新账号。内网访问也会在这台运营电脑上打开 Chrome。</p></div>');
-  document.querySelectorAll('.platform-login-action').forEach(button=>button.onclick=()=>openPlatformAccountLogin(button));
-  const enableAll=$('#enableAllPlatforms');if(enableAll)enableAll.onclick=()=>startAllPlatforms(enableAll);
-  const openSelected=$('#openSelectedPlatforms');if(openSelected)openSelected.onclick=()=>batchPlatformAction('open',openSelected);
+  target.insertAdjacentHTML('afterbegin', '<div class="notice '+(realMode&&browserOnline?'':'warn')+'"><b>'+ (realMode?'真实账号模式':'模拟模式')+'</b> · '+(browserOnline?'浏览器执行端已连接':'浏览器执行端未连接')+'<p>点击平台的“打开 Chrome 登录 / 切换”，在运营电脑弹出的独立 Chrome 窗口中扫码或登录。完成后点击“检查登录”。登录会保存在该平台的专用浏览器中；切换账号时先在平台内退出，再登录新账号。内网访问也会在这台运营电脑上打开 Chrome。</p></div>');
+  if(background){
+    applyInteractionPresentation(target,{page:'platforms'});
+    patchBackgroundContent($('#content'),target);
+  }
+  document.querySelectorAll('.platform-runtime-toggle').forEach(button=>button.onclick=()=>runPlatformAction(()=>togglePlatformRuntime(button.dataset.platform,button.dataset.enable==='true',button)));
+  document.querySelectorAll('.platform-account-toggle').forEach(button=>button.onclick=()=>runPlatformAction(()=>togglePlatformAccount(Number(button.dataset.account),button.dataset.enable==='true',button)));
+  document.querySelectorAll('.platform-smart-reply-toggle').forEach(button=>button.onclick=()=>runPlatformAction(()=>togglePlatformSmartReply(button.dataset.platform,button.dataset.enable==='true',button)));
+
+  document.querySelectorAll('.platform-login-action').forEach(button=>button.onclick=()=>runPlatformAction(()=>openPlatformAccountLogin(button)));
+  const enableAll=$('#enableAllPlatforms');if(enableAll)enableAll.onclick=()=>runPlatformAction(()=>startAllPlatforms(enableAll));
+  const openSelected=$('#openSelectedPlatforms');if(openSelected)openSelected.onclick=()=>runPlatformAction(()=>batchPlatformAction('open',openSelected));
   presentInteractions();
-  const stopAll=$('#stopAllPlatforms');if(stopAll)stopAll.onclick=()=>stopAllPlatforms(stopAll);
+  const stopAll=$('#stopAllPlatforms');if(stopAll)stopAll.onclick=()=>runPlatformAction(()=>stopAllPlatforms(stopAll));
   document.querySelectorAll('[data-go]').forEach(button=>button.onclick=()=>navigate(button.dataset.go));
+  platformRuntimeSignatureValue=platformRuntimeSignature();
 }
 
 

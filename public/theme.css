@@ -26,6 +26,7 @@ html[data-theme="day"]{
   --tk-warn:#c46a00;--tk-warn-mid:#d98a1c;--tk-warn-soft:#fdf0dc;--tk-warn-line:rgba(196,106,0,.35);--tk-warn-text:#a85a00;
   --tk-purple:#6d4fd8;--tk-purple-mid:#8166e6;--tk-purple-soft:#efeafd;--tk-purple-line:rgba(109,79,216,.35);--tk-purple-text:#5b3fc4;
   /* 效果 */
+  --tk-dialog:#ffffff;--tk-scrim:rgba(15,27,45,.28);
   --tk-glass:rgba(255,255,255,.5);--tk-glass-solid:#f7f9fc;--tk-glass-edge:rgba(255,255,255,.78);--tk-hi:rgba(255,255,255,.9);
   --tk-card-edge:rgba(196,210,230,.7);--tk-card-shadow:0 1px 2px rgba(30,50,90,.05),0 14px 32px -16px rgba(40,70,140,.28);
   --tk-glow:rgba(37,99,235,.45);--tk-glow-soft:rgba(37,99,235,.08);--tk-glare:rgba(255,255,255,.75);
@@ -50,6 +51,7 @@ html[data-theme="night"]{
   --tk-danger:#f07178;--tk-danger-mid:#e05a62;--tk-danger-soft:rgba(240,113,120,.13);--tk-danger-line:rgba(240,113,120,.38);--tk-danger-text:#ff9ea4;
   --tk-warn:#f5b454;--tk-warn-mid:#e09a35;--tk-warn-soft:rgba(245,180,84,.12);--tk-warn-line:rgba(245,180,84,.38);--tk-warn-text:#f7c26f;
   --tk-purple:#b39dff;--tk-purple-mid:#9a82f0;--tk-purple-soft:rgba(179,157,255,.13);--tk-purple-line:rgba(179,157,255,.38);--tk-purple-text:#c6b6ff;
+  --tk-dialog:#15161e;--tk-scrim:rgba(0,0,0,.55);
   --tk-glass:rgba(17,18,24,.72);--tk-glass-solid:#111218;--tk-glass-edge:rgba(255,255,255,.08);--tk-hi:rgba(255,255,255,.06);
   --tk-card-edge:rgba(255,255,255,.09);--tk-card-shadow:0 14px 34px -18px rgba(0,0,0,.85);
   --tk-glow:rgba(139,123,255,.5);--tk-glow-soft:rgba(139,123,255,.12);--tk-glare:rgba(255,255,255,.12);
@@ -77,7 +79,7 @@ html[data-theme] body .workspace-subnav{
 html[data-theme] body .topbar,html[data-theme] body .workspace-subnav{position:sticky;z-index:4}
 
 /* ---------- 卡片：磨砂玻璃 + 光标光晕 + 发光边 + 反光 ---------- */
-html[data-theme] :is(.panel,.operations-surface,.operations-ai-panel,.preview-stat,.metric,.dashboard-device-card,.platform-login-item,.publish-queue-board,.task-command-center,.task-stream,.message-command-center,.message-channel-poll-card,.mini-link-card,.mini-program-summary,.mini-program-workbench,.platform-runtime-card,.settings-status-card,.settings-mini-card,.ai-visual-card,.browser-device-card,.task-card,.interaction-card,.publish-action-card,.ai-status-card,.knowledge-category-card,.account-card,.message-card,.check-card){
+html[data-theme] :is(.panel,.v2-card,.v2-kpi,.v2-action,.v2-inbox-filter,.v2-inbox-list,.v2-inbox-detail,.v2-phone,.operations-surface,.operations-ai-panel,.preview-stat,.metric,.dashboard-device-card,.platform-login-item,.publish-queue-board,.task-command-center,.task-stream,.message-command-center,.message-channel-poll-card,.mini-link-card,.mini-program-summary,.mini-program-workbench,.platform-runtime-card,.settings-status-card,.settings-mini-card,.ai-visual-card,.browser-device-card,.task-card,.interaction-card,.publish-action-card,.ai-status-card,.knowledge-category-card,.account-card,.message-card,.check-card){
   -webkit-backdrop-filter:blur(16px) saturate(160%);backdrop-filter:blur(16px) saturate(160%);
   border-color:var(--tk-card-edge);
   box-shadow:inset 0 1px 0 var(--tk-hi),var(--tk-card-shadow);
@@ -85,23 +87,23 @@ html[data-theme] :is(.panel,.operations-surface,.operations-ai-panel,.preview-st
   background-size:100% 100%,260% 100%;background-position:0 0,var(--gx,130%) 0;background-repeat:no-repeat;
   transition:box-shadow .25s cubic-bezier(.2,.8,.2,1),border-color .25s cubic-bezier(.2,.8,.2,1),transform .5s cubic-bezier(.2,.8,.2,1)}
 @media (hover:hover) and (pointer:fine){
-  html[data-theme] :is(.panel,.operations-surface,.operations-ai-panel,.preview-stat,.metric,.dashboard-device-card,.platform-login-item,.publish-queue-board,.task-command-center,.task-stream,.message-command-center,.message-channel-poll-card,.mini-link-card,.mini-program-summary,.mini-program-workbench,.platform-runtime-card,.settings-status-card,.settings-mini-card,.ai-visual-card,.browser-device-card,.task-card,.interaction-card,.publish-action-card,.ai-status-card,.knowledge-category-card,.account-card,.message-card,.check-card):hover{
+  html[data-theme] :is(.panel,.v2-card,.v2-kpi,.v2-action,.v2-inbox-filter,.v2-inbox-list,.v2-inbox-detail,.v2-phone,.operations-surface,.operations-ai-panel,.preview-stat,.metric,.dashboard-device-card,.platform-login-item,.publish-queue-board,.task-command-center,.task-stream,.message-command-center,.message-channel-poll-card,.mini-link-card,.mini-program-summary,.mini-program-workbench,.platform-runtime-card,.settings-status-card,.settings-mini-card,.ai-visual-card,.browser-device-card,.task-card,.interaction-card,.publish-action-card,.ai-status-card,.knowledge-category-card,.account-card,.message-card,.check-card):hover{
     --tk-glare-on:var(--tk-glare);border-color:var(--tk-acc-line);
     box-shadow:inset 0 1px 0 var(--tk-hi),0 0 0 1px var(--tk-acc-line),0 18px 40px -18px var(--tk-glow)}
   /* 大面板只要光晕和光边，不要反光，避免整屏闪 */
-  html[data-theme] :is(.panel,.operations-surface,.task-stream,.mini-program-workbench,.message-command-center,.publish-queue-board,.task-command-center):hover{--tk-glare-on:transparent}
+  html[data-theme] :is(.panel,.v2-inbox-filter,.v2-inbox-list,.v2-inbox-detail,.v2-phone,.operations-surface,.task-stream,.mini-program-workbench,.message-command-center,.publish-queue-board,.task-command-center):hover{--tk-glare-on:transparent}
 }
 html[data-theme] .tk-tilt.tk-live{transition:transform 80ms linear,box-shadow .25s,border-color .25s}
 
 /* ---------- 按钮：主按钮渐变 + 扫光，所有按钮有按压反馈 ---------- */
-html[data-theme] .btn:not(.secondary):not(.danger):not(.ghost):not(.success):not(:disabled){
-  color:#fff;border-color:transparent;
-  background-image:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.42) 50%,transparent 70%),linear-gradient(135deg,var(--tk-acc),var(--tk-acc2));
-  background-size:250% 100%,100% 100%;background-position:150% 0,0 0;background-repeat:no-repeat;
+html[data-theme] .btn:not(.secondary):not(.danger):not(.ghost):not(.success):not(.v2-danger-ghost):not(:disabled){
+  color:#fff!important;border-color:transparent!important;background-color:var(--tk-acc)!important;
+  background-image:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.42) 50%,transparent 70%),linear-gradient(135deg,var(--tk-acc),var(--tk-acc2))!important;
+  background-size:250% 100%,100% 100%!important;background-position:150% 0,0 0!important;background-repeat:no-repeat!important;
   box-shadow:0 8px 22px -10px var(--tk-glow),inset 0 1px 0 rgba(255,255,255,.3);
   transition:background-position .7s cubic-bezier(.2,.8,.2,1),transform .15s cubic-bezier(.2,.8,.2,1),box-shadow .2s}
 @media (hover:hover) and (pointer:fine){
-  html[data-theme] .btn:not(.secondary):not(.danger):not(.ghost):not(.success):not(:disabled):hover{background-position:-50% 0,0 0;box-shadow:0 10px 28px -8px var(--tk-glow),inset 0 1px 0 rgba(255,255,255,.4)}
+  html[data-theme] .btn:not(.secondary):not(.danger):not(.ghost):not(.success):not(.v2-danger-ghost):not(:disabled):hover{background-position:-50% 0,0 0!important;box-shadow:0 10px 28px -8px var(--tk-glow),inset 0 1px 0 rgba(255,255,255,.4)}
   html[data-theme] :is(.btn,.ghost,button.secondary):not(:disabled):hover{transform:translateY(-1px)}
 }
 html[data-theme] :is(.btn,.ghost):not(:disabled):active{transform:translateY(1px) scale(.985);transition-duration:90ms}

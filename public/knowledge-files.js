@@ -10,7 +10,7 @@ export function renderKnowledgeFiles(root, options) {
   const { api, esc, fmt, toast, confirmDelete, data, isCurrent, onRefresh } = options;
   const documents = data.documentData?.documents || [];
   if (!data.rag?.enabled || !data.rag?.configured) {
-    root.innerHTML = '<section class="panel"><h2>知识库</h2><p role="status">知识库服务暂不可用，请稍后刷新。</p></section>';
+    root.innerHTML = '<section class="panel"><div class="v2-state is-warn" role="status"><span class="v2-state-icon" aria-hidden="true">!</span><div><b>知识库服务没有响应</b><p>文件列表保存在知识库服务（RAG）中，暂时读取不到。确认 RAG 服务已经启动后刷新页面。</p></div></div></section>';
     return;
   }
   root.innerHTML = `<section class="knowledge-files-page">

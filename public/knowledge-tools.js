@@ -24,7 +24,10 @@ export async function renderAnswerProfile(root, { api, esc, isCurrent }) {
     if (!saved) throw new Error('未能读取已保存的人设配置');
   } catch (error) {
     if (!isCurrent()) return;
-    root.innerHTML = `<section class="panel knowledge-tools-page"><p role="alert">${esc(error.message)}</p><button class="btn" id="answerProfileRetry">重新加载</button></section>`;
+    const serviceDown = Number(error.status) >= 500 || /服务器处理失败|Failed to fetch|NetworkError/.test(String(error.message || ''));
+    const title = serviceDown ? '知识库服务没有响应' : '回答风格没有读取成功';
+    const detail = serviceDown ? '回答风格保存在知识库服务（RAG）中。确认 RAG 服务已经启动，再点“重新加载”。' : error.message;
+    root.innerHTML = `<section class="panel knowledge-tools-page"><div class="v2-state is-warn" role="alert"><span class="v2-state-icon" aria-hidden="true">!</span><div><b>${esc(title)}</b><p>${esc(detail)}</p>${serviceDown && error.message ? `<small>错误信息：${esc(error.message)}</small>` : ''}</div><button class="btn" id="answerProfileRetry">重新加载</button></div></section>`;
     root.querySelector('button').onclick = () => renderAnswerProfile(root, { api, esc, isCurrent });
     return;
   }

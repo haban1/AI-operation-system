@@ -1,3 +1,4 @@
+import { platformLogo } from './platform-icons.js?v=20261111-v2';
 const privateSelection = new WeakMap();
 const platformNames = { douyin: '抖音', wechat_channels: '视频号', bilibili: 'B站', weibo: '微博', xiaohongshu: '小红书' };
 
@@ -21,6 +22,22 @@ function retainDetails(card, selector, label, className) {
   const details = disclosure(className, label);
   nodes[0].before(details);
   details.append(...nodes);
+}
+
+/* 卡片操作按钮分主次：能回复时“人工回复”为主按钮，否则“人工已处理”；“删除”为浅红文字按钮。
+   只改外观类名，保留 app.js 绑定事件用的 .manual-reply / .mark-handled / .delete-message。 */
+function rankCardActions(card) {
+  const bar = card.querySelector('.section-actions');
+  if (!bar || bar.dataset.v2Ranked) return;
+  bar.dataset.v2Ranked = 'true';
+  const buttons = [...bar.querySelectorAll(':scope > button')];
+  const primary = buttons.find(b => b.classList.contains('manual-reply')) || buttons.find(b => b.classList.contains('mark-handled'));
+  for (const b of buttons) {
+    if (b === primary) b.classList.remove('secondary');
+    else if (b.classList.contains('delete-message')) { b.classList.remove('secondary'); b.classList.add('v2-danger-ghost', 'v2-push-right'); }
+    else b.classList.add('secondary');
+  }
+  if (primary) bar.prepend(primary);
 }
 
 function presentMessageCard(card) {
@@ -115,6 +132,139 @@ function presentPrivateMessages(root, options) {
   select(selected);
 }
 
+/* ---------- 评论三栏收件箱：左侧筛选 / 中间按帖子分组的原列表 / 右侧详情 ----------
+   中间列保留 app.js 生成的分组、展开与未读逻辑；右侧详情由接口数据渲染，
+   操作按钮只转发点击到原卡片上的按钮，不复制任何业务逻辑。 */
+let selectedCommentId = null;
+let commentFilter = 'all';
+const PENDING_STATUSES = ['MANUAL_REQUIRED', 'KNOWLEDGE_GAP', 'AI_REPLY_TIMEOUT'];
+function commentCategory(message) {
+  if (!message) return 'other';
+  if (message.reply_status?.manual?.replied || message.status === 'MANUAL_HANDLED' || message.handled_at) return 'manual';
+  if (message.reply_status?.ai?.replied || message.reply_status?.platform?.replied) return 'ai';
+  if (PENDING_STATUSES.includes(message.status) || PENDING_STATUSES.includes(message.decision)) return 'pending';
+  return 'other';
+}
+const COMMENT_FILTERS = [['pending', '待处理', 'warn'], ['ai', 'AI 已回复', 'ok'], ['manual', '人工已处理', 'muted'], ['all', '全部', 'all']];
+function cardMessageId(card) { return card.querySelector('[data-id]')?.dataset.id || ''; }
+function shortStamp(value) {
+  const d = new Date(value); if (Number.isNaN(d.getTime())) return '';
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function renderCommentDetail(detail, message, card, group) {
+  detail.replaceChildren();
+  if (!message || !card) {
+    detail.append(element('p', 'v2-empty', '在中间列表展开帖子，点选一条评论查看详情和处理。'));
+    return;
+  }
+  const ctx = element('div', 'v2-inbox-context');
+  ctx.innerHTML = platformLogo(message.platform_code, 34);
+  const ctxCopy = element('div', 'v2-inbox-context-copy');
+  ctxCopy.append(element('b', '', group?.querySelector('.comment-post-title')?.textContent || message.post?.title || '未识别关联帖子'));
+  const meta = element('small'); meta.append(element('span', '', message.platform_name || ''), element('span', '', message.account_name || ''));
+  ctxCopy.append(meta); ctx.append(ctxCopy);
+  const openPost = group?.querySelector('.comment-post-meta .open-message');
+  if (openPost) { const b = element('button', 'btn secondary', '查看原帖'); b.type = 'button'; b.onclick = () => openPost.click(); ctx.append(b); }
+  const bubble = element('div', 'v2-bubble');
+  bubble.append(element('span', 'v2-avatar', String(message.user_name || '?').trim().slice(0, 1) || '?'));
+  const body = element('div', 'v2-bubble-body');
+  const who = element('small'); who.append(element('span', '', message.user_name || '未知用户'), element('span', 'v2-num', shortStamp(message.collected_at || message.created_at)));
+  body.append(who, element('p', '', message.content || ''));
+  bubble.append(body);
+  const status = element('div', 'v2-detail-status');
+  const statusRow = card.querySelector('.reply-status-row');
+  if (statusRow) status.append(statusRow.cloneNode(true));
+  detail.append(ctx, bubble, status);
+  const category = commentCategory(message);
+  if (message.reply_text) {
+    const reply = element('div', 'v2-suggest');
+    const sent = category === 'ai' || category === 'manual';
+    const hd = element('div', 'v2-suggest-head', sent ? (message.reply_status?.platform?.replied ? '平台上的回复' : '已发送的回复') : 'AI 拟回复（未发送）');
+    if (message.confidence !== null && message.confidence !== undefined && message.confidence !== '') {
+      const conf = Number(message.confidence); const pct = conf <= 1 ? Math.round(conf * 100) : Math.round(conf);
+      const c = element('span', 'v2-confidence'); c.innerHTML = `匹配度 <b class="v2-num">${pct}%</b><i><b style="width:${Math.max(0, Math.min(100, pct))}%"></b></i>`; hd.append(c);
+    }
+    reply.append(hd, element('p', '', message.reply_text));
+    if (message.knowledge_id) reply.append(element('small', 'v2-suggest-source', `依据知识 #${message.knowledge_id}`));
+    detail.append(reply);
+  }
+  if (category === 'pending') {
+    const reason = card.querySelector('.message-decision-detail .wide');
+    detail.append(element('div', 'v2-risk', reason ? reason.textContent : '需要人工判断后处理。'));
+  }
+  const audit = card.querySelector('.message-decision-detail');
+  if (audit) { const d = disclosure('v2-detail-audit', '处理详情'); d.append(audit.cloneNode(true)); detail.append(d); }
+  const actions = element('div', 'v2-detail-actions');
+  const originals = [...card.querySelectorAll('.section-actions button')];
+  // 主操作：能直接回复时是“人工回复”，否则是“人工已处理”
+  const primary = originals.find(b => b.classList.contains('manual-reply')) || originals.find(b => b.classList.contains('mark-handled'));
+  for (const original of originals) {
+    // 只保留外观类名：app.js 会按 .mark-handled 等类名重新绑定事件，代理按钮不能被它误绑。
+    const look = [...original.classList].filter(name => ['btn', 'secondary', 'danger'].includes(name)).join(' ');
+    const proxy = element('button', `${look || 'btn'} v2-proxy`, original.textContent);
+    proxy.type = 'button'; proxy.disabled = original.disabled; if (original.title) proxy.title = original.title;
+    proxy.onclick = () => original.click();
+    if (original === primary) proxy.classList.remove('secondary');
+    else if (!proxy.classList.contains('secondary')) proxy.classList.add('secondary');
+    if (original.classList.contains('delete-message')) { proxy.classList.remove('secondary'); proxy.classList.add('v2-danger-ghost', 'v2-push-right'); }
+    actions.append(proxy);
+  }
+  if (primary) { const first = [...actions.children].find(b => b.textContent === primary.textContent); if (first) actions.prepend(first); }
+  detail.append(actions);
+}
+function presentCommentInbox(root, options) {
+  const page = root.querySelector('.message-ops-page.channel-comments');
+  const list = page?.querySelector('.interaction-list');
+  if (!list || list.closest('.v2-inbox')) return;
+  const messages = (Array.isArray(options.messages) ? options.messages : []).filter(m => m.message_type === 'COMMENT');
+  const byId = new Map(messages.map(m => [String(m.id), m]));
+  const inbox = element('div', 'v2-inbox');
+  const filters = element('aside', 'v2-inbox-filter'); filters.setAttribute('aria-label', '评论筛选');
+  const middle = element('section', 'v2-inbox-list'); middle.setAttribute('aria-label', '按帖子分组的评论');
+  const detail = element('section', 'v2-inbox-detail'); detail.setAttribute('aria-label', '评论详情');
+  list.before(inbox); middle.append(list); inbox.append(filters, middle, detail);
+  const cards = [...list.querySelectorAll('.comment-item')];
+  const counts = { all: messages.length, pending: 0, ai: 0, manual: 0, other: 0 };
+  for (const m of messages) counts[commentCategory(m)] += 1;
+  filters.append(element('div', 'v2-filter-caption', '状态'));
+  const buttons = new Map();
+  const apply = () => {
+    for (const card of cards) {
+      const m = byId.get(cardMessageId(card));
+      card.classList.toggle('v2-filtered-out', commentFilter !== 'all' && commentCategory(m) !== commentFilter);
+    }
+    for (const group of list.querySelectorAll('.comment-post-group')) {
+      const visible = [...group.querySelectorAll('.comment-item')].some(card => !card.classList.contains('v2-filtered-out'));
+      group.classList.toggle('v2-filtered-out', !visible);
+    }
+    for (const [key, b] of buttons) { b.classList.toggle('active', key === commentFilter); b.setAttribute('aria-pressed', String(key === commentFilter)); }
+  };
+  for (const [key, label, tone] of COMMENT_FILTERS) {
+    const b = element('button', `v2-filter v2-filter-${tone}`); b.type = 'button';
+    b.append(element('i'), element('span', '', label), element('em', 'v2-num', String(counts[key] || 0)));
+    b.onclick = () => { commentFilter = key; apply(); };
+    filters.append(b); buttons.set(key, b);
+  }
+  const select = (id, { reveal = false } = {}) => {
+    selectedCommentId = id;
+    const card = cards.find(c => cardMessageId(c) === String(id));
+    for (const c of cards) c.classList.toggle('is-selected', c === card);
+    const group = card?.closest('.comment-post-group');
+    if (reveal && group && !group.open) group.open = true;
+    renderCommentDetail(detail, byId.get(String(id)), card, group);
+  };
+  for (const card of cards) {
+    card.tabIndex = 0;
+    card.addEventListener('click', event => { if (event.target.closest('button,a,summary,details.ws-message-audit')) return; select(cardMessageId(card)); });
+    card.addEventListener('keydown', event => { if ((event.key === 'Enter' || event.key === ' ') && event.target === card) { event.preventDefault(); select(cardMessageId(card)); } });
+  }
+  const fallback = messages.find(m => commentCategory(m) === 'pending') || messages[0];
+  const initial = selectedCommentId && byId.has(String(selectedCommentId)) ? selectedCommentId : fallback?.id;
+  apply();
+  select(initial ?? null);
+}
+
 function presentMessages(root, options) {
   const page = root.querySelector('.message-ops-page');
   if (!page) return;
@@ -131,6 +281,8 @@ function presentMessages(root, options) {
     }
   }
   page.querySelectorAll('.interaction-card').forEach(presentMessageCard);
+  page.querySelectorAll('.interaction-card').forEach(rankCardActions);
+  if (options.messageView !== 'PRIVATE_MESSAGE' && page.classList.contains('channel-comments')) presentCommentInbox(root, options);
   if (options.messageView === 'PRIVATE_MESSAGE' || page.classList.contains('channel-private')) presentPrivateMessages(root, options);
 }
 
@@ -176,6 +328,9 @@ function presentPlatforms(root) {
   const panel = root.querySelector('.platform-runtime-panel');
   if (panel) retainDetails(panel, ':scope > .panel-head', '批量管理', 'ws-platform-bulk');
   for (const card of grid.querySelectorAll(':scope > .platform-runtime-card')) {
+    const head = card.querySelector('.platform-runtime-heading > div');
+    const code = card.querySelector('[data-platform]')?.dataset.platform;
+    if (head && code && !head.querySelector('.v2-logo')) { head.classList.add('v2-has-logo'); head.insertAdjacentHTML('afterbegin', platformLogo(code, 40)); }
     if (card.dataset.workspacePresented || card.classList.contains('is-planned')) continue;
     card.dataset.workspacePresented = 'true';
     const heading = card.querySelector('.platform-runtime-heading');
