@@ -72,28 +72,23 @@ export class RagClient {
   async saveAnswerProfile({ knowledgeBaseId = 'main-business-kb', profile } = {}) {
     return this.request(`/rag-admin-api/v1/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/answer-profile`, { method: 'PUT', body: profile });
   }
-  async listDocuments({ knowledgeBaseId = 'main-business-kb' } = {}) { return this.request(`/rag-admin-api/v1/documents${queryString({ knowledge_base_id: knowledgeBaseId })}`); }
-  async getDocument({ documentId, version = null } = {}) {
-    if (!String(documentId || '').trim()) throw new Error('documentId 不能为空');
-    return this.request(`/rag-admin-api/v1/documents/${encodeURIComponent(documentId)}${queryString({ version })}`);
+  async listFiles({ knowledgeBaseId = 'main-business-kb' } = {}) {
+    return this.request(`/rag-admin-api/v1/files${queryString({ knowledge_base_id: knowledgeBaseId })}`);
   }
-  async getDocumentChunks({ documentId, version = null } = {}) {
-    if (!String(documentId || '').trim()) throw new Error('documentId 不能为空');
-    return this.request(`/rag-admin-api/v1/documents/${encodeURIComponent(documentId)}/chunks${queryString({ version })}`);
+  async fileContent({ documentId, knowledgeBaseId = 'main-business-kb' } = {}) {
+    return this.request(`/rag-admin-api/v1/files/${encodeURIComponent(documentId)}/chunks${queryString({ knowledge_base_id: knowledgeBaseId })}`);
   }
-  async deleteDocument({ documentId } = {}) {
-    if (!String(documentId || '').trim()) throw new Error('documentId 不能为空');
-    return this.request(`/rag-admin-api/v1/documents/${encodeURIComponent(documentId)}`, { method: 'DELETE' });
+  async removeFile({ documentId, knowledgeBaseId = 'main-business-kb' } = {}) {
+    return this.request(`/rag-admin-api/v1/files/${encodeURIComponent(documentId)}${queryString({ knowledge_base_id: knowledgeBaseId })}`, { method: 'DELETE' });
   }
-  async uploadDocument({ content, filename, mimeType = 'application/octet-stream', metadata = {}, requestId: suppliedRequestId = null } = {}) {
-    if (content === undefined || content === null) throw new Error('上传文件内容不能为空');
-    const id = suppliedRequestId || metadata.requestId || requestId('rag-document');
+  async saveFile({ documentId = null, content, filename, mimeType = 'application/octet-stream', knowledgeBaseId = 'main-business-kb', uploadedBy = 'admin', requestId: suppliedRequestId = null } = {}) {
+    const id = suppliedRequestId || requestId('file-save');
     const form = new FormData();
-    form.append('file', new Blob([content], { type: mimeType }), String(filename || 'uploaded.bin'));
-    form.append('metadata', JSON.stringify({ ...metadata, requestId: id }));
-    return this.request('/rag-admin-api/v1/documents', { method: 'POST', body: form, requestId: id });
+    form.append('file', new Blob([content], { type: mimeType }), filename);
+    form.append('metadata', JSON.stringify({ knowledgeBaseId, uploadedBy }));
+    const suffix = documentId ? `/${encodeURIComponent(documentId)}` : '';
+    return this.request(`/rag-admin-api/v1/files${suffix}`, { method: documentId ? 'PUT' : 'POST', body: form, requestId: id });
   }
-
   async queryFormalKnowledge(input = {}) {
     const payload = { contractVersion: RAG_CONTRACT_VERSION, requestId: input.requestId || requestId('rag-query'), ...input };
     const result = await this.request('/rag-api/v1/query', { method: 'POST', body: payload, requestId: payload.requestId });
@@ -102,58 +97,9 @@ export class RagClient {
     return { ...result, status: outcome || RAG_RESULT.INVALID_RESPONSE, answerable: outcome === RAG_RESULT.ANSWERED && Boolean(result.answer?.text), retryable: false };
   }
 
-  async createTestSession({ requestId: suppliedRequestId, knowledgeBaseId = 'main-business-kb', mode = 'PRE_RELEASE', baseReleaseId = null, candidateDocuments = [], operatorId = 'local-operator' } = {}) {
-    const payload = { requestId: suppliedRequestId || requestId('rag-test-session'), knowledgeBaseId, mode, baseReleaseId, candidateDocuments, operatorId };
-    return this.request('/rag-admin-api/v1/test-sessions', { method: 'POST', body: payload, requestId: payload.requestId });
-  }
-  async getTestSession({ testSessionId } = {}) {
-    if (!String(testSessionId || '').trim()) throw new Error('testSessionId 不能为空');
-    return this.request(`/rag-admin-api/v1/test-sessions/${encodeURIComponent(testSessionId)}`);
-  }
-  async deleteTestSession() { return { deleted: false, remoteManaged: true }; }
-  async queryTestKnowledge({ testSessionId, requestId: suppliedRequestId, question, context = [] } = {}) {
-    if (!String(testSessionId || '').trim()) throw new Error('testSessionId 不能为空');
-    const payload = { requestId: suppliedRequestId || requestId('rag-test-query'), question, context };
-    const result = await this.request(`/rag-admin-api/v1/test-sessions/${encodeURIComponent(testSessionId)}/query`, { method: 'POST', body: payload, requestId: payload.requestId });
-    if ([RAG_RESULT.NOT_CONFIGURED, RAG_RESULT.UNAVAILABLE, RAG_RESULT.INVALID_RESPONSE].includes(result.status)) return result;
-    const outcome = String(result.result || result.status || '').toUpperCase();
-    return { ...result, status: outcome || RAG_RESULT.INVALID_RESPONSE, answerable: outcome === RAG_RESULT.ANSWERED && Boolean(result.answer?.text), retryable: false };
-  }
-  async listTestAnswers({ testSessionId } = {}) {
-    if (!String(testSessionId || '').trim()) throw new Error('testSessionId 不能为空');
-    return this.request(`/rag-admin-api/v1/test-sessions/${encodeURIComponent(testSessionId)}/answers`);
-  }
-  async getTestAnswerHistory({ testSessionId, answerId } = {}) {
-    if (!String(testSessionId || '').trim() || !String(answerId || '').trim()) throw new Error('测试会话和答案不能为空');
-    return this.request(`/rag-admin-api/v1/test-sessions/${encodeURIComponent(testSessionId)}/answers/${encodeURIComponent(answerId)}/history`);
-  }
-  async updateTestDecision({ testSessionId, answerId, requestId: suppliedRequestId, decision, reasonCode = null, note = null, operatorId = 'local-operator' } = {}) {
-    if (!String(testSessionId || '').trim() || !String(answerId || '').trim()) throw new Error('测试会话和答案不能为空');
-    const payload = { requestId: suppliedRequestId || requestId('rag-test-decision'), decision, reasonCode, note, operatorId };
-    return this.request(`/rag-admin-api/v1/test-sessions/${encodeURIComponent(testSessionId)}/answers/${encodeURIComponent(answerId)}/decision`, { method: 'PUT', body: payload, requestId: payload.requestId });
-  }
 
-  async createRelease({ knowledgeBaseId = 'main-business-kb', requestId: suppliedRequestId, testSessionId, baseReleaseId = null, candidateDocuments = [], publishedBy = 'local-operator', publishNote = '' } = {}) {
-    const payload = { requestId: suppliedRequestId || requestId('rag-release'), testSessionId, baseReleaseId, candidateDocuments, publishedBy, publishNote };
-    return this.request(`/rag-admin-api/v1/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/releases`, { method: 'POST', body: payload, requestId: payload.requestId });
-  }
-  async listReleases({ knowledgeBaseId = 'main-business-kb' } = {}) { return this.request(`/rag-admin-api/v1/releases${queryString({ knowledge_base_id: knowledgeBaseId })}`); }
-  async getRelease({ releaseId } = {}) {
-    if (!String(releaseId || '').trim()) throw new Error('releaseId 不能为空');
-    return this.request(`/rag-admin-api/v1/releases/${encodeURIComponent(releaseId)}`);
-  }
-  async getReleaseMembers({ releaseId } = {}) {
-    if (!String(releaseId || '').trim()) throw new Error('releaseId 不能为空');
-    return this.request(`/rag-admin-api/v1/releases/${encodeURIComponent(releaseId)}/members`);
-  }
-  async rollbackRelease({ releaseId, requestId: suppliedRequestId, operatorId = 'local-operator', note = '' } = {}) {
-    if (!String(releaseId || '').trim()) throw new Error('releaseId 不能为空');
-    const payload = { requestId: suppliedRequestId || requestId('rag-rollback'), targetReleaseId: releaseId, operatorId, note };
-    return this.request(`/rag-admin-api/v1/releases/${encodeURIComponent(releaseId)}/rollback`, { method: 'POST', body: payload, requestId: payload.requestId });
-  }
 }
 
 export const ragClient = new RagClient();
 export function queryFormalKnowledge(request) { return ragClient.queryFormalKnowledge(request); }
-export function queryTestKnowledge(request) { return ragClient.queryTestKnowledge(request); }
 export function healthCheck() { return ragClient.healthCheck(); }

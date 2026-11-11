@@ -95,7 +95,7 @@ test('知识缺口先引导、转人工后每条新增消息通知人工，并�
   assert.equal(greeting.decision, 'SIMPLE_GREETING');
   assert.equal(greeting.status, 'REPLY_QUEUED');
   assert.equal(greeting.response_mode, 'ROUTER_STATIC');
-  assert.match(greeting.reply_text, /想了解哪方面/);
+  assert.match(greeting.reply_text, /想了解什么/);
 
   const gap = await simulate('可以带孩子吗', 'gap');
   assert.equal(gap.decision, 'KNOWLEDGE_GAP_GUIDANCE');
@@ -128,24 +128,28 @@ test('知识缺口先引导、转人工后每条新增消息通知人工，并�
   const unanswerableComments = [];
   for (const [suffix, content] of [['missing', '可以带孩子吗'], ['partial', '最近有什么活动，能带小孩参加吗']]) {
     const message = await simulate(content, `comment-${suffix}`, `comment-${suffix}`, 'COMMENT');
-    assert.equal(message.status, 'MANUAL_REQUIRED', JSON.stringify(message));
-    assert.match(message.decision, /HUMAN_FOLLOWUP_NOTIFICATION_PENDING|HUMAN_FOLLOWUP_NOTIFIED/);
-    assert.equal(message.reply_text, null);
-    assert.equal(message.reply_job_id, null);
+    assert.equal(message.status, 'REPLY_QUEUED', JSON.stringify(message));
+    assert.equal(message.decision, 'COMMENT_HANDOFF_OFFER');
+    assert.ok(message.reply_text);
+    assert.ok(message.reply_job_id);
+    assert.ok(message.manual_handoff_intent_id);
+    assert.equal(JSON.parse(message.reply_context_json).handoffOffered, true);
+    assert.equal(JSON.parse(message.reply_context_json).guidanceAttempt, 0);
     unanswerableComments.push(message);
   }
-  // Pure social comments follow the existing static greeting route, not the business gap route.
-  const greetingComment = await simulate('你好', 'comment-greeting', 'comment-greeting', 'COMMENT');
-  assert.equal(greetingComment.decision, 'COMMENT_SOCIAL_REPLY');
-  assert.equal(greetingComment.status, 'REPLY_QUEUED');
-  assert.match(greetingComment.reply_text, /你好/);
-  assert.ok(greetingComment.reply_job_id);
+  const socialComment = await simulate('你好', 'comment-greeting', 'comment-greeting', 'COMMENT');
+  assert.equal(socialComment.status, 'REPLY_QUEUED');
+  assert.equal(socialComment.decision, 'COMMENT_SOCIAL_REPLY');
+  assert.ok(socialComment.reply_text);
+  assert.ok(socialComment.reply_job_id);
+  assert.equal(socialComment.knowledge_id, null);
   const commentDb = new DatabaseSync(dbPath, { readOnly: true });
   try {
     for (const message of unanswerableComments) {
-      assert.equal(commentDb.prepare("SELECT COUNT(*) AS count FROM agent_jobs WHERE job_type='REPLY' AND CAST(json_extract(payload,'$.messageId') AS INTEGER)=?").get(message.id).count, 0);
-      assert.equal(commentDb.prepare("SELECT COUNT(*) AS count FROM notifications WHERE message_id=? AND type='COMMENT_KNOWLEDGE_GAP' AND json_extract(metadata_json,'$.handoff')=1").get(message.id).count, 1);
-      assert.equal(commentDb.prepare('SELECT handling_mode FROM conversations WHERE id=?').get(message.conversation_id).handling_mode, 'HANDOFF_PENDING');
+      assert.equal(commentDb.prepare("SELECT COUNT(*) AS count FROM agent_jobs WHERE job_type='REPLY' AND CAST(json_extract(payload,'$.messageId') AS INTEGER)=?").get(message.id).count, 1);
+      assert.equal(commentDb.prepare('SELECT COUNT(*) AS count FROM notifications WHERE message_id=?').get(message.id).count, 0);
+      assert.equal(commentDb.prepare('SELECT handling_mode FROM conversations WHERE id=?').get(message.conversation_id).handling_mode, 'BOT_ACTIVE');
+      assert.equal(commentDb.prepare('SELECT status FROM manual_handoff_intents WHERE id=?').get(message.manual_handoff_intent_id).status, 'WAITING_USER_CONFIRMATION');
     }
   } finally {
     commentDb.close();
@@ -157,13 +161,21 @@ test('知识缺口先引导、转人工后每条新增消息通知人工，并�
   for (let index = 0; index < guidanceInputs.length; index += 1) {
     guidanceReplies.push(await simulate(guidanceInputs[index], `guidance-${index + 1}`, guidanceConversationId));
   }
-  for (const item of guidanceReplies.slice(0, 4)) assert.doesNotMatch(item.reply_text, /转人工/);
-  assert.equal(guidanceReplies[4].status, 'MANUAL_REQUIRED');
-  assert.equal(guidanceReplies[4].reply_text, null);
-  assert.equal(guidanceReplies[4].reply_job_id, null);
-  const thirdGuidanceContext = JSON.parse(guidanceReplies[4].reply_context_json || '{}');
-  assert.equal(thirdGuidanceContext.guidanceAttempt, 3);
-  assert.equal(thirdGuidanceContext.handoffRequested, true);
+  for (const item of guidanceReplies) {
+    assert.equal(item.status, 'REPLY_QUEUED');
+    assert.ok(item.reply_job_id);
+    assert.doesNotMatch(item.reply_text, /转人工/);
+    const casualContext = JSON.parse(item.reply_context_json || '{}');
+    assert.equal(Number(casualContext.guidanceAttempt || 0), 0);
+    assert.notEqual(casualContext.handoffRequested, true);
+  }
+  const casualDb = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    assert.equal(casualDb.prepare('SELECT clarification_attempts FROM conversations WHERE id=?').get(guidanceReplies[4].conversation_id).clarification_attempts, 0);
+    for (const item of guidanceReplies) assert.equal(casualDb.prepare('SELECT COUNT(*) AS count FROM notifications WHERE message_id=?').get(item.id).count, 0);
+  } finally {
+    casualDb.close();
+  }
 
   const missingJob = await request(base, '/api/jobs/999999999');
   assert.equal(missingJob.response.status, 404);
@@ -198,9 +210,9 @@ test('知识缺口先引导、转人工后每条新增消息通知人工，并�
   assert.ok(!repeated.reply_text);
 
   db = new DatabaseSync(dbPath, { readOnly: true });
-  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type='KNOWLEDGE_GAP_CONFIRMED'").get().count, 1);
-  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type='KNOWLEDGE_GUIDANCE_LIMIT' AND message_id=?").get(guidanceReplies[4].id).count, 1);
-  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type='HUMAN_FOLLOWUP_MESSAGE' AND message_id=?").get(handoff.id).count, 1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type='KNOWLEDGE_GAP_CONFIRMED'").get().count, 2);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type='KNOWLEDGE_GUIDANCE_LIMIT' AND message_id=?").get(guidanceReplies[4].id).count, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type='KNOWLEDGE_GAP_CONFIRMED' AND message_id=?").get(handoff.id).count, 1);
   assert.equal(db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type='HUMAN_FOLLOWUP_MESSAGE' AND message_id=?").get(repeated.id).count, 1);
   for (const item of [directHandoff, handoff, repeated]) {
     const conversation = db.prepare('SELECT handling_mode,human_followup_state FROM conversations WHERE id=?').get(item.conversation_id);

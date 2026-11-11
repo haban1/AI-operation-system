@@ -100,6 +100,7 @@ const Robot = (props: IProps) => {
 
 	return (
 		<StyledCard
+			className="wx-robot-card"
 			loading={false}
 			actions={[
 				<RobotMetadata
@@ -143,8 +144,8 @@ const Robot = (props: IProps) => {
 			$heroEnd={statusConfig.heroEnd}
 			key={robot.id}
 		>
-			<CardContent>
-				<Hero>
+			<CardContent className="wx-robot-content">
+				<Hero className="wx-robot-hero">
 					<Flex
 						align="flex-start"
 						justify="space-between"
@@ -190,7 +191,7 @@ const Robot = (props: IProps) => {
 							)}
 						</ActionSlot>
 					</Flex>
-					<InfoGrid>
+					<InfoGrid className="wx-robot-info">
 						<InfoItem>
 							<InfoLabel>机器人名称</InfoLabel>
 							<InfoValue>{robot.robot_name || '-'}</InfoValue>

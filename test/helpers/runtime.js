@@ -123,7 +123,7 @@ export const WORKSPACE_NAV = {
   aliases: { group: 'knowledge', key: 'aliases' },
   xiaozhi: { group: 'knowledge', key: 'reply-test' },
   platforms: { group: 'channels', key: 'accounts' },
-  browser: { group: 'channels', key: 'browser-tools' },
+  browser: { group: 'settings', key: 'browser-tools' },
   wecom: { group: 'settings', key: 'services' },
   wechat: { group: 'wechat', key: 'wechat-service' },
   issues: { group: 'settings', key: 'diagnostics' }

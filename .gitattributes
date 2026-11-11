@@ -4,15 +4,7 @@ check-workbench.cmd text eol=crlf
 scripts/workbench.mjs text eol=lf
 bundled/content-library/*.json text eol=lf
 bundled/content-library/media/** -text
-
-dev-notes export-ignore
-dev-notes/** export-ignore
-AGENTS.md export-ignore
-.agents export-ignore
-.agents/** export-ignore
-.githooks export-ignore
-.githooks/** export-ignore
-docs/development export-ignore
-docs/development/** export-ignore
-docs/changes export-ignore
-docs/changes/** export-ignore
+.githooks/* text eol=lf
+scripts/check-docs-as-code.mjs text eol=lf
+scripts/install-docs-hooks.mjs text eol=lf
+test/docs-as-code.test.mjs text eol=lf

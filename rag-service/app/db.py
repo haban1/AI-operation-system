@@ -428,6 +428,7 @@ class Database:
         content_hash: str,
         source_path: str,
         metadata: dict[str, Any],
+        deduplicate: bool = True,
     ) -> tuple[dict[str, Any], bool]:
         now = now_iso()
         with self.transaction() as conn:
@@ -435,7 +436,7 @@ class Database:
                 "SELECT * FROM document_versions WHERE knowledge_base_id=? AND content_hash=?",
                 (knowledge_base_id, content_hash),
             ).fetchone()
-            if existing:
+            if existing and deduplicate:
                 return dict(existing), True
             parent = conn.execute(
                 "SELECT current_version FROM documents WHERE document_id=?",
@@ -510,41 +511,6 @@ class Database:
                 ).fetchone()
             return self.row(row)
 
-    def delete_document(self, document_id: str) -> dict[str, Any] | None:
-        """Delete an unpublished document and all of its versions/chunks.
-
-        Published release members are immutable, so callers must not remove a
-        document that is referenced by any release. The source paths are
-        returned for the service layer to remove the uploaded artifacts after
-        the database transaction commits.
-        """
-        with self.transaction() as conn:
-            document = conn.execute(
-                "SELECT * FROM documents WHERE document_id=?", (document_id,)
-            ).fetchone()
-            if not document:
-                return None
-            references = conn.execute(
-                "SELECT rm.release_id FROM release_members rm "
-                "JOIN chunks c ON c.chunk_id=rm.chunk_id "
-                "WHERE rm.document_id=? LIMIT 1",
-                (document_id,),
-            ).fetchone()
-            if references:
-                raise DatabaseConflict("文档已进入发布版本，不能删除；请先发布不包含该文档的新版本")
-            versions = conn.execute(
-                "SELECT document_version,source_path FROM document_versions WHERE document_id=?",
-                (document_id,),
-            ).fetchall()
-            conn.execute("DELETE FROM chunks WHERE document_id=?", (document_id,))
-            conn.execute("DELETE FROM document_versions WHERE document_id=?", (document_id,))
-            conn.execute("DELETE FROM documents WHERE document_id=?", (document_id,))
-            return {
-                "document_id": document_id,
-                "filename": document["filename"],
-                "source_paths": [row["source_path"] for row in versions if row["source_path"]],
-            }
-
     def list_documents(self, knowledge_base_id: str = "main-business-kb") -> list[dict[str, Any]]:
         with self.connection() as conn:
             rows = conn.execute(
@@ -552,6 +518,7 @@ class Database:
                 "v.content_hash,v.byte_size,v.parser,v.document_version,v.created_at AS version_created_at "
                 "FROM documents d JOIN document_versions v ON d.document_id=v.document_id "
                 "AND d.current_version=v.document_version WHERE d.knowledge_base_id=? "
+                "AND NOT EXISTS (SELECT 1 FROM service_meta sm WHERE sm.key='file_deleted:'||d.document_id) "
                 "ORDER BY d.updated_at DESC",
                 (knowledge_base_id,),
             ).fetchall()
@@ -777,6 +744,7 @@ class Database:
         request_id: str | None = None,
         operator_id: str | None = None,
         details: dict[str, Any] | None = None,
+        meta_updates: dict[str, str] | None = None,
     ) -> dict[str, Any] | None:
         """Publish only if the active pointer still matches the snapshot's base."""
         with self.transaction() as conn:
@@ -805,6 +773,12 @@ class Database:
                     conn.execute("SELECT * FROM releases WHERE release_id=?", (release_id,)).fetchone()
                 )
             published_at = now_iso()
+            for key, value in (meta_updates or {}).items():
+                conn.execute(
+                    "INSERT INTO service_meta(key,value,updated_at) VALUES(?,?,?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
+                    (key, value, published_at),
+                )
             conn.execute(
                 "UPDATE releases SET status='PUBLISHED',published_at=?,error_json=NULL WHERE release_id=?",
                 (published_at, release_id),
@@ -836,55 +810,6 @@ class Database:
     def clear_active_release_if(self, release_id: str) -> None:
         with self.transaction() as conn:
             conn.execute("DELETE FROM active_releases WHERE release_id=?", (release_id,))
-
-    def rollback_release_atomically(
-        self,
-        release_id: str,
-        *,
-        request_id: str | None,
-        operator_id: str | None,
-        note: str,
-        expected_active_release_id: str | None = None,
-    ) -> dict[str, Any] | None:
-        with self.transaction() as conn:
-            release = conn.execute("SELECT * FROM releases WHERE release_id=?", (release_id,)).fetchone()
-            if not release or release["status"] not in {"PUBLISHED", "ROLLED_BACK"}:
-                return None
-            active = conn.execute(
-                "SELECT release_id FROM active_releases WHERE knowledge_base_id=?",
-                (release["knowledge_base_id"],),
-            ).fetchone()
-            active_id = active["release_id"] if active else None
-            if expected_active_release_id is not None and active_id != expected_active_release_id:
-                raise DatabaseConflict("active release changed during rollback")
-            timestamp = now_iso()
-            conn.execute(
-                "UPDATE releases SET status='ROLLED_BACK',published_at=COALESCE(published_at,?) WHERE release_id=?",
-                (timestamp, release_id),
-            )
-            conn.execute(
-                "INSERT INTO active_releases(knowledge_base_id,release_id,updated_at) VALUES(?,?,?) "
-                "ON CONFLICT(knowledge_base_id) DO UPDATE SET release_id=excluded.release_id,"
-                "updated_at=excluded.updated_at",
-                (release["knowledge_base_id"], release_id, timestamp),
-            )
-            conn.execute(
-                "INSERT INTO release_events(event_id,release_id,event_type,request_id,operator_id,note,details_json,created_at) "
-                "VALUES(?,?,?,?,?,?,?,?)",
-                (
-                    "release-event-" + uuid.uuid4().hex[:16],
-                    release_id,
-                    "ROLLED_BACK",
-                    request_id,
-                    operator_id,
-                    note,
-                    "{}",
-                    timestamp,
-                ),
-            )
-            return self._release_row(
-                conn.execute("SELECT * FROM releases WHERE release_id=?", (release_id,)).fetchone()
-            )
 
     def _release_row(self, row: sqlite3.Row | None) -> dict[str, Any] | None:
         if not row:
@@ -933,199 +858,6 @@ class Database:
                 item["metadata"] = loads(item.pop("metadata_json"), {})
                 result.append(item)
             return result
-
-    def update_test_session_status(self, session_id: str, status: str) -> None:
-        with self.transaction() as conn:
-            conn.execute(
-                "UPDATE test_sessions SET status=?,updated_at=? WHERE test_session_id=?",
-                (status, now_iso(), session_id),
-            )
-
-    def create_test_session(self, data: dict[str, Any]) -> dict[str, Any]:
-        now = now_iso()
-        with self.transaction() as conn:
-            conn.execute(
-                "INSERT INTO test_sessions(test_session_id,knowledge_base_id,mode,base_release_id,"
-                "candidate_documents_json,status,operator_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                (
-                    data["test_session_id"],
-                    data["knowledge_base_id"],
-                    data["mode"],
-                    data.get("base_release_id"),
-                    dumps(data.get("candidate_documents", [])),
-                    "TESTING",
-                    data.get("operator_id", "local-operator"),
-                    now,
-                    now,
-                ),
-            )
-            row = conn.execute(
-                "SELECT * FROM test_sessions WHERE test_session_id=?", (data["test_session_id"],)
-            ).fetchone()
-            return self._test_session_row(row)
-
-    def _test_session_row(self, row: sqlite3.Row | None) -> dict[str, Any] | None:
-        if not row:
-            return None
-        item = dict(row)
-        item["candidate_documents"] = loads(item.pop("candidate_documents_json"), [])
-        return item
-
-    def get_test_session(self, session_id: str) -> dict[str, Any] | None:
-        with self.connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM test_sessions WHERE test_session_id=?", (session_id,)
-            ).fetchone()
-            return self._test_session_row(row)
-
-    def list_test_answers(self, session_id: str) -> list[dict[str, Any]]:
-        with self.connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM test_answers WHERE test_session_id=? ORDER BY created_at DESC", (session_id,)
-            ).fetchall()
-            return [self._test_answer_row(row) for row in rows if row]
-
-    def save_test_answer(self, data: dict[str, Any]) -> dict[str, Any]:
-        now = now_iso()
-        with self.transaction() as conn:
-            conn.execute(
-                "INSERT INTO test_answers(answer_id,test_session_id,request_id,trace_id,question,context_json,"
-                "result,answer_json,source_references_json,grounding_json,diagnostics_json,reason_code,"
-                "operator_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    data["answer_id"],
-                    data["test_session_id"],
-                    data["request_id"],
-                    data["trace_id"],
-                    data["question"],
-                    dumps(data.get("context", [])),
-                    data["result"],
-                    dumps(data.get("answer")) if data.get("answer") is not None else None,
-                    dumps(data.get("source_references", [])),
-                    dumps(data.get("grounding")) if data.get("grounding") is not None else None,
-                    dumps(data.get("diagnostics", {})),
-                    data.get("reason_code"),
-                    data.get("operator_id"),
-                    now,
-                    now,
-                ),
-            )
-            conn.execute(
-                "INSERT INTO test_answer_decision_history(answer_id,decision,reason_code,note,operator_id,decision_version,created_at) "
-                "VALUES(?,?,?,?,?,?,?)",
-                (data["answer_id"], "ENABLED", None, None, data.get("operator_id"), 1, now),
-            )
-            row = conn.execute("SELECT * FROM test_answers WHERE answer_id=?", (data["answer_id"],)).fetchone()
-            return self._test_answer_row(row)
-
-    def _test_answer_row(self, row: sqlite3.Row | None) -> dict[str, Any] | None:
-        if not row:
-            return None
-        item = dict(row)
-        item["context"] = loads(item.pop("context_json"), [])
-        item["answer"] = loads(item.pop("answer_json"), None)
-        item["source_references"] = loads(item.pop("source_references_json"), [])
-        item["grounding"] = loads(item.pop("grounding_json"), None)
-        item["diagnostics"] = loads(item.pop("diagnostics_json"), {})
-        return item
-
-    def get_test_answer(self, answer_id: str) -> dict[str, Any] | None:
-        with self.connection() as conn:
-            row = conn.execute("SELECT * FROM test_answers WHERE answer_id=?", (answer_id,)).fetchone()
-            return self._test_answer_row(row)
-
-    def get_test_answer_by_request(self, session_id: str, request_id: str) -> dict[str, Any] | None:
-        with self.connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM test_answers WHERE test_session_id=? AND request_id=? "
-                "ORDER BY created_at DESC LIMIT 1",
-                (session_id, request_id),
-            ).fetchone()
-            return self._test_answer_row(row)
-
-    def update_test_decision(self, answer_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
-        with self.transaction() as conn:
-            row = conn.execute("SELECT * FROM test_answers WHERE answer_id=?", (answer_id,)).fetchone()
-            if not row:
-                return None
-            current = dict(row)
-            normalized_reason = data.get("reason_code") if data["decision"] == "DISABLED" else None
-            normalized_note = data.get("note") if data["decision"] == "DISABLED" else None
-            normalized_operator = data.get("operator_id", "local-operator")
-            unchanged = (
-                current.get("decision") == data["decision"]
-                and current.get("decision_reason_code") == normalized_reason
-                and current.get("decision_note") == normalized_note
-                and current.get("operator_id") == normalized_operator
-            )
-            if unchanged:
-                return self._test_answer_row(row)
-            session_row = conn.execute(
-                "SELECT knowledge_base_id FROM test_sessions WHERE test_session_id=?",
-                (row["test_session_id"],),
-            ).fetchone()
-            knowledge_base_id = session_row["knowledge_base_id"] if session_row else "main-business-kb"
-            next_version = int(row["decision_version"]) + 1
-            updated_at = now_iso()
-            conn.execute(
-                "UPDATE test_answers SET decision=?,decision_reason_code=?,decision_note=?,"
-                "decision_version=?,operator_id=?,updated_at=? WHERE answer_id=?",
-                (data["decision"], normalized_reason, normalized_note, next_version, normalized_operator, updated_at, answer_id),
-            )
-            conn.execute(
-                "INSERT INTO test_answer_decision_history(answer_id,decision,reason_code,note,operator_id,decision_version,created_at) "
-                "VALUES(?,?,?,?,?,?,?)",
-                (answer_id, data["decision"], normalized_reason, normalized_note, normalized_operator, next_version, updated_at),
-            )
-            conn.execute("UPDATE negative_cases SET active=0 WHERE answer_id=?", (answer_id,))
-            source_references = loads(row["source_references_json"], [])
-            blocked_chunk_ids = sorted({item.get("chunkId") for item in source_references if item.get("chunkId")})
-            # NO_ANSWER may carry debug retrieval candidates; they are not an
-            # actual answer the operator has rejected as ungrounded or inaccurate.
-            if data["decision"] == "DISABLED" and row["result"] == "ANSWERED" and blocked_chunk_ids:
-                conn.execute(
-                    "INSERT INTO negative_cases(negative_case_id,answer_id,knowledge_base_id,question,"
-                    "rejected_answer,scope_json,blocked_chunk_ids_json,reason_code,active,created_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,1,?)",
-                    (
-                        "negative-" + uuid.uuid4().hex[:20], answer_id, knowledge_base_id, row["question"],
-                        (loads(row["answer_json"], {}) or {}).get("text"),
-                        dumps({"testSessionId": row["test_session_id"]}), dumps(blocked_chunk_ids), normalized_reason, updated_at,
-                    ),
-                )
-            updated = conn.execute("SELECT * FROM test_answers WHERE answer_id=?", (answer_id,)).fetchone()
-            return self._test_answer_row(updated)
-
-    def list_test_answer_decision_history(self, answer_id: str) -> list[dict[str, Any]]:
-        with self.connection() as conn:
-            rows = conn.execute(
-                "SELECT answer_id,decision,reason_code,note,operator_id,decision_version,created_at "
-                "FROM test_answer_decision_history WHERE answer_id=? ORDER BY decision_version ASC",
-                (answer_id,),
-            ).fetchall()
-            return [dict(row) for row in rows]
-
-    def list_negative_cases(self, knowledge_base_id: str = "main-business-kb") -> list[dict[str, Any]]:
-        with self.connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM negative_cases WHERE knowledge_base_id=? AND active=1 ORDER BY created_at",
-                (knowledge_base_id,),
-            ).fetchall()
-            result = []
-            for row in rows:
-                item = dict(row)
-                item["scope"] = loads(item.pop("scope_json"), {})
-                item["blocked_chunk_ids"] = loads(item.pop("blocked_chunk_ids_json"), [])
-                result.append(item)
-            return result
-
-    def list_test_sessions(self, knowledge_base_id: str = "main-business-kb", limit: int = 50) -> list[dict[str, Any]]:
-        with self.connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM test_sessions WHERE knowledge_base_id=? ORDER BY created_at DESC LIMIT ?",
-                (knowledge_base_id, limit),
-            ).fetchall()
-            return [self._test_session_row(row) for row in rows if row]
 
     def list_processing_documents(self) -> list[dict[str, Any]]:
         with self.connection() as conn:
@@ -1409,98 +1141,6 @@ class Database:
             item = dict(row)
             item["tags"] = loads(item.pop("tags_json"), [])
             return item
-
-    def create_evaluation_run(self, eval_run_id: str, request_id: str, total: int) -> dict[str, Any]:
-        now = now_iso()
-        with self.transaction() as conn:
-            conn.execute(
-                "INSERT INTO evaluation_runs(eval_run_id,request_id,status,total_cases,created_at,updated_at) "
-                "VALUES(?,?,?,?,?,?)",
-                (eval_run_id, request_id, "RUNNING", total, now, now),
-            )
-            row = conn.execute("SELECT * FROM evaluation_runs WHERE eval_run_id=?", (eval_run_id,)).fetchone()
-            return dict(row)
-
-    def configure_evaluation_run(
-        self, eval_run_id: str, *, dataset_hash: str, release_id: str | None, config: dict[str, Any]
-    ) -> None:
-        with self.transaction() as conn:
-            conn.execute(
-                "UPDATE evaluation_runs SET dataset_hash=?,release_id=?,config_json=?,updated_at=? WHERE eval_run_id=?",
-                (dataset_hash, release_id, dumps(config), now_iso(), eval_run_id),
-            )
-
-    def save_evaluation_case(self, eval_run_id: str, data: dict[str, Any]) -> None:
-        with self.transaction() as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO evaluation_cases(eval_run_id,case_id,category,question,expected_result,"
-                "expected_json,actual_result,passed,assertions_json,trace_id,response_json,error,created_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    eval_run_id,
-                    data["case_id"],
-                    data.get("category"),
-                    data.get("question"),
-                    data.get("expected_result"),
-                    dumps(data.get("expected", {})),
-                    data.get("actual_result"),
-                    1 if data.get("passed") else 0,
-                    dumps(data.get("assertions", [])),
-                    data.get("trace_id"),
-                    dumps(data.get("response", {})),
-                    data.get("error"),
-                    now_iso(),
-                ),
-            )
-            conn.execute(
-                "UPDATE evaluation_runs SET completed_cases=(SELECT COUNT(*) FROM evaluation_cases WHERE eval_run_id=?),"
-                "updated_at=? WHERE eval_run_id=?",
-                (eval_run_id, now_iso(), eval_run_id),
-            )
-
-    def finish_evaluation_run(self, eval_run_id: str, status: str, summary: dict[str, Any]) -> None:
-        with self.transaction() as conn:
-            completed = conn.execute(
-                "SELECT COUNT(*) AS count FROM evaluation_cases WHERE eval_run_id=?", (eval_run_id,)
-            ).fetchone()["count"]
-            conn.execute(
-                "UPDATE evaluation_runs SET status=?,completed_cases=?,summary_json=?,updated_at=? "
-                "WHERE eval_run_id=?",
-                (status, completed, dumps(summary), now_iso(), eval_run_id),
-            )
-
-    def get_evaluation_run(self, eval_run_id: str) -> dict[str, Any] | None:
-        with self.connection() as conn:
-            row = conn.execute("SELECT * FROM evaluation_runs WHERE eval_run_id=?", (eval_run_id,)).fetchone()
-            if not row:
-                return None
-            result = dict(row)
-            result["summary"] = loads(result.pop("summary_json"), {})
-            result["config"] = loads(result.pop("config_json", "{}"), {})
-            cases = conn.execute(
-                "SELECT * FROM evaluation_cases WHERE eval_run_id=? ORDER BY case_id", (eval_run_id,)
-            ).fetchall()
-            result["cases"] = []
-            for case in cases:
-                item = dict(case)
-                item["expected"] = loads(item.pop("expected_json"), {})
-                item["assertions"] = loads(item.pop("assertions_json"), [])
-                item["response"] = loads(item.pop("response_json"), {})
-                result["cases"].append(item)
-            return result
-
-    def list_evaluation_runs(self, limit: int = 20) -> list[dict[str, Any]]:
-        with self.connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM evaluation_runs ORDER BY created_at DESC LIMIT ?", (limit,)
-            ).fetchall()
-            result = []
-            for row in rows:
-                item = dict(row)
-                item["summary"] = loads(item.pop("summary_json"), {})
-                item["config"] = loads(item.pop("config_json", "{}"), {})
-                result.append(item)
-            return result
 
     def system_counts(self) -> dict[str, Any]:
         with self.connection() as conn:

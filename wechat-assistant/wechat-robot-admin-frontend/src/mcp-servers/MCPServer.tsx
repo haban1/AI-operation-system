@@ -188,6 +188,7 @@ const MCPServer = (props: IProps) => {
 
 	return (
 		<Card
+			className="wx-tool-row"
 			title={
 				<ServerTitle>
 					<Avatar
@@ -215,8 +216,8 @@ const MCPServer = (props: IProps) => {
 							borderColor: 'var(--ant-color-border)',
 						},
 				body: {
-					height: 236,
-					overflow: 'hidden',
+					minHeight: 0,
+					overflow: 'visible',
 					display: 'flex',
 					flexDirection: 'column',
 					justifyContent: 'space-between',
@@ -240,52 +241,58 @@ const MCPServer = (props: IProps) => {
 				)
 			}
 		>
-			<Card.Meta
-				description={
-					<Typography.Paragraph
-						type="secondary"
-						styles={{
-							root: {
-								maxHeight: 72,
-								overflow: 'auto',
-							},
-						}}
-						ellipsis={{ rows: 4, expandable: true, symbol: '更多' }}
-					>
-						{props.mcpServer.description}
-					</Typography.Paragraph>
-				}
-			/>
+			<details className="wx-tool-description">
+				<summary>说明</summary>
+				<Card.Meta
+					description={
+						<Typography.Paragraph
+							type="secondary"
+							styles={{
+								root: {
+									maxHeight: 72,
+									overflow: 'auto',
+								},
+							}}
+							ellipsis={{ rows: 4, expandable: true, symbol: '更多' }}
+						>
+							{props.mcpServer.description}
+						</Typography.Paragraph>
+					}
+				/>
+			</details>
 			<div>
-				<ServerMetaGrid>
-					<ServerMetaItem>
-						<ServerMetaIcon>
-							<LockOutlined />
-						</ServerMetaIcon>
-						<ServerMetaContent>
-							<ServerMetaLabel>鉴权方式</ServerMetaLabel>
-							<ServerMetaValue title={authTypeText}>{authTypeText}</ServerMetaValue>
-						</ServerMetaContent>
-					</ServerMetaItem>
-					<ServerMetaItem>
-						<ServerMetaIcon>
-							<MediumOutlined />
-						</ServerMetaIcon>
-						<ServerMetaContent>
-							<ServerMetaLabel>传输方式</ServerMetaLabel>
-							<ServerMetaValue title={transportText}>{transportText}</ServerMetaValue>
-						</ServerMetaContent>
-					</ServerMetaItem>
-					<ServerMetaItem $wide>
-						<ServerMetaIcon>
-							<ClockCircleOutlined />
-						</ServerMetaIcon>
-						<ServerMetaContent>
-							<ServerMetaLabel>安装时间</ServerMetaLabel>
-							<ServerMetaValue title={createdAtText}>{createdAtText}</ServerMetaValue>
-						</ServerMetaContent>
-					</ServerMetaItem>
-				</ServerMetaGrid>
+				<details className="wx-tool-metadata">
+					<summary>详细配置</summary>
+					<ServerMetaGrid>
+						<ServerMetaItem>
+							<ServerMetaIcon>
+								<LockOutlined />
+							</ServerMetaIcon>
+							<ServerMetaContent>
+								<ServerMetaLabel>鉴权方式</ServerMetaLabel>
+								<ServerMetaValue title={authTypeText}>{authTypeText}</ServerMetaValue>
+							</ServerMetaContent>
+						</ServerMetaItem>
+						<ServerMetaItem>
+							<ServerMetaIcon>
+								<MediumOutlined />
+							</ServerMetaIcon>
+							<ServerMetaContent>
+								<ServerMetaLabel>传输方式</ServerMetaLabel>
+								<ServerMetaValue title={transportText}>{transportText}</ServerMetaValue>
+							</ServerMetaContent>
+						</ServerMetaItem>
+						<ServerMetaItem $wide>
+							<ServerMetaIcon>
+								<ClockCircleOutlined />
+							</ServerMetaIcon>
+							<ServerMetaContent>
+								<ServerMetaLabel>安装时间</ServerMetaLabel>
+								<ServerMetaValue title={createdAtText}>{createdAtText}</ServerMetaValue>
+							</ServerMetaContent>
+						</ServerMetaItem>
+					</ServerMetaGrid>
+				</details>
 				<ServerFooter>
 					<ServerStatusGroup>
 						{online ? (

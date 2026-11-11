@@ -51,21 +51,19 @@ export const DrawerHeaderActions = styled.div`
 	gap: 8px;
 `;
 
-/** 左侧 Tabs 区域：统一科技感标签栏（配色走 Tabs 组件 Token，这里只补结构性点缀） */
 export const LeftPanel = styled.div`
 	position: relative;
 	height: 100%;
 
 	.tech-tabs-header {
 		border-bottom: 1px solid var(--ant-color-border-secondary);
-		background: linear-gradient(180deg, var(--ant-color-bg-container) 0%, var(--ant-color-fill-content) 100%);
+		background: var(--ant-color-bg-container);
 	}
 
 	.tech-tabs-item {
 		position: relative;
 		border-radius: var(--ant-border-radius-sm);
-		transition:
-			color 0.2s ease;
+		transition: color 0.2s ease;
 
 		&::before {
 			position: absolute;
@@ -110,12 +108,11 @@ export const LeftPanel = styled.div`
 	}
 `;
 
-/** 右侧「基本信息」面板（克制版） */
 export const BaseContainer = styled.div`
 	display: flex;
 	flex-direction: column;
 	height: 100%;
-	background: linear-gradient(180deg, var(--ant-color-fill-content) 0%, var(--ant-color-bg-container) 100%);
+	background: var(--ant-color-bg-container);
 
 	.base-info-scroll {
 		display: flex;
@@ -134,24 +131,11 @@ export const BaseContainer = styled.div`
 		padding: 11px 12px;
 		border: 1px solid var(--ant-color-primary-border);
 		border-radius: 8px;
-		background: linear-gradient(
-			135deg,
-			var(--ant-color-fill-content) 0%,
-			var(--ant-color-bg-container) 58%,
-			var(--app-color-surface-tint) 100%
-		);
-		box-shadow: var(--ant-box-shadow-tertiary);
+		background: var(--ant-color-bg-container);
+		box-shadow: none;
 		color: var(--ant-color-text-heading);
 		font-size: 14px;
 		font-weight: 650;
-	}
-
-	.title::before {
-		width: 4px;
-		height: 16px;
-		border-radius: 2px;
-		background: linear-gradient(180deg, var(--ant-color-primary) 0%, var(--ant-color-info) 100%);
-		content: '';
 	}
 
 	.base-info-header {
@@ -161,13 +145,8 @@ export const BaseContainer = styled.div`
 		padding: 16px 14px;
 		border: 1px solid var(--ant-color-info-border);
 		border-radius: 8px;
-		background: linear-gradient(
-			135deg,
-			var(--ant-color-fill-content-hover) 0%,
-			var(--ant-color-bg-container) 56%,
-			var(--app-color-surface-tint) 100%
-		);
-		box-shadow: var(--ant-box-shadow-secondary);
+		background: var(--ant-color-bg-container);
+		box-shadow: none;
 		transition:
 			border-color 0.2s ease,
 			box-shadow 0.2s ease;
@@ -175,7 +154,7 @@ export const BaseContainer = styled.div`
 
 	.base-info-header:hover {
 		border-color: var(--ant-color-primary-border-hover);
-		box-shadow: var(--ant-box-shadow-secondary);
+		box-shadow: none;
 	}
 
 	.base-info-header .ant-avatar {
@@ -215,8 +194,8 @@ export const BaseContainer = styled.div`
 		padding: 14px 14px 12px;
 		border: 1px solid var(--ant-color-primary-border);
 		border-radius: 8px;
-		background: linear-gradient(180deg, var(--ant-color-bg-container) 0%, var(--ant-color-fill-content) 100%);
-		box-shadow: var(--ant-box-shadow-tertiary);
+		background: var(--ant-color-bg-container);
+		box-shadow: none;
 		transition:
 			border-color 0.2s ease,
 			box-shadow 0.2s ease,
@@ -226,7 +205,7 @@ export const BaseContainer = styled.div`
 	.base-info-card:hover {
 		border-color: var(--ant-color-primary-border-hover);
 		background: linear-gradient(180deg, var(--ant-color-bg-container) 0%, var(--ant-color-fill-content-hover) 100%);
-		box-shadow: var(--ant-box-shadow-secondary);
+		box-shadow: none;
 	}
 
 	.base-info-card-title {
@@ -238,14 +217,6 @@ export const BaseContainer = styled.div`
 		font-size: 12px;
 		font-weight: 650;
 		letter-spacing: 0.2px;
-	}
-
-	.base-info-card-title::before {
-		width: 3px;
-		height: 12px;
-		border-radius: 2px;
-		background: linear-gradient(180deg, var(--ant-color-primary) 0%, var(--ant-color-info) 100%);
-		content: '';
 	}
 
 	.base-info-row {

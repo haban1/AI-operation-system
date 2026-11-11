@@ -1,5 +1,7 @@
 # 对话记忆（2026-08-27 历史基线）
 
+> 历史业务记忆：接手先读 [当前交接入口](docs/development/handoff.md)。本文件中的“权威”“最新”和阶段状态只描述记录时的背景，当前用户指令、对应主题文档和实际代码优先。
+
 > 最新业务与实现状态见 `CONVERSATION_RECORD_20260902.md` 和 `CODEX_HANDOFF_20260902.md`。
 
 > 本文件是后续开发使用的权威业务记忆。完整讨论脉络见 `SESSION_DISCUSSION_RECORD_20260827.md`。

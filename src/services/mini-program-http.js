@@ -1,5 +1,5 @@
 import { MIMEType } from 'node:util';
-import { config } from '../config.js';
+import { getMiniProgramConnection } from './mini-program-connection.js';
 import {
   MINI_PROGRAM_BODY_MAX_BYTES, MINI_PROGRAM_MESSAGE_PATH, consumeMiniProgramNonce,
   validateMiniProgramMessagePayload, verifyMiniProgramSignature
@@ -27,13 +27,14 @@ function tooLarge() {
 }
 
 function requireConfiguration() {
-  if (!config.miniProgramApiEnabled) throw serviceError(503, 'MINI_PROGRAM_API_DISABLED', '小程序接口尚未开启');
-  const appId = config.miniProgramAppId.trim().normalize('NFC');
+  const settings = getMiniProgramConnection();
+  if (settings.mode !== 'push' || !settings.enabled) throw serviceError(503, 'MINI_PROGRAM_API_DISABLED', '小程序接口尚未开启');
+  const appId = settings.appId.trim().normalize('NFC');
   if (Array.from(appId).length < 1 || Array.from(appId).length > 128
-    || Array.from(config.miniProgramSharedSecret).length < 32) {
+    || Array.from(settings.sharedSecret).length < 32) {
     throw serviceError(503, 'MINI_PROGRAM_CONFIGURATION_INCOMPLETE', '小程序接口配置不完整');
   }
-  return appId;
+  return { appId, sharedSecret: settings.sharedSecret };
 }
 
 function requireJsonContentType(req) {
@@ -110,12 +111,13 @@ export async function handleMiniProgramOpenMessage(req, url) {
       throw serviceError(404, 'MINI_PROGRAM_PATH_NOT_FOUND', '小程序接口不存在');
     }
     if (req.method !== 'POST') throw serviceError(405, 'MINI_PROGRAM_METHOD_NOT_ALLOWED', '小程序接口仅接受 POST');
-    const appId = requireConfiguration();
+    const settings = requireConfiguration();
+    const appId = settings.appId;
     requireJsonContentType(req);
     const rawBody = await readRawBody(req);
     const verified = verifyMiniProgramSignature({
       method: req.method, pathname: MINI_PROGRAM_MESSAGE_PATH, headers: signatureHeaders(req), rawBody,
-      appId, secret: config.miniProgramSharedSecret
+      appId, secret: settings.sharedSecret
     });
     consumeMiniProgramNonce(verified);
     let parsed;

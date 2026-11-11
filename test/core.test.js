@@ -3545,7 +3545,7 @@ test('platform runtime controls expose a dedicated navigation entry', () => {
   assert.match(appSource, /五个平台独立启停/);
   assert.match(appSource, /未开启平台绝不唤醒/);
   assert.match(appSource, /platform-account-toggle/);
-  assert.match(indexSource, /20260917-intellidriven-operations-workspace/);
+  assert.match(indexSource, /20261102-platform-base/);
 });
 
 
@@ -3605,7 +3605,7 @@ test('publish UI shows blocked platform reasons while only selecting task-execut
   assert.match(appSource, /\/api\/publish\/targets\/\$\{targetId\}\/manual-published/);
   assert.match(appSource, /id="stopAllPlatforms"/);
   assert.match(appSource, /\/api\/platforms\/runtime\/stop-all/);
-  assert.match(indexSource, /20260917-intellidriven-operations-workspace/);
+  assert.match(indexSource, /20261102-platform-base/);
 });
 
 

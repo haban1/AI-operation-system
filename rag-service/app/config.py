@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 45.0
     llm_max_output_tokens: int = 700
     query_rewrite_enabled: bool = True
+    comment_query_rewrite_on_miss_enabled: bool = True
     deep_agent_enabled: bool = True
 
     max_file_bytes: int = 50 * 1024 * 1024

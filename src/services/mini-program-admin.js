@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { getMiniProgramConnection } from './mini-program-connection.js';
 import { db, immediateTransaction } from '../db.js';
 import { miniProgramAccount, requestMiniProgramHandoff } from './mini-program-channel.js';
 import { validIso8601 } from './mini-program-auth.js';
@@ -53,7 +54,7 @@ function timestamp(value) {
 function displayText(value, redactSignatures = true) {
   if (value == null) return null;
   let result = String(value);
-  for (const secret of [config.miniProgramSharedSecret, config.miniProgramCallbackUrl]) {
+  for (const secret of [getMiniProgramConnection().sharedSecret, getMiniProgramConnection().callbackUrl]) {
     if (secret) result = result.split(secret).join('[REDACTED]');
   }
   return redactSignatures ? result.replace(/\b[0-9a-f]{64}\b/gi, '[REDACTED]') : result;
@@ -188,8 +189,8 @@ export function getMiniProgramStatus() {
     if (item.callback?.status === 'FAILED') counts.callbackFailed++;
     if (item.notification?.status === 'FAILED') counts.notificationFailed++;
   }
-  return { apiEnabled: Boolean(config.miniProgramApiEnabled), appConfigured: Boolean(config.miniProgramAppId),
-    secretConfigured: Boolean(config.miniProgramSharedSecret), callbackConfigured: Boolean(config.miniProgramCallbackUrl), lastReceivedAt, counts };
+  return { apiEnabled: Boolean(getMiniProgramConnection().enabled && getMiniProgramConnection().mode === 'push'), appConfigured: Boolean(getMiniProgramConnection().appId),
+    secretConfigured: Boolean(getMiniProgramConnection().sharedSecret), callbackConfigured: Boolean(getMiniProgramConnection().callbackUrl), lastReceivedAt, counts };
 }
 
 export function listMiniProgramConversations({ status = 'ALL', limit = 200 } = {}) {

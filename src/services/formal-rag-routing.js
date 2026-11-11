@@ -7,6 +7,7 @@ import { detectSmallTalkIntent, isAffirmativeReply, isNegativeReply } from './co
 import { businessSubjectClarificationReply } from './rag-clarification.js';
 import { ragQuestionForMessage } from './message-source-context.js';
 import { isAiReplyTimeout } from './ai-reply-error.js';
+import { commentHandoffCopy } from './comment-handoff-copy.js';
 
 const PLATFORM_MAP = Object.freeze({
   douyin: 'DOUYIN',
@@ -123,6 +124,16 @@ export function routeBusinessClarification({ question = '', context = [], messag
   }, { messageType, maxGuidanceAttempts: limit });
 }
 
+export function commentHandoffOfferResult({ ragStatus = 'NO_ANSWER', maxGuidanceAttempts = BUSINESS_GUIDANCE_MAX_ATTEMPTS, platformCode = '', script = 'auto', question = '' } = {}) {
+  return {
+    action: 'REPLY', decision: 'COMMENT_HANDOFF_OFFER',
+    replyText: commentHandoffCopy({ platformCode, script, question }).fallbackReply,
+    confidence: 0, reason: `评论知识库无可靠答案，先邀请用户了解详情并在站内沟通：${ragStatus}`,
+    responseMode: 'COMMENT_HANDOFF_OFFER', guidanceAttempt: 0, maxGuidanceAttempts,
+    handoffOffered: true, handoffRequested: false, ragStatus
+  };
+}
+
 export function formalRagReplyResult(response, { platformCode = '', messageType = 'PRIVATE_MESSAGE', question = '', context = [], script = 'auto', guidanceAttempt = 1, maxGuidanceAttempts = BUSINESS_GUIDANCE_MAX_ATTEMPTS } = {}) {
   const status = String(response?.status || response?.result || RAG_RESULT.INVALID_RESPONSE).toUpperCase();
   const isComment = String(messageType).toUpperCase() === 'COMMENT';
@@ -150,6 +161,7 @@ export function formalRagReplyResult(response, { platformCode = '', messageType 
     };
   }
   if ([RAG_RESULT.NO_ANSWER, RAG_RESULT.NEED_CLARIFICATION, RAG_RESULT.REJECTED].includes(status)) {
+    if (isComment && status !== RAG_RESULT.REJECTED) return commentHandoffOfferResult({ ragStatus: status, maxGuidanceAttempts: safeMax, platformCode, script, question });
     if (isComment) return { action: 'HANDOFF', decision: 'COMMENT_KNOWLEDGE_GAP', replyText: null, confidence: 0, reason: `评论知识库未提供可靠答案，直接转人工：${status}`, responseMode: 'COMMENT_HANDOFF', guidanceAttempt: 0, maxGuidanceAttempts: safeMax, handoffOffered: false, handoffRequested: true, ragStatus: status };
     // A retrieval/evidence failure does not mean the customer omitted their intent.
     // Only a genuine missing subject may consume the bounded clarification budget;

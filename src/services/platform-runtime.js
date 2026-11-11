@@ -1,4 +1,4 @@
-﻿export const PLATFORM_DESIRED_RUNNING = 'RUNNING';
+export const PLATFORM_DESIRED_RUNNING = 'RUNNING';
 export const PLATFORM_DESIRED_STOPPED = 'STOPPED';
 
 export function normalizePlatformDesiredState(value) {
@@ -9,6 +9,9 @@ export function normalizePlatformDesiredState(value) {
 
 export function platformRuntimeRows({ rows, activePlatformCodes }) {
   const placeholders = activePlatformCodes.map(() => '?').join(',');
+  // JSON expression indexes have no type affinity. Remove only the correlated
+  // column affinity (unary + is a no-op) so both counts SEEK the existing index
+  // instead of scanning all historical jobs per platform. Platform codes are text.
   return rows(`SELECT p.code,p.name,p.sort_order,
       COALESCE(p.desired_state,'RUNNING') AS desired_state,
       p.runtime_updated_at,p.runtime_updated_by,
@@ -16,9 +19,9 @@ export function platformRuntimeRows({ rows, activePlatformCodes }) {
       SUM(CASE WHEN a.enabled=1 THEN 1 ELSE 0 END) AS enabled_account_count,
       SUM(CASE WHEN a.enabled=1 AND a.login_status='READY' THEN 1 ELSE 0 END) AS ready_account_count,
       (SELECT COUNT(*) FROM agent_jobs j
-        WHERE json_extract(j.payload,'$.platformCode')=p.code AND j.status='QUEUED') AS queued_job_count,
+        WHERE json_extract(j.payload,'$.platformCode')=+p.code AND j.status='QUEUED') AS queued_job_count,
       (SELECT COUNT(*) FROM agent_jobs j
-        WHERE json_extract(j.payload,'$.platformCode')=p.code AND j.status='RUNNING') AS running_job_count
+        WHERE json_extract(j.payload,'$.platformCode')=+p.code AND j.status='RUNNING') AS running_job_count
     FROM platforms p
     LEFT JOIN accounts a ON a.platform_code=p.code
     WHERE p.code IN (${placeholders})

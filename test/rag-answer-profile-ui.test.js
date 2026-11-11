@@ -2,59 +2,109 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { chromium } from 'playwright-core';
+import { startServer, stopChild, cleanupDir } from './helpers/runtime.js';
 
-const chromePath = [process.env.CHROME_EXECUTABLE_PATH, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].filter(Boolean).find(path => fs.existsSync(path));
-const source = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-const tabs = source.slice(source.indexOf('function renderKnowledgeTabs(){'), source.indexOf('function bindKnowledgeTabs(){'));
-const implementation = source.slice(source.indexOf('const RAG_DEFAULT_ANSWER_PROFILE ='), source.indexOf('async function renderKnowledge(){'));
-
-test('answer-style form loads saved values, cancels without saving, preserves failed edits and safely renders text', { skip: !chromePath }, async () => {
-  const browser = await chromium.launch({ executablePath: chromePath, headless: true });
-  try {
-    const page = await browser.newPage();
-    await page.setContent('<main id="content"></main>');
-    await page.addScriptTag({ content: `
-      const state={page:'knowledge',knowledgeView:'persona'};
-      const $=selector=>document.querySelector(selector);
-      const esc=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-      function clearRagKnowledgePoll(){} function bindKnowledgeTabs(){}
-      window.calls=[]; window.failLoad=false; window.failSave=false;
-      window.saved={assistantName:'智慧驱动答疑助手',companyName:'智慧驱动',stylePrompt:'先回答，再解释。',greeting:'你好'};
-      async function api(path,options={}){window.calls.push({path,method:options.method||'GET',body:options.body});if(window.failLoad)throw new Error('加载中断');if(options.method==='PUT'){if(window.failSave)throw new Error('保存中断');window.saved=JSON.parse(options.body)}return {profile:{...window.saved}}}
-      ${tabs}\n${implementation}
-      window.renderProfile=renderRagAnswerProfile;
-    ` });
-    await page.evaluate(() => window.renderProfile());
-    assert.equal(await page.locator('[name=companyName]').inputValue(), '智慧驱动');
-    await page.locator('[name=stylePrompt]').fill('未保存的修改');
-    await page.locator('#ragAnswerProfileCancel').click();
-    assert.equal(await page.locator('[name=stylePrompt]').inputValue(), '先回答，再解释。');
-    assert.equal(await page.evaluate(() => window.calls.filter(item => item.method === 'PUT').length), 0);
-    await page.locator('[name=stylePrompt]').fill('失败后应保留的输入');
-    await page.evaluate(() => { window.failSave = true; });
-    await page.locator('button[type=submit]').click();
-    await page.waitForFunction(() => document.querySelector('#ragAnswerProfileStatus').textContent.includes('保存未确认'));
-    assert.equal(await page.locator('[name=stylePrompt]').inputValue(), '失败后应保留的输入');
-    assert.equal(await page.locator('fieldset').isDisabled(), false);
-    await page.evaluate(() => { window.failSave = false; });
-    await page.locator('button[type=submit]').click();
-    await page.waitForFunction(() => document.querySelector('#ragAnswerProfileStatus').textContent.startsWith('已保存'));
-    await page.evaluate(() => window.renderProfile());
-    assert.equal(await page.locator('[name=stylePrompt]').inputValue(), '失败后应保留的输入');
-    await page.evaluate(() => { window.saved.assistantName = '<img src=x onerror="window.injected=true">'; });
-    await page.evaluate(() => window.renderProfile());
-    assert.equal(await page.locator('img').count(), 0);
-    assert.equal(await page.evaluate(() => window.injected), undefined);
-    await page.evaluate(() => { window.failLoad = true; });
-    await page.evaluate(() => window.renderProfile());
-    assert.equal(await page.locator('form').count(), 0, 'failed load must not offer editable default values');
-    assert.equal(await page.locator('#ragAnswerProfileRetry').count(), 1);
-    await page.evaluate(() => { window.failLoad = false; });
-    await page.locator('#ragAnswerProfileRetry').click();
-    await page.waitForSelector('form');
-    assert.equal(await page.locator('[name=assistantName]').getAttribute('maxlength'), '60');
-    assert.equal(await page.locator('[name=stylePrompt]').getAttribute('maxlength'), '4000');
-  } finally {
-    await browser.close();
+const chrome = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(fs.existsSync);
+for (const width of [1440, 390]) test(`persona and local RAG playground work at ${width}px`, { skip: !chrome }, async t => {
+  const runtime = await startServer({ env: { AUTH_ENABLED: 'false', RAG_AUTO_START: 'false', RAG_ADMIN_ENABLED: 'true', RAG_BASE_URL: 'http://127.0.0.1:1', OPERATIONS_ANALYTICS_ENABLED: 'false', LOGIN_STATUS_POLL_ENABLED: 'false' } });
+  t.after(async () => { await stopChild(runtime.child); cleanupDir(runtime.dir); });
+  const browser = await chromium.launch({ executablePath: chrome, headless: true }); t.after(() => browser.close());
+  const page = await browser.newPage({ viewport: { width, height: 1000 } });
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  let profile = { assistantName: '<img src=x onerror=alert(1)>', companyName: '隔离组织', stylePrompt: '先回答再解释', greeting: '你好' };
+  let failSave = true, failLoad = false, failQuery = true, waitQuery = null;
+  const queries = [], otherRequests = [];
+  await page.route('**/api/rag/**', async route => {
+    const request = route.request(), path = new URL(request.url()).pathname;
+    let data;
+    if (path.endsWith('/answer-profile')) {
+      if (request.method() === 'PUT') {
+        if (failSave) return route.fulfill({ status: 503, json: { ok: false, message: '模拟保存失败' } });
+        profile = request.postDataJSON();
+      } else if (failLoad) return route.fulfill({ status: 503, json: { ok: false, message: '模拟加载失败' } });
+      data = { profile };
+    } else if (path.endsWith('/test-query')) {
+      const input = request.postDataJSON(); queries.push(input);
+      if (failQuery) return route.fulfill({ status: 503, json: { ok: false, message: '模拟测试失败' } });
+      if (input.text === '等待回答') await new Promise(resolve => { waitQuery = resolve; });
+      const missing = input.text === '没有资料';
+      data = { response: { result: missing ? 'NO_ANSWER' : 'ANSWERED', answer: missing ? null : { text: '隔离答案 <script>window.injected=true</script>' }, reasonCode: missing ? 'INSUFFICIENT_EVIDENCE' : null, grounding: { sourceReferences: missing ? [] : [{ title: '<img src=x onerror=alert(1)>资料', excerpt: '隔离来源证据' }] }, meta: { latencyMs: 12, knowledgeVersion: 'files-test' }, traceId: 'local-test-trace' } };
+    } else if (path.endsWith('/status')) data = { rag: { enabled: true, configured: true } };
+    else { otherRequests.push(path); data = { documents: [] }; }
+    await route.fulfill({ json: { ok: true, ...data } }).catch(() => {});
+  });
+  await page.goto(runtime.base + '/#answer-style');
+  await page.locator('#answerProfileForm').waitFor();
+  assert.equal(await page.locator('#workspaceSubnav button').count(), 3);
+  assert.equal(await page.locator('[name=companyName]').inputValue(), '隔离组织');
+  assert.equal(await page.locator('#content img').count(), 0);
+  await page.locator('[name=stylePrompt]').fill('未保存的编辑');
+  await page.locator('#answerProfileCancel').click();
+  assert.equal(await page.locator('[name=stylePrompt]').inputValue(), '先回答再解释');
+  await page.locator('[name=stylePrompt]').fill('温和、简洁，先给答案');
+  await page.locator('#answerProfileForm [type=submit]').click();
+  await page.getByText('保存未确认：', { exact: false }).waitFor();
+  assert.equal(await page.locator('[name=stylePrompt]').inputValue(), '温和、简洁，先给答案');
+  assert.equal(await page.locator('fieldset').isDisabled(), false);
+  failSave = false;
+  await page.locator('#answerProfileForm [type=submit]').click();
+  await page.getByText('已保存。可切换', { exact: false }).waitFor();
+  fs.mkdirSync('.codex-work/knowledge-playground-20261110', { recursive: true });
+  await page.screenshot({ path: `.codex-work/knowledge-playground-20261110/persona-${width}.png`, fullPage: true });
+  await page.locator('[data-workspace-item=reply-test]').click();
+  await page.locator('#ragTestQuestion').fill('费用是多少');
+  await page.locator('#ragTestForm [type=submit]').click();
+  await page.getByText('测试失败：', { exact: false }).waitFor();
+  assert.equal(await page.locator('#ragTestQuestion').inputValue(), '费用是多少');
+  failQuery = false;
+  await page.locator('#ragTestForm [type=submit]').click();
+  await page.waitForFunction(() => document.querySelectorAll('.knowledge-test-turn').length === 1);
+  assert.equal(await page.locator('#content img').count(), 0);
+  assert.equal(await page.evaluate(() => window.injected), undefined);
+  await page.locator('summary', { hasText: '查看引用来源' }).click();
+  await page.getByText('隔离来源证据', { exact: true }).waitFor();
+  for (let index = 0; index < 4; index++) {
+    await page.locator('#ragTestQuestion').fill('继续追问' + index);
+    await page.locator('#ragTestForm [type=submit]').click();
+    await page.waitForFunction(count => document.querySelectorAll('.knowledge-test-turn').length === count, index + 2);
   }
+  assert.equal(queries.at(-1).context.length, 6);
+  assert.equal(queries.at(-1).context[0].text, '继续追问0');
+  assert.equal(await page.locator('#ragTestMessages').evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop < 3), true);
+  await page.screenshot({ path: `.codex-work/knowledge-playground-20261110/test-${width}.png`, fullPage: true });
+  await page.locator('#ragTestQuestion').fill('没有资料');
+  await page.locator('#ragTestForm [type=submit]').click();
+  await page.getByText('未找到可靠答案', { exact: true }).waitFor();
+  await page.locator('#ragTestChannel').selectOption('COMMENT');
+  assert.equal(await page.locator('.knowledge-test-turn').count(), 0);
+  await page.locator('#ragTestQuestion').fill('评论问题');
+  await page.locator('#ragTestForm [type=submit]').click();
+  await page.waitForFunction(() => document.querySelectorAll('.knowledge-test-turn').length === 1);
+  assert.deepEqual(queries.at(-1).context, []);
+  await page.locator('#ragTestQuestion').fill('等待回答');
+  await page.locator('#ragTestForm [type=submit]').click();
+  await page.waitForFunction(() => document.querySelector('#ragTestStatus').textContent.includes('正在检索'));
+  for (let attempt = 0; attempt < 100 && !waitQuery; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok(waitQuery, 'the pending query must reach the test transport');
+  await page.locator('#ragTestClear').click();
+  waitQuery();
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator('.knowledge-test-turn').count(), 0, 'late responses must not revive a cleared chat');
+  await page.locator('[data-workspace-item=answer-style]').click();
+  await page.locator('#answerProfileForm').waitFor();
+  assert.equal(await page.locator('[name=stylePrompt]').inputValue(), '温和、简洁，先给答案');
+  await page.locator('[data-workspace-item=reply-test]').click();
+  failLoad = true;
+  await page.locator('[data-workspace-item=answer-style]').click();
+  await page.locator('#answerProfileRetry').waitFor();
+  assert.equal(await page.locator('#answerProfileForm').count(), 0);
+  failLoad = false;
+  await page.locator('#answerProfileRetry').click();
+  await page.locator('#answerProfileForm').waitFor();
+  await page.evaluate(() => { location.hash = 'xiaozhi'; });
+  await page.locator('#ragTestForm').waitFor();
+  assert.equal(new URL(page.url()).hash, '#reply-test');
+  assert.deepEqual(otherRequests, [], 'tools should not read the file list or retired management APIs');
+  assert.deepEqual(errors, []);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false);
 });

@@ -293,6 +293,8 @@ test('Bilibili recognizes the current success copy and count-suffixed review tab
     const published = f.adapter.spec.verifyTabs.find(tab => tab.reviewStatus === 'PUBLISHED');
     const reviewing = f.adapter.spec.verifyTabs.find(tab => tab.reviewStatus === 'REVIEWING');
     assert.ok(published.labels.some(label => label.test('\u5df2\u901a\u8fc7 1')));
+    assert.ok(published.labels.some(label => label.test('已发布 5')));
+    assert.equal(f.adapter.spec.verifyPageUrlPattern.test('https://member.bilibili.com/platform/upload-manager/opus'), false);
     assert.ok(reviewing.labels.some(label => label.test('\u8fdb\u884c\u4e2d 0')));
   } finally { f.close(); }
 });
@@ -834,6 +836,20 @@ test('Bilibili AUTO resumes a managed draft with matching content', async () => 
     assert.equal(resumed.autoResume, true);
     assert.equal(resumed.expectedTitle, next.title);
     assert.equal(resumed.expectedMaterial, path.basename(next.materialPath));
+  } finally { f.close(); }
+});
+
+test('Bilibili preparation-interrupted draft resumes only with its exact task fingerprint', () => {
+  const f = fixture();
+  try {
+    const payload = managedDraftPayload(f.dir);
+    const state = f.adapter.writeDraftFingerprintState(payload, 'DRAFT_PREPARE_UNCONFIRMED');
+    assert.equal(f.adapter.assessLocalDraft(payload, state).resumeAllowed, true);
+    const next = managedDraftPayload(f.dir, { taskId: 102, targetId: 202, fingerprintHash: 'another-task' });
+    assert.equal(f.adapter.assessLocalDraft(next, state).resumeAllowed, false);
+    const attempted = f.adapter.writeDraftFingerprintState(payload, 'SUBMIT_ATTEMPTED');
+    assert.equal(f.adapter.assessLocalDraft(payload, attempted).resumeAllowed, false);
+    assert.equal(f.adapter.assessLocalDraft(payload, attempted).verifyOnly, true);
   } finally { f.close(); }
 });
 

@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import type * as Api from '@/api/wechat-robot/wechat-robot';
 import { filterOption } from '@/common/filter-option';
 import ParamsGroup from '@/components/ParamsGroup';
+import { useThemeSettings } from '@/theme-settings/ThemeSettingsProvider';
 import { isEmbedded } from '@/utils/embedded';
 
 interface IProps {
@@ -15,10 +16,11 @@ interface IProps {
 type IFormValues = Api.SystemSettings.SystemSettingsCreate.RequestBody;
 
 const JSONEditor = (props: { value?: string; onChange?: (value?: string) => void }) => {
+	const { resolvedThemeMode } = useThemeSettings();
 	return (
 		<div
 			style={{
-				border: '1px solid #d9d9d9',
+				border: '1px solid var(--ant-color-border)',
 				borderRadius: 6,
 				padding: '8px 2px',
 			}}
@@ -26,6 +28,7 @@ const JSONEditor = (props: { value?: string; onChange?: (value?: string) => void
 			<Editor
 				width="100%"
 				height="250px"
+				theme={resolvedThemeMode === 'dark' ? 'vs-dark' : 'light'}
 				language="json"
 				options={{
 					minimap: { enabled: false },
@@ -196,7 +199,10 @@ const SystemSettings = (props: IProps) => {
 	};
 
 	return (
-		<Spin spinning={loading}>
+		<Spin
+			spinning={loading}
+			className="wx-system-page"
+		>
 			<ParamsGroup
 				title="系统设置"
 				style={{ marginTop: 10 }}

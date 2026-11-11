@@ -635,7 +635,7 @@ export class BilibiliAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       spec: {
         ...(options?.spec || {}),
         verificationPolicyId: 'bilibili-publish-status-v1',
-        verifyPageUrlPattern: /^https:\/\/member\.bilibili\.com\/platform\/upload-manager/i,
+        verifyPageUrlPattern: /^https:\/\/member\.bilibili\.com\/platform\/upload-manager(?:\/article)?(?:[?#]|$)/i,
         authenticatedUrlPattern: /(?:member|message)\.bilibili\.com\//i,
         authenticatedTextPattern: /创作中心|稿件管理|投稿管理|消息中心|我的消息|回复我的/i,
         loginTextPattern: /扫码登录|短信登录|密码登录|请先登录/i,
@@ -665,7 +665,7 @@ export class BilibiliAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
         successPattern: /\u7a3f\u4ef6\u6295\u9012\u6210\u529f|\u6295\u7a3f\u6210\u529f|\u53d1\u5e03\u6210\u529f|\u7a3f\u4ef6\u5df2\u63d0\u4ea4|\u63d0\u4ea4\u6210\u529f/i,
         publishBlockedTextPattern: /\u7ed1\u5b9a\u624b\u673a\u53f7|\u5b89\u5168\u9a8c\u8bc1|\u626b\u7801\u9a8c\u8bc1|\u4eba\u8138\u9a8c\u8bc1|\u9a8c\u8bc1\u7801|\u73af\u5883\u5f02\u5e38|\u64cd\u4f5c\u9891\u7e41/i,
         verifyTabs: [
-          { label: '\u5df2\u901a\u8fc7', labels: [/^\u5df2\u901a\u8fc7(?:\s*\d+)?$/], reviewStatus: 'PUBLISHED' },
+          { label: '\u5df2\u901a\u8fc7', labels: [/^(?:已发布|已通过)(?:\s*\d+)?$/], reviewStatus: 'PUBLISHED' },
           { label: '\u8fdb\u884c\u4e2d', labels: [/^\u8fdb\u884c\u4e2d(?:\s*\d+)?$/], reviewStatus: 'REVIEWING' },
           { label: '\u672a\u901a\u8fc7', labels: [/^\u672a\u901a\u8fc7(?:\s*\d+)?$/], reviewStatus: 'REJECTED' }
         ],
@@ -820,7 +820,7 @@ export class BilibiliAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     };
 
     const matchesExpected = state => {
-      const text = [...(state?.selected || []), ...(state?.observed || []).flatMap(item => [item.value, item.ownText, item.wrapperText])]
+      const text = (state?.selected?.length ? state.selected : (state?.observed || []).flatMap(item => item.value ? [item.value] : [item.ownText, item.wrapperText]))
         .filter(Boolean).join(' ');
       return expectedPattern.test(text) && (origin !== 'AI_GENERATED' || !/无需标注/.test(text));
     };
@@ -855,8 +855,22 @@ export class BilibiliAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       if (!trigger || !await trigger.isVisible().catch(() => false)) continue;
       clickedTrigger = trigger;
       await trigger.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(350);
-      selectedOption = await firstVisibleByText(page, optionLabels);
+      for (let sample = 0; sample < 10 && !selectedOption; sample += 1) {
+        await page.waitForTimeout(350);
+        const options = page.locator('.bcc-select-option-list .bcc-option, .bcc-select-option-list > li, [role="listbox"] [role="option"]');
+        if (typeof options.count === 'function') {
+          const matches = [];
+          for (let index = 0, count = Math.min(await options.count(), 40); index < count; index += 1) {
+            const option = options.nth(index);
+            if (!await option.isVisible().catch(() => false)) continue;
+            const label = clean(await option.innerText().catch(() => '')).replace(/\s+/g, '');
+            if (optionLabels.some(expected => label.startsWith(expected.replace(/\s+/g, '')))) matches.push(option);
+          }
+          if (matches.length > 1) throw new Error('B站创作声明存在多个匹配选项，已停止投稿');
+          if (matches.length === 1) selectedOption = matches[0];
+        }
+        if (!selectedOption) selectedOption = await firstVisibleByText(page, optionLabels);
+      }
       if (selectedOption) break;
     }
     if (!selectedOption) {
@@ -970,7 +984,8 @@ export class BilibiliAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       contentMatched,
       matchType: exactFingerprint ? 'EXACT_FINGERPRINT' : contentMatched ? 'CONTENT_FINGERPRINT' : 'NONE',
       state: localState,
-      resumeAllowed: managed && RESUMABLE_DRAFT_STATES.has(localState) && (exactFingerprint || contentMatched),
+      resumeAllowed: managed && ((RESUMABLE_DRAFT_STATES.has(localState) && (exactFingerprint || contentMatched))
+        || (localState === 'DRAFT_PREPARE_UNCONFIRMED' && exactFingerprint)),
       verifyOnly: TERMINAL_DRAFT_STATES.has(localState),
       safeDiscardCandidate: canSafelyDiscardBilibiliManagedDraft(state) && !exactFingerprint && !contentMatched
     };
@@ -1000,10 +1015,30 @@ export class BilibiliAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     const text = clean(await page.locator('body').innerText({ timeout: 10000 }).catch(() => ''));
     const title = clean(state?.title || state?.fingerprint?.title);
     const materialName = clean(state?.materialName || state?.fingerprint?.materialName || (state?.materialPath ? path.basename(state.materialPath) : ''));
+    // Bilibili renders the uploaded file without its extension; title inputs
+    // also do not contribute their current value to body.innerText.
+    const materialStem = materialName.replace(/\.(mp4|flv|avi|wmv|mov|webm|mkv|m4v|ts)$/i, '');
+    const materialTokens = text.split(/\s+/);
+    const materialMatched = Boolean(materialName && (materialTokens.includes(materialName)
+      || (materialStem !== materialName && materialTokens.includes(materialStem))));
+    let titleMatched = Boolean(title && text.includes(title));
+    if (!titleMatched) {
+      for (const selector of this.spec.titleSelectors || []) {
+        const inputs = page.locator(selector);
+        const count = Math.min(await inputs.count().catch(() => 0), 10);
+        for (let index = 0; index < count; index += 1) {
+          const input = inputs.nth(index);
+          if (await input.isVisible().catch(() => false)
+            && clean(await input.inputValue().catch(() => '')) === title) titleMatched = true;
+        }
+      }
+    }
     return {
-      matched: Boolean(title && materialName && text.includes(title) && text.includes(materialName) && text.includes('\u4e0a\u4f20\u5b8c\u6210')),
+      matched: titleMatched && materialMatched && text.includes('\u4e0a\u4f20\u5b8c\u6210'),
       title,
       materialName,
+      titleMatched,
+      materialMatched,
       uploadComplete: text.includes('\u4e0a\u4f20\u5b8c\u6210')
     };
   }

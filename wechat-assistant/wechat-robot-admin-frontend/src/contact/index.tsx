@@ -205,7 +205,7 @@ const Contact = (props: IProps) => {
 	}
 
 	return (
-		<div>
+		<div className="wx-page wx-contacts">
 			<Flex
 				justify="space-between"
 				align="middle"
@@ -218,7 +218,7 @@ const Contact = (props: IProps) => {
 				>
 					<Col
 						flex="0 0 300px"
-						className="hide-on-mobile"
+						className="wx-contact-search"
 					>
 						<Input
 							placeholder="搜索联系人"
@@ -355,13 +355,7 @@ const Contact = (props: IProps) => {
 									description={
 										<>
 											{item.type === 'friend' ? (
-												<>
-													{item.signature ? (
-														<span>{item.signature}</span>
-													) : (
-														<span style={{ color: 'gray' }}>这家伙很懒，什么都没留下...</span>
-													)}
-												</>
+												<>{item.signature ? <span>{item.signature}</span> : <span />}</>
 											) : (
 												<span>
 													最近活跃时间: {dayjs(Number(item.last_active_at) * 1000).format('YYYY-MM-DD HH:mm:ss')}
@@ -372,12 +366,12 @@ const Contact = (props: IProps) => {
 								/>
 								<Space.Compact style={{ marginRight: 3 }}>
 									<Button
-										type="primary"
+										type="text"
 										icon={<WechatOutlined />}
 										disabled={!item.wechat_id}
 										onClick={() => setConversationContact(item)}
 									>
-										聊天
+										发消息
 									</Button>
 									{item.type === 'friend' || item.type === 'official_account' ? (
 										<Button

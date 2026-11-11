@@ -9,6 +9,7 @@ import {
   firstUsable,
   isNavigationTimeoutError,
   pageEvidenceText,
+  publishPageEvidenceText,
   recoveryCollectionFailure,
   recoveryCollectionTargets
 } from './assisted-platform.js';
@@ -1414,7 +1415,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     await this.assertRuntimeAllowed();
     await page.goto(this.spec.publishUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     if (!await this.waitForReady(page)) {
-      if (DOUYIN_VERIFY_RE.test(await pageEvidenceText(page))) return this.waitForManualSecurityVerification(page, payload, { submitAttempted: false });
+      if (DOUYIN_VERIFY_RE.test(await publishPageEvidenceText(page, payload))) return this.waitForManualSecurityVerification(page, payload, { submitAttempted: false });
       return { status: 'NEEDS_CONFIRMATION', result: await this.evidence(payload, '\u7b49\u5f85\u4eba\u5de5\u767b\u5f55\u6296\u97f3\u8d85\u65f6\uff1b\u6d4f\u89c8\u5668\u9875\u9762\u5df2\u4fdd\u7559', page, 'login_required') };
     }
     if (this.spec.publishPageSettleMs) await page.waitForTimeout(this.spec.publishPageSettleMs);
@@ -1440,7 +1441,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
         return { status: 'NEEDS_CONFIRMATION', result: { ...(await this.evidence(payload, '\u5df2\u70b9\u51fb\u6296\u97f3\u53d1\u8868\u5165\u53e3\uff0c\u4f46\u4e8c\u6b21\u786e\u8ba4\u6309\u94ae\u4e0d\u552f\u4e00\uff1b\u8bf7\u4eba\u5de5\u6838\u5bf9\u4e14\u4e0d\u8981\u81ea\u52a8\u91cd\u8bd5', page, 'publish_confirmation_ambiguous', { clickResult, submissionStatus: 'UNKNOWN' })), doNotRetry: true } };
       }
 
-      const postClickText = await pageEvidenceText(page);
+      const postClickText = await publishPageEvidenceText(page, payload);
       if (DOUYIN_VERIFY_RE.test(postClickText)) return this.waitForManualSecurityVerification(page, payload, { clickResult, submitAttempted: true });
       if (patternMatches(this.spec.publishBlockedTextPattern, postClickText)) {
         return { status: 'NEEDS_CONFIRMATION', result: { ...(await this.evidence(payload, '\u6296\u97f3\u8981\u6c42\u4eba\u5de5\u5b8c\u6210\u8d26\u53f7\u6216\u5b89\u5168\u9a8c\u8bc1\uff0c\u7cfb\u7edf\u4e0d\u4f1a\u7ed5\u8fc7\u9a8c\u8bc1\u6216\u81ea\u52a8\u91cd\u8bd5', page, 'publish_verification_required', { clickResult, submissionStatus: 'UNKNOWN' })), doNotRetry: true } };
@@ -2325,9 +2326,22 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     const seen = new Set();
     const videoResults = [];
     let rounds = 0;
-    for (const video of inventory.videos) {
+    // Return recent comments promptly instead of waiting for every old work.
+    // Rotate the historical tail so old works continue receiving coverage.
+    let scanVideos = inventory.videos;
+    const recentKeys = new Set(inventory.videos.slice(0, 3).map(video => video.sourceVideoKey));
+    if (payload.automatic === true && inventory.videos.length > 5) {
+      this.douyinCommentHistoryOffsets ||= new Map();
+      const scope = String(payload.accountId || payload.profileName || 'default');
+      const historical = inventory.videos.slice(3);
+      const offset = (this.douyinCommentHistoryOffsets.get(scope) || 0) % historical.length;
+      const tail = Array.from({ length: Math.min(2, historical.length) }, (_, index) => historical[(offset + index) % historical.length]);
+      scanVideos = [...inventory.videos.slice(0, 3), ...tail];
+      this.douyinCommentHistoryOffsets.set(scope, (offset + tail.length) % historical.length);
+    }
+    for (const video of scanVideos) {
       await this.assertRuntimeAllowed();
-      if (video.commentCountConfirmed === true && video.commentCount === 0) {
+      if (!recentKeys.has(video.sourceVideoKey) && video.commentCountConfirmed === true && video.commentCount === 0) {
         videoResults.push({ sourceVideoKey: video.sourceVideoKey, status: 'SUCCESS', count: 0, stopReason: 'PLATFORM_COMMENT_COUNT_ZERO' });
         continue;
       }
@@ -2363,7 +2377,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       }
       videoResults.push({ sourceVideoKey: video.sourceVideoKey, status: 'SUCCESS', count: added, stopReason: collection.stopReason });
     }
-    return { messages, rounds, complete: videoResults.every(item => item.status === 'SUCCESS'), stopReason: 'ALL_CURRENT_DOUYIN_VIDEOS_SCANNED', videoResults, inventoryReason: inventory.reason };
+    return { messages, rounds, complete: videoResults.every(item => item.status === 'SUCCESS'), stopReason: scanVideos.length < inventory.videos.length ? 'RECENT_WORKS_AND_ROTATING_HISTORY_SCANNED' : 'ALL_CURRENT_DOUYIN_VIDEOS_SCANNED', videoResults, inventoryReason: inventory.reason };
   }
 
   async findDouyinCommentEditor(page, payload, scope = null) {

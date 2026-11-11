@@ -20,3 +20,7 @@
 `docs/changes/` 记录并在提交前运行 `node scripts/check-docs-as-code.mjs --staged`。
 新克隆可运行 `node scripts/install-docs-hooks.mjs`，只为当前 checkout 安装钩子。
 保护既有改动，只暂存本次路径；明确区分已修改、已提交、已推送和已部署。
+
+## 本机源码同步与当前入口
+
+2026-11-11 当前界面和知识库入口以 `docs/development/handoff.md`、`docs/frontend-workspace.md` 与 `docs/knowledge-files.md` 为准；下方及旧历史中的知识审核/发布/回滚入口已被本轮用户确认的文件自动生效流程替代，内部索引快照与渠道发送边界仍保留。继续遵循 `dev-notes/POLICY.md` 和仓库内 `docs-as-code-handoff` skill，源码同步不得合入含业务数据库的旧开发历史。新提交同时维护两处规范要求的变更记录。

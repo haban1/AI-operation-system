@@ -50,6 +50,12 @@ function options() {
     CHANNELS_PROFILE_DIR: path.join(runtimeDir, 'profiles', 'wechat_channels'),
     BILIBILI_PROFILE_DIR: path.join(runtimeDir, 'profiles', 'bilibili'),
     WEIBO_PROFILE_DIR: path.join(runtimeDir, 'profiles', 'weibo'),
+    // Stable logical account names mapped to these machine-owned profiles.
+    // Analytics must never infer its account from a queued task's label.
+    PLATFORM_ANALYTICS_PROFILE_BINDINGS: JSON.stringify({
+      douyin: 'profile-douyin-main', wechat_channels: 'profile-channels-main',
+      bilibili: 'profile-bilibili-main', weibo: 'profile-weibo-main'
+    }),
     BROWSER_CONTROL_ENABLED: 'false',
     INSTANCE_LOCK_ENABLED: 'true'
   };

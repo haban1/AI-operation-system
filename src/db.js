@@ -5,6 +5,8 @@ import { config } from './config.js';
 import { DEFAULT_KNOWLEDGE_SUBCATEGORY, PUBLIC_KNOWLEDGE_CATEGORY, SYSTEM_KNOWLEDGE_CATEGORIES, classifyKnowledgeCategory } from './services/knowledge-category.js';
 import { acquireInstanceLock } from './services/instance-lock.js';
 import { assessCollectedMessageIdentity } from './services/message-sender-identity.js';
+import { HOT_TOPIC_KNOWLEDGE_SCHEMA } from './services/hot-topic-knowledge.js';
+import { PLATFORM_ANALYTICS_SCHEMA } from './services/platform-analytics.js';
 
 const WEIBO_MAIN_ACCOUNT_NAME = '天河港澳社区';
 const databaseInitializationWaitMs = Math.max(15_000, Number(config.sqliteBusyTimeoutMs) || 15_000);
@@ -38,6 +40,8 @@ export function json(value, fallback = null) {
 }
 
 function initializeDb() {
+  db.exec(HOT_TOPIC_KNOWLEDGE_SCHEMA);
+  db.exec(PLATFORM_ANALYTICS_SCHEMA);
   db.exec(`
     CREATE TABLE IF NOT EXISTS platforms (
       code TEXT PRIMARY KEY,
@@ -353,6 +357,7 @@ function initializeDb() {
     CREATE INDEX IF NOT EXISTS idx_ai_call_logs_task ON ai_call_logs(task_type,status,id DESC);
     CREATE INDEX IF NOT EXISTS idx_jobs_device_status ON agent_jobs(device_id, status, id);
     CREATE INDEX IF NOT EXISTS idx_jobs_platform_status ON agent_jobs(json_extract(payload,'$.platformCode'), status, id);
+    CREATE INDEX IF NOT EXISTS idx_jobs_type_status ON agent_jobs(job_type, status, id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_browser_commands_idempotency ON browser_commands(idempotency_key) WHERE idempotency_key IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_browser_commands_device_status ON browser_commands(device_id,status,id);
     CREATE INDEX IF NOT EXISTS idx_browser_commands_session ON browser_commands(session_id,id);
@@ -370,7 +375,6 @@ function initializeDb() {
   migrateMiniProgramChannelIdentity();
   migrateChannelLedgerFoundation();
   migrateChannelReplyBatchRuntime();
-  migrateXiaozhiTestDecisions();
   seed();
   migrateWeiboMainAccountName();
   removeLegacySmokeGate();
@@ -694,6 +698,7 @@ function migrateSchema() {
     CREATE INDEX IF NOT EXISTS idx_conversations_handling_mode ON conversations(handling_mode,last_message_at);
     CREATE INDEX IF NOT EXISTS idx_conversations_recovery_scan ON conversations(message_type,handling_mode,last_message_at,last_recovery_scan_at);
     CREATE INDEX IF NOT EXISTS idx_agent_jobs_priority_claim ON agent_jobs(device_id,status,priority,available_at,id);
+    CREATE INDEX IF NOT EXISTS idx_jobs_type_status ON agent_jobs(job_type, status, id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_runtime_blocks_issue_active ON runtime_blocks(issue_id) WHERE status='ACTIVE';
     CREATE INDEX IF NOT EXISTS idx_runtime_blocks_scope_active ON runtime_blocks(scope,block_key,status);
     CREATE INDEX IF NOT EXISTS idx_issue_diagnoses_issue ON issue_diagnoses(issue_id,id DESC);
@@ -929,61 +934,6 @@ function removeLegacySmokeGate() {
     throw error;
   }
 }
-function migrateXiaozhiTestDecisions() {
-  const migrationId = '2026-08-28-xiaozhi-test-decisions-v1';
-  if (db.prepare('SELECT id FROM schema_migrations WHERE id=?').get(migrationId)) return;
-  const stamp = now();
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS xiaozhi_test_answers (
-        answer_id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        operator_id TEXT NOT NULL,
-        sequence_no INTEGER NOT NULL,
-        question TEXT NOT NULL,
-        reply_text TEXT NOT NULL DEFAULT '',
-        route_decision TEXT NOT NULL DEFAULT 'UNKNOWN',
-        response_mode TEXT,
-        platform_code TEXT,
-        message_type TEXT,
-        scope TEXT NOT NULL DEFAULT 'published' CHECK(scope IN ('published','import_batch')),
-        import_batch_id INTEGER,
-        knowledge_ids_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(knowledge_ids_json)),
-        source_references_json TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(source_references_json)),
-        decision TEXT NOT NULL DEFAULT 'ENABLED' CHECK(decision IN ('ENABLED','DISABLED')),
-        reason_code TEXT,
-        reason TEXT,
-        decision_version INTEGER NOT NULL DEFAULT 1 CHECK(decision_version > 0),
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS xiaozhi_test_answer_decision_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        answer_id TEXT NOT NULL REFERENCES xiaozhi_test_answers(answer_id) ON DELETE CASCADE,
-        decision TEXT NOT NULL CHECK(decision IN ('ENABLED','DISABLED')),
-        reason_code TEXT,
-        reason TEXT,
-        operator_id TEXT NOT NULL,
-        decision_version INTEGER NOT NULL CHECK(decision_version > 0),
-        created_at TEXT NOT NULL,
-        UNIQUE(answer_id, decision_version)
-      );
-      CREATE INDEX IF NOT EXISTS idx_xiaozhi_test_answers_session
-        ON xiaozhi_test_answers(session_id, sequence_no);
-      CREATE INDEX IF NOT EXISTS idx_xiaozhi_test_answers_decision
-        ON xiaozhi_test_answers(decision, updated_at);
-      CREATE INDEX IF NOT EXISTS idx_xiaozhi_test_answer_history_answer
-        ON xiaozhi_test_answer_decision_history(answer_id, decision_version);
-    `);
-    db.prepare('INSERT INTO schema_migrations(id,applied_at) VALUES(?,?)').run(migrationId, stamp);
-    db.exec('COMMIT');
-  } catch (error) {
-    db.exec('ROLLBACK');
-    throw error;
-  }
-}
-
 function activateXiaohongshuPlatform() {
   const migrationId = '2026-08-12-xiaohongshu-activate-v1';
   if (db.prepare('SELECT id FROM schema_migrations WHERE id=?').get(migrationId)) return;
@@ -1070,7 +1020,13 @@ function migrateKnowledgeLibraryScopes() {
   }
 }
 
+function knowledgeExamplesDisabled() {
+  return db.prepare('SELECT encrypted_value FROM system_settings WHERE setting_key=?')
+    .get('knowledge.seed_examples_disabled')?.encrypted_value === 'true';
+}
+
 function seedPlatformKnowledgeIsolationMarkers() {
+  if (knowledgeExamplesDisabled()) return;
   const migrationId = '2026-08-12-platform-knowledge-isolation-markers-v1';
   if (db.prepare('SELECT id FROM schema_migrations WHERE id=?').get(migrationId)) return;
   const items = [
@@ -1362,7 +1318,7 @@ function seed() {
   }
 
   const knowledgeCount = db.prepare('SELECT COUNT(*) AS c FROM knowledge').get().c;
-  if (!knowledgeCount) {
+  if (!knowledgeCount && !knowledgeExamplesDisabled()) {
     const insert = db.prepare(`INSERT INTO knowledge(question,answer,keywords,status,version,created_at,updated_at)
       VALUES(?,?,?,?,1,?,?)`);
     const stamp = now();

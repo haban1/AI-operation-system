@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { aiConnectionPresentation, bindAiModelSettings } from '../public/ai-model-settings.js';
 import { DatabaseSync } from 'node:sqlite';
 import { describeAiReplyFailure, isAiReplyTimeout } from '../src/services/ai-reply-error.js';
 import { buildManualNotification, humanizeManualReason } from '../src/services/manual-notification.js';
@@ -55,21 +56,40 @@ test('AI timeout manual notification states the timeout and required action', ()
   assert.doesNotMatch(notification.content, misleadingOrTechnicalText);
 });
 
-test('manual notification cleans raw and legacy timeout reasons without changing other reasons', () => {
+test('manual notification keeps readable reasons and hides internal reason codes', () => {
   for (const reason of [clickTimeout, legacyTimeoutReason, 'This operation was aborted', 'AI_TIMEOUT']) {
     assert.equal(humanizeManualReason(reason), 'AI回复超时');
     const notification = buildManualNotification({ message: { id: 117 }, reason });
     assert.match(notification.content, /转人工原因：AI回复超时\n/);
     assert.doesNotMatch(notification.content, misleadingOrTechnicalText);
   }
+  for (const status of ['NO_ANSWER', 'NEED_CLARIFICATION', 'REJECTED']) {
+    const notification = buildManualNotification({
+      message: { id: 160, platform_code: 'douyin', message_type: 'COMMENT', user_name: '用户', content: '内地人可以入驻吗' },
+      reason: '评论知识库未提供可靠答案，直接转人工：' + status
+    });
+    assert.match(notification.content, /转人工原因：评论知识库未提供可靠答案，直接转人工\n/);
+    assert.doesNotMatch(notification.content, /NO_ANSWER|NEED_CLARIFICATION|REJECTED/);
+    assert.match(notification.content, /Web消息编号：#160/);
+    assert.doesNotMatch(humanizeManualReason(status), /[A-Z_]/);
+  }
+  assert.equal(humanizeManualReason('UNMAPPED_INTERNAL_REASON'), '系统判定需人工处理');
+  assert.equal(humanizeManualReason('处理原因：人工已确认'), '处理原因：人工已确认');
+  assert.equal(humanizeManualReason('命中风险规则：COMPLAINT'), '命中风险规则');
   assert.equal(humanizeManualReason('平台页面提交失败'), '平台页面提交失败');
   assert.equal(humanizeManualReason('TARGET_NOT_UNIQUE'), '平台页面中存在多个相似目标，无法确保回复到正确消息');
 });
 
 test('message details hide stale timeout diagnostics while preserving the generated reply', () => {
   // Keep app initialization pending at its HTTP boundary; execute the actual render functions.
-  const app = vm.createContext({ fetch: () => new Promise(() => {}) });
-  vm.runInContext(fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8'), app);
+  const app = vm.createContext({ fetch: () => new Promise(() => {}), window: { addEventListener() {} },
+    aiConnectionPresentation, bindAiModelSettings });
+  const source = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+  const moduleImport = /^import \{ aiConnectionPresentation, bindAiModelSettings \} from '\.\/ai-model-settings\.js';\r?\n/;
+  assert.match(source, moduleImport);
+  // Workspace imports are unrelated to this renderer and initialization remains
+  // blocked at fetch. Supply its AI helpers and evaluate the actual render code.
+  vm.runInContext(source.replace(/^import[^\n]*\r?\n/gm, ''), app);
   for (const reason of [clickTimeout, legacyTimeoutReason, 'AI回复超时']) {
     const html = app.messageDecisionDetail({
       decision: 'AI_REPLY_TIMEOUT', reason, reply_text: '已经生成的回复', wecom_notification_status: 'SENT'

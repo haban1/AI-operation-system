@@ -1,45 +1,211 @@
 import { useMemoizedFn } from 'ahooks';
-import { Alert, App, Button, Card, Empty, Form, Select, Space, Tag, Typography } from 'antd';
+import { Alert, App, Avatar, Button, Drawer, Empty, Form, Input, Select, Space, Tag } from 'antd';
 import React, { useState } from 'react';
 import type { Snapshot } from './types';
 import { friendName, timestamp } from './types';
 
-interface IProps { robotId:number; data:Snapshot; onRefresh:()=>void }
-const Reception=(props:IProps)=>{
- const {message,modal}=App.useApp();
- const [busy,setBusy]=useState(false);
- const [peer,setPeer]=useState<string>();
- const options=props.data.friends.map(f=>({value:f.wechat_id,label:friendName(f)}));
- const name=(id:string)=>friendName(props.data.friends.find(f=>f.wechat_id===id)||{wechat_id:id});
- const save=useMemoizedFn(async(values:{notifier?:string;knowledge_codes?:string[]})=>{
-  setBusy(true);
-  try {await window.wechatRobotClient.support.settingsCreate({id:props.robotId},{notifier:values.notifier||'',knowledge_codes:values.knowledge_codes||[]});message.success('设置已保存');props.onRefresh();}
-  catch(e){message.error((e as Error).message);}finally{setBusy(false);}
- });
- const transition=useMemoizedFn((id:string,room:string,active:boolean)=>{
-  modal.confirm({title:active?'确认由人工接待？':'确认恢复 AI 回复？',content:active?'该会话的 AI 自动回复将暂停，请在微信中接待。':'后续新消息恢复 AI 回复，接管前未完成的回答不会补发。',onOk:async()=>{
-   await window.wechatRobotClient.support.receptionCreate({id:props.robotId},{peer:id,room,active,reason:active?'后台人工接管':''});
-   message.success(active?'已进入人工接待':'已恢复 AI');props.onRefresh();
-  }});
- });
- return <Space orientation="vertical" size="middle" style={{width:'100%'}}>
-  <Alert type="info" showIcon title="人工接待期间 AI 暂停回复，请在微信客户端接待。客户请求人工，或客服在微信主动回复后，会进入此队列。" />
-  <Card title="客服设置">
-   <Form layout="vertical" initialValues={props.data.settings} onFinish={save}>
-    <Form.Item label="接待通知人" name="notifier"><Select allowClear showSearch={{optionFilterProp:"label"}} options={options} placeholder="不发送通知" /></Form.Item>
-    <Form.Item label="默认问答知识库" name="knowledge_codes" extra="私聊使用这里选择的原生知识库；群聊优先使用自己的绑定，未绑定时使用此设置。资料在「知识库」页管理。"><Select mode="multiple" options={props.data.categories.map(c=>({value:c.code,label:c.name}))} placeholder="请选择知识库" /></Form.Item>
-    <Button type="primary" htmlType="submit" loading={busy}>保存设置</Button>
-   </Form>
-  </Card>
-  <Card title={`人工接待队列（${props.data.receptions.length}）`} extra={<Button onClick={props.onRefresh}>刷新</Button>}>
-   <Space wrap style={{marginBottom:16}}><Select aria-label="主动接管好友" style={{minWidth:230}} showSearch={{optionFilterProp:"label"}} options={options} value={peer} onChange={setPeer} placeholder="选择好友主动接管" /><Button disabled={!peer} onClick={()=>peer&&transition(peer,'',true)}>人工接管</Button></Space>
-   {!props.data.receptions.length&&<Empty description="暂无待接待会话" />}
-   {props.data.receptions.map(r=><Card key={r.key} size="small" style={{marginBottom:12}} title={<Space><Typography.Text>{name(r.peer)}</Typography.Text><Tag color="orange">人工接待中</Tag></Space>} extra={<Button onClick={()=>transition(r.peer,r.room,false)}>恢复 AI 回复</Button>}>
-    <Typography.Paragraph type="secondary">{r.peer}{r.room?` · 群聊 ${r.room}`:''} · {timestamp(r.updated_at)}</Typography.Paragraph>
-    <Typography.Paragraph>原因：{r.reason}</Typography.Paragraph><Typography.Paragraph style={{whiteSpace:'pre-wrap'}}>{r.last_message||'暂无新消息'}</Typography.Paragraph>
-    {r.notification_error&&<Alert type="warning" title={r.notification_error} />}
-   </Card>)}
-  </Card>
- </Space>;
+interface IProps {
+	robotId: number;
+	data: Snapshot;
+	onRefresh: () => void;
+}
+
+const Reception = (props: IProps) => {
+	const { message, modal } = App.useApp();
+	const [busy, setBusy] = useState(false);
+	const [peer, setPeer] = useState<string>();
+	const [selectedKey, setSelectedKey] = useState<string>();
+	const [keyword, setKeyword] = useState('');
+	const [settingsOpen, setSettingsOpen] = useState(false);
+	const options = props.data.friends.map(f => ({ value: f.wechat_id, label: friendName(f) }));
+	const name = (id: string) => friendName(props.data.friends.find(f => f.wechat_id === id) || { wechat_id: id });
+	const queue = props.data.receptions.filter(item => `${name(item.peer)} ${item.last_message}`.includes(keyword));
+	const selected = queue.find(item => item.key === selectedKey) || queue[0];
+	const save = useMemoizedFn(async (values: { notifier?: string; knowledge_codes?: string[] }) => {
+		setBusy(true);
+		try {
+			await window.wechatRobotClient.support.settingsCreate(
+				{ id: props.robotId },
+				{ notifier: values.notifier || '', knowledge_codes: values.knowledge_codes || [] },
+			);
+			message.success('设置已保存');
+			props.onRefresh();
+		} catch (e) {
+			message.error((e as Error).message);
+		} finally {
+			setBusy(false);
+		}
+	});
+	const transition = useMemoizedFn((id: string, room: string, active: boolean) => {
+		modal.confirm({
+			title: active ? '确认由人工接待？' : '确认恢复 AI 回复？',
+			content: active
+				? '该会话的 AI 自动回复将暂停，请在微信中接待。'
+				: '后续新消息恢复 AI 回复，接管前未完成的回答不会补发。',
+			onOk: async () => {
+				await window.wechatRobotClient.support.receptionCreate(
+					{ id: props.robotId },
+					{ peer: id, room, active, reason: active ? '后台人工接管' : '' },
+				);
+				message.success(active ? '已进入人工接待' : '已恢复 AI');
+				props.onRefresh();
+			},
+		});
+	});
+	return (
+		<div className="wx-page wx-reception">
+			<div className="wx-page-toolbar">
+				<span className="wx-muted">{props.data.receptions.length} 个接待会话</span>
+				<Space>
+					<Button onClick={props.onRefresh}>刷新</Button>
+					<Button onClick={() => setSettingsOpen(true)}>接待设置</Button>
+				</Space>
+			</div>
+			<div className="wx-chat-shell">
+				<aside className="wx-chat-list">
+					<div className="wx-chat-search">
+						<Input
+							aria-label="搜索接待会话"
+							placeholder="搜索会话"
+							value={keyword}
+							onChange={event => setKeyword(event.target.value)}
+						/>
+					</div>
+					{queue.map(item => (
+						<button
+							type="button"
+							className={`wx-conversation ${item.key === selected?.key ? 'active' : ''}`}
+							key={item.key}
+							onClick={() => setSelectedKey(item.key)}
+						>
+							<Avatar>{name(item.peer).slice(0, 1)}</Avatar>
+							<span>
+								<strong>{name(item.peer)}</strong>
+								<small>{timestamp(item.updated_at)}</small>
+								<p>{item.last_message || '暂无新消息'}</p>
+							</span>
+						</button>
+					))}
+					{!queue.length && (
+						<Empty
+							image={Empty.PRESENTED_IMAGE_SIMPLE}
+							description="暂无接待会话"
+						/>
+					)}
+				</aside>
+				<section className="wx-chat-main">
+					<header className="wx-chat-heading">
+						<strong>{selected ? name(selected.peer) : '人工接待'}</strong>
+						{selected && (
+							<Space>
+								<Tag>人工接待中</Tag>
+								<Button
+									type="text"
+									onClick={() => transition(selected.peer, selected.room, false)}
+								>
+									恢复 AI 回复
+								</Button>
+							</Space>
+						)}
+					</header>
+					<div className="wx-chat-history">
+						{selected ? (
+							<>
+								<div className="wx-chat-date">{timestamp(selected.updated_at)}</div>
+								<div className="wx-message-row">
+									<Avatar>{name(selected.peer).slice(0, 1)}</Avatar>
+									<div className="wx-message-bubble">{selected.last_message || '暂无新消息'}</div>
+								</div>
+								<details className="wx-inline-details">
+									<summary>接待详情</summary>
+									<p>{selected.reason}</p>
+									<p>
+										{selected.peer}
+										{selected.room ? ` · 群聊 ${selected.room}` : ''}
+									</p>
+								</details>
+								{selected.notification_error && (
+									<Alert
+										type="warning"
+										title={selected.notification_error}
+									/>
+								)}
+							</>
+						) : (
+							<Empty description="暂无待接待会话" />
+						)}
+					</div>
+					<footer className="wx-chat-footer">
+						<span>人工接待期间 AI 暂停回复，请在微信客户端接待。</span>
+						<details className="wx-inline-details">
+							<summary>主动接管</summary>
+							<Space wrap>
+								<Select
+									aria-label="主动接管好友"
+									style={{ minWidth: 230 }}
+									showSearch={{ optionFilterProp: 'label' }}
+									options={options}
+									value={peer}
+									onChange={setPeer}
+									placeholder="选择好友"
+								/>
+								<Button
+									disabled={!peer}
+									onClick={() => peer && transition(peer, '', true)}
+								>
+									人工接管
+								</Button>
+							</Space>
+						</details>
+					</footer>
+				</section>
+			</div>
+			{settingsOpen && (
+				<Drawer
+					title="接待设置"
+					open
+					onClose={() => setSettingsOpen(false)}
+					size={460}
+				>
+					<Form
+						layout="vertical"
+						initialValues={props.data.settings}
+						onFinish={save}
+					>
+						<Form.Item
+							label="接待通知人"
+							name="notifier"
+						>
+							<Select
+								allowClear
+								showSearch={{ optionFilterProp: 'label' }}
+								options={options}
+								placeholder="不发送通知"
+							/>
+						</Form.Item>
+						<Form.Item
+							label="默认问答知识库"
+							name="knowledge_codes"
+							extra="私聊使用此知识库；群聊优先使用自己的绑定。资料在知识库页管理。"
+						>
+							<Select
+								mode="multiple"
+								options={props.data.categories.map(c => ({ value: c.code, label: c.name }))}
+								placeholder="请选择知识库"
+							/>
+						</Form.Item>
+						<Button
+							type="primary"
+							htmlType="submit"
+							loading={busy}
+						>
+							保存设置
+						</Button>
+					</Form>
+				</Drawer>
+			)}
+		</div>
+	);
 };
+
 export default React.memo(Reception);

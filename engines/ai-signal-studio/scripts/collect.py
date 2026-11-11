@@ -65,39 +65,60 @@ def parse_trending(page, collected_at):
         raise ValueError('未解析到 AI 候选；页面格式可能改变，不能用空结果伪装成功')
     return sorted(result, key=lambda x: x['weekly_stars'] or 0, reverse=True)
 
-def collect():
+def collect(settings=None):
+    from source_collectors import normalize_sources, source_jobs
+    from runtime import load_config
+    settings=normalize_sources(settings if settings is not None else load_config(ROOT).get('sources'))
     stamp = now()
-    batch = ROOT / 'data' / ('capture-' + dt.datetime.now().strftime('%Y%m%d-%H%M%S'))
+    batch = ROOT / 'data' / ('capture-' + dt.datetime.now().strftime('%Y%m%d-%H%M%S-%f'))
     batch.mkdir(parents=True, exist_ok=True)
-    urls = {'GitHub': 'https://github.com/trending?since=weekly',
-            'Reddit': 'https://www.reddit.com/r/LocalLLaMA/top.json?t=week&limit=12',
-            'Hacker News': 'https://hn.algolia.com/api/v1/search?query=AI&tags=story&numericFilters=created_at_i%3E' + str(int(dt.datetime.now().timestamp()) - 7*86400) + '&hitsPerPage=12'}
+    archive=batch.relative_to(ROOT).as_posix()
+    previous=json.loads((ROOT/'data/feed.json').read_text(encoding='utf-8')) if (ROOT/'data/feed.json').exists() else {}
+    urls = {'github': ('GitHub','https://github.com/trending?since=weekly'),
+            'reddit': ('Reddit','https://www.reddit.com/r/LocalLLaMA/top.json?t=week&limit=12'),
+            'hackernews': ('Hacker News','https://hn.algolia.com/api/v1/search?query=AI&tags=story&numericFilters=created_at_i%3E' + str(int(dt.datetime.now().timestamp()) - 7*86400) + '&hitsPerPage=12')}
     states, candidates, discussions = [], [], []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-        future_map = {pool.submit(fetch, url): (name, url) for name, url in urls.items()}
+    def legacy(key,name,url):
+        raw=fetch(url)
+        (batch/(key+'.txt')).write_text(raw,encoding='utf-8')
+        if key=='github':
+            return [{**row,'source_key':key,'content_type':'repository','discovery':'GitHub 周榜',
+                     'metrics':[{'label':'本周新增 Star','value':row['weekly_stars']},{'label':'累计 Star','value':row['total_stars']}]}
+                    for row in parse_trending(raw,stamp)]
+        rows=[]
+        if key=='reddit':
+            for post in json.loads(raw)['data']['children']:
+                d=post['data'];rows.append({'source':name,'source_key':key,'title':d['title'],'score':d['score'],
+                                          'url':'https://reddit.com'+d['permalink'],'collected_at':stamp})
+        else:
+            for d in json.loads(raw)['hits']:
+                rows.append({'source':name,'source_key':key,'title':d.get('title'),'score':d.get('points'),
+                             'url':'https://news.ycombinator.com/item?id='+d['objectID'],'collected_at':stamp})
+        return rows
+    jobs=[(key,name,lambda key=key,name=name,url=url:legacy(key,name,url))
+          for key,(name,url) in urls.items() if settings[key]]+source_jobs(settings,stamp,batch)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        future_map = {pool.submit(fn):(key,name) for key,name,fn in jobs}
         for future in concurrent.futures.as_completed(future_map):
-            name, url = future_map[future]
+            key,name = future_map[future]
+            target=discussions if key in ('reddit','hackernews') else candidates
             try:
-                raw = future.result()
-                (batch / (name.replace(' ', '-') + '.txt')).write_text(raw, encoding='utf-8')
-                if name == 'GitHub':
-                    candidates = parse_trending(raw, stamp)
-                    count = len(candidates)
-                elif name == 'Reddit':
-                    posts = json.loads(raw)['data']['children']
-                    for p in posts:
-                        d = p['data']; discussions.append({'source': name, 'title': d['title'], 'score': d['score'], 'url': 'https://reddit.com' + d['permalink'], 'collected_at': stamp})
-                    count = len(posts)
-                else:
-                    posts = json.loads(raw)['hits']
-                    for d in posts:
-                        discussions.append({'source': name, 'title': d.get('title'), 'score': d.get('points'), 'url': 'https://news.ycombinator.com/item?id=' + d['objectID'], 'collected_at': stamp})
-                    count = len(posts)
-                states.append({'source': name, 'status': 'ok', 'count': count, 'url': url})
+                rows=future.result()
+                target.extend({**row,'archive':archive,'stale':False} for row in rows)
+                states.append({'source_key':key,'source':name,'status':'ok','count':len(rows),'last_success_at':stamp})
             except Exception as e:
-                states.append({'source': name, 'status': 'unavailable', 'detail': str(e)[:350], 'url': url})
-    states.append({'source': 'X', 'status': 'not_configured', 'detail': '尚未接入 X API；可在文稿阶段补充人工核实的公开链接'})
-    result = {'collected_at': stamp, 'candidates': candidates, 'discussions': discussions, 'sources': states, 'archive': str(batch.relative_to(ROOT))}
+                old=[row for row in previous.get('discussions' if target is discussions else 'candidates',[])
+                     if row.get('source_key')==key or (not row.get('source_key') and row.get('source')==name)]
+                target.extend({**row,'archive':row.get('archive',previous.get('archive')),'stale':True} for row in old)
+                detail=str(e)[:250]
+                states.append({'source_key':key,'source':name,'status':'unavailable','count':0,'retained_count':len(old),
+                               'detail':detail,'last_success_at':old[0].get('collected_at') if old else None})
+    order={key:i for i,(key,_,_) in enumerate(jobs)}
+    candidates=list({row['id']:row for row in candidates}.values())
+    candidates.sort(key=lambda row:order.get(row.get('source_key'),999))
+    discussions.sort(key=lambda row:order.get(row.get('source_key'),999))
+    states.sort(key=lambda row:order[row['source_key']])
+    result = {'schema_version':2,'collected_at':stamp,'candidates':candidates,'discussions':discussions,'sources':states,'archive':archive}
     save(batch / 'feed.json', result)
     save(ROOT / 'data/feed.json', result)
     return result

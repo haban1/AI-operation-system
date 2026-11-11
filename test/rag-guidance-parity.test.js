@@ -92,3 +92,81 @@ test('小智和各平台私信区分缺对象澄清与证据缺口，不因候�
   assert.equal((await broad('有哪些政策？')).decision, 'RAG_KNOWLEDGE_GAP');
   assert.ok(requests.some(item => item.question === '有哪些政策？'), '宽泛目录请求按知识库默认范围查询');
 });
+
+test('小智RAG评论先邀请人工协助，仅在有上下文的严格确认后接管', async t => {
+  const questions = [];
+  const rag = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const input = JSON.parse(Buffer.concat(chunks).toString() || '{}');
+    const send = (data, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
+    if (req.url === '/rag-admin-api/v1/test-sessions') return send({ testSessionId: 'comment-offer-test-session' });
+    const question = input.question;
+    questions.push(question);
+    if (question === '课程服务失败') return send({ error: { code: 'RAG_UNAVAILABLE', message: 'service unavailable' } }, 503);
+    const status = question === '课程问题被拒绝' ? 'REJECTED' : question === '课程安排不明确' ? 'NEED_CLARIFICATION' : question === '社区入驻材料' ? 'ANSWERED' : 'NO_ANSWER';
+    send({
+      result: status, answerId: `comment-offer-answer-${questions.length}`, answer: status === 'ANSWERED' ? { text: '请准备项目计划书。' } : null,
+      grounding: { confidence: status === 'ANSWERED' ? 0.9 : 0, sourceReferences: status === 'ANSWERED' ? [candidate] : [] },
+      reasonCode: status === 'ANSWERED' ? null : 'INSUFFICIENT_EVIDENCE', meta: { knowledgeVersion: 'comment-offer-test' }
+    });
+  });
+  await new Promise(resolve => rag.listen(0, '127.0.0.1', resolve));
+  const runtime = await startServer({ env: { RAG_BASE_URL: `http://127.0.0.1:${rag.address().port}`, RAG_ADMIN_ENABLED: 'true', RAG_FORMAL_ROUTING_ENABLED: 'true', WECOM_WEBHOOK_URL: '' } });
+  t.after(async () => { await stopChild(runtime.child); cleanupDir(runtime.dir); await new Promise(resolve => rag.close(resolve)); });
+  const createChat = async (contextEnabled = true) => {
+    const session = await jsonRequest(runtime.base, '/api/xiaozhi/sessions', { method: 'POST', body: { messageType: 'COMMENT', contextEnabled } });
+    assert.equal(session.response.status, 200, JSON.stringify(session.data));
+    return async (content, settings = {}) => {
+      const response = await jsonRequest(runtime.base, '/api/xiaozhi/chat', { method: 'POST', body: { sessionId: session.data.session.id, content, ...settings } });
+      assert.equal(response.response.status, 200, JSON.stringify(response.data));
+      return response.data;
+    };
+  };
+  for (const question of ['有没有木工雕刻课？', '课程安排不明确']) {
+    const ask = await createChat();
+    const offered = await ask(question);
+    assert.equal(offered.action, 'REPLY');
+    assert.equal(offered.decision, 'COMMENT_HANDOFF_OFFER');
+    assert.equal(offered.handoffOffered, true);
+    assert.equal(offered.handoffRequested, false);
+    assert.equal(offered.confidence, 0);
+    assert.match(offered.replyText, /回复.*详情/);
+    assert.match(offered.replyText, /站内消息/);
+    assert.doesNotMatch(offered.replyText, /转人工|人工协助|已通知|已发私信/);
+    const before = questions.length;
+    const accepted = await ask('详情');
+    assert.equal(accepted.action, 'HANDOFF');
+    assert.equal(accepted.handoffRequested, true);
+    assert.equal(questions.length, before, '邀请后的严格确认无需再次查询知识');
+    assert.equal((await ask('社区入驻材料')).action, 'HANDOFF');
+  }
+  const declinedChat = await createChat();
+  await declinedChat('有没有木工雕刻课？');
+  const beforeDecline = questions.length;
+  assert.equal((await declinedChat('不用了，谢谢')).decision, 'COMMENT_HANDOFF_DECLINED');
+  assert.equal(questions.length, beforeDecline);
+  assert.equal((await declinedChat('好的')).decision, 'COMMENT_SOCIAL_REPLY', '拒绝后不能用普通肯定确认旧邀请');
+  assert.equal((await declinedChat('社区入驻材料')).decision, 'RAG_ANSWERED', '拒绝后仍可自动回答可靠知识');
+
+  const mixedChat = await createChat();
+  await mixedChat('有没有木工雕刻课？');
+  const mixed = await mixedChat('好，课程几点开始？');
+  assert.equal(mixed.action, 'REPLY');
+  assert.equal(mixed.handoffRequested, false);
+  assert.equal(questions.at(-1), '好，课程几点开始？');
+  const stateless = await createChat(false);
+  await stateless('有没有木工雕刻课？');
+  assert.equal((await stateless('好的')).decision, 'COMMENT_SOCIAL_REPLY');
+  assert.equal((await stateless('好的', { contextEnabled: true })).handoffRequested, false);
+  const switched = await createChat();
+  await switched('有没有木工雕刻课？');
+  assert.equal((await switched('是的', { messageType: 'PRIVATE_MESSAGE' })).handoffRequested, false, '评论邀请不跨入私信');
+  assert.equal((await switched('好的', { messageType: 'COMMENT' })).handoffRequested, false);
+  for (const content of ['转人工', '垃圾客服', '课程问题被拒绝', '课程服务失败']) {
+    const result = await (await createChat())(content);
+    assert.equal(result.action, 'HANDOFF', content);
+    assert.equal(result.handoffRequested, true, content);
+    assert.equal(result.handoffOffered, false, content);
+  }
+});

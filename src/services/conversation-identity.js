@@ -57,7 +57,3 @@ export function resolveConversationIdentity(message = {}) {
     entry
   };
 }
-
-export function testConversationNamespace(operatorId, sessionId) {
-  return `TEST:xiaozhi:${digest(operatorId || 'operator')}:${digest(sessionId)}`;
-}

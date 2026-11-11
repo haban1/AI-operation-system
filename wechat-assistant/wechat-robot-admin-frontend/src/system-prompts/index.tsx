@@ -1,9 +1,8 @@
 import { PlusOutlined } from '@ant-design/icons';
 import { useBoolean, useRequest, useSetState } from 'ahooks';
-import { App, Button, Empty, Input, Space, Spin, Table } from 'antd';
+import { App, Button, Card, Empty, Input, Spin } from 'antd';
 import dayjs from 'dayjs';
-import React from 'react';
-import type { DtoSystemPrompt as SystemPrompt } from '@/api/wechat-robot/wechat-robot';
+import React, { useState } from 'react';
 import SystemPromptActions from './SystemPromptActions';
 import SystemPromptEditor from './SystemPromptEditor';
 
@@ -24,6 +23,7 @@ const SystemPrompts = (props: IProps) => {
 
 	const [searchState, setSearchState] = useSetState<IState>({ keyword: '' });
 	const [onNewOpen, setOnNewOpen] = useBoolean(false);
+	const [selectedId, setSelectedId] = useState<number>();
 
 	const {
 		data = [],
@@ -46,92 +46,68 @@ const SystemPrompts = (props: IProps) => {
 		},
 	);
 
+	const selected = data.find(item => item.id === selectedId) || data[0];
 	return (
 		<Spin spinning={loading}>
 			<div
-				className={className}
+				className={`wx-page wx-personas ${className}`}
 				style={style}
 			>
-				<Space
-					style={{
-						display: 'flex',
-						justifyContent: 'space-between',
-						alignItems: 'center',
-						marginBottom: 16,
-						paddingRight: 8,
-					}}
-					wrap
-				>
+				<div className="wx-page-toolbar">
 					<Input.Search
 						allowClear
-						placeholder="搜索标题或提示词内容"
-						style={{ width: 320, maxWidth: '100%' }}
+						placeholder="搜索人设"
+						style={{ width: 260 }}
 						onSearch={keyword => setSearchState({ keyword })}
 					/>
 					<Button
-						color="primary"
-						variant="filled"
+						type="primary"
 						icon={<PlusOutlined />}
 						onClick={setOnNewOpen.setTrue}
 					>
 						新建人设
 					</Button>
-				</Space>
-				<Table<SystemPrompt>
-					rowKey="id"
-					dataSource={data}
-					scroll={{ y: 'calc(100vh - 235px)' }}
-					locale={{ emptyText: <Empty description="暂无人设" /> }}
-					columns={[
-						{
-							title: '标题',
-							dataIndex: 'title',
-							width: 180,
-							ellipsis: true,
-						},
-						{
-							title: '提示词内容',
-							dataIndex: 'content',
-							width: 360,
-							ellipsis: true,
-						},
-						{
-							title: '更新时间',
-							dataIndex: 'updated_at',
-							width: 180,
-							ellipsis: true,
-							render: (_, record) => {
-								return dayjs(Number(record.updated_at) * 1000).format('YYYY-MM-DD HH:mm:ss');
-							},
-						},
-						{
-							title: '创建时间',
-							dataIndex: 'created_at',
-							width: 180,
-							ellipsis: true,
-							render: (_, record) => {
-								return dayjs(Number(record.created_at) * 1000).format('YYYY-MM-DD HH:mm:ss');
-							},
-						},
-						{
-							title: '操作',
-							dataIndex: 'actions',
-							width: 110,
-							align: 'center',
-							fixed: 'right',
-							render: (_, record) => {
-								return (
-									<SystemPromptActions
-										robotId={props.robotId}
-										dataSource={record}
-										onRefresh={refresh}
-									/>
-								);
-							},
-						},
-					]}
-					pagination={false}
-				/>
+				</div>
+				{selected ? (
+					<div className="wx-persona-grid">
+						<Card
+							title={selected.title}
+							extra={
+								<SystemPromptActions
+									robotId={props.robotId}
+									dataSource={selected}
+									onRefresh={refresh}
+								/>
+							}
+						>
+							<div className="wx-persona-copy">{selected.content}</div>
+							<div className="wx-persona-meta">
+								更新于 {dayjs(Number(selected.updated_at) * 1000).format('YYYY-MM-DD HH:mm')}
+								<details className="wx-inline-details">
+									<summary>创建信息</summary>
+									{dayjs(Number(selected.created_at) * 1000).format('YYYY-MM-DD HH:mm:ss')}
+								</details>
+							</div>
+						</Card>
+						<Card title="人设列表">
+							<div className="wx-persona-list">
+								{data.map(item => (
+									<button
+										type="button"
+										className={item.id === selected.id ? 'active' : ''}
+										key={item.id}
+										onClick={() => setSelectedId(item.id)}
+									>
+										<strong>{item.title}</strong>
+										<p>{item.content}</p>
+									</button>
+								))}
+							</div>
+						</Card>
+					</div>
+				) : (
+					<Empty description="暂无人设" />
+				)}
 				{onNewOpen && (
 					<SystemPromptEditor
 						open={onNewOpen}

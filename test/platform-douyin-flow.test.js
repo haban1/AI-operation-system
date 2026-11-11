@@ -2378,6 +2378,36 @@ test('Douyin multi-work historical scan continues after one work disappears', as
   assert.equal(result.complete, false);
 });
 
+test('automatic Douyin scans prioritize recent zero-count works, rotate history, and return work inventory', async () => {
+  const { adapter, root } = fixture();
+  try {
+    const page = { ...evidencePage('评论管理'), url: () => adapter.spec.commentUrl };
+    const videos = Array.from({ length: 8 }, (_, index) => ({ sourceVideoKey: String(7700000000000000000n + BigInt(index)), sourceVideoTitle: `work ${index}`, sourceVideoPublishedAt: '发布于2026年11月03日 15:33', commentCountConfirmed: true, commentCount: index === 0 ? 0 : 1 }));
+    const pageCheck = { valid: true, reason: 'VERIFIED' };
+    adapter.getPage = async () => page;
+    adapter.prepareMessagePage = async () => ({});
+    adapter.inspectLoginState = async () => ({ state: 'READY' });
+    adapter.prepareCommentCollection = async () => ({ ready: true, pageCheck, inventory: { ok: true, videos } });
+    adapter.waitForCommentVideoReady = async () => ({ ready: true });
+    adapter.openDouyinCommentVideoByKey = async (_page, sourceVideoKey) => ({ ok: true, video: { sourceVideoKey } });
+    adapter.extractMessages = async (_page, _type, _payload, options) => [{ externalId: `comment-${options.sourceContext.sourceVideoKey}`, messageType: 'COMMENT', context: options.sourceContext }];
+    adapter.enrichDouyinFoldedCommentReplies = async (_page, messages) => ({ messages });
+    adapter.advanceHistoricalCommentList = async () => ({ attempted: false, reason: 'PAGE_AT_END' });
+    const payload = { accountId: 2, automatic: true, types: ['COMMENT'] };
+    const first = await adapter.collectMessages(payload);
+    assert.equal(first.status, 'SUCCESS');
+    assert.deepEqual(first.result.messages.map(message => message.context.sourceVideoKey), videos.slice(0, 5).map(video => video.sourceVideoKey));
+    assert.equal(first.result.contentInventory.length, 8);
+    assert.equal(first.result.contentInventory[0].verificationStatus, 'VERIFIED');
+    assert.equal(first.result.contentInventory[7].verificationStatus, 'OBSERVED');
+    assert.equal(first.result.typeResults[0].historicalScanStopReason, 'RECENT_WORKS_AND_ROTATING_HISTORY_SCANNED');
+    const second = await adapter.collectMessages(payload);
+    assert.deepEqual(second.result.messages.map(message => message.context.sourceVideoKey), [...videos.slice(0, 3), ...videos.slice(5, 7)].map(video => video.sourceVideoKey));
+    const full = await adapter.collectMessages({ ...payload, automatic: false });
+    assert.equal(full.result.messages.length, 8);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('Douyin comment reply opens the work identified by sourceVideoKey before locating the comment', async () => {
   const { adapter } = fixture();
   const calls = [];

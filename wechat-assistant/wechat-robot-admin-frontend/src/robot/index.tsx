@@ -1,8 +1,6 @@
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { useBoolean, useMemoizedFn, useRequest, useSetState } from 'ahooks';
 import { App, Breadcrumb, Button, Col, Empty, Input, notification, Pagination, Radio, Row, Spin } from 'antd';
-import { useEffect } from 'react';
-import { isEmbedded } from '@/utils/embedded';
 import NewRobot from './NewRobot';
 import Robot from './Robot';
 import {
@@ -20,56 +18,6 @@ const RobotList = () => {
 
 	const [onNewOpen, setOnNewOpen] = useBoolean(false);
 	const [search, setSearch] = useSetState({ keyword: '', status: 'all', pageIndex: 1 });
-
-	useEffect(() => {
-		if (isEmbedded) return;
-		const closed = localStorage.getItem('robot-chat-room-closed');
-		if (closed && Date.now() - parseInt(closed, 10) < 1000 * 60 * 60 * 24) {
-			// 如果在一天内关闭过提示，则不再提示
-			return;
-		}
-		api.info({
-			title: '使用过程中遇到问题？',
-			placement: 'bottomRight',
-			onClose: () => {
-				localStorage.setItem('robot-chat-room-closed', Date.now().toString());
-			},
-			description: (
-				<>
-					<h2 style={{ margin: 0 }}>Pro 版本已经上线</h2>
-					<h3 style={{ margin: '8px 0' }}>新特性</h3>
-					<ul style={{ margin: 0, padding: 0 }}>
-						<li>支持设置大模型的推理强度: low high max 等等</li>
-						<li>内置搜索文件 / 写入、编辑文件 工具</li>
-						<li>开放发送远程文件接口</li>
-						<li>
-							MCP 工具、Skills 工具、内置工具支持按群/好友启用/禁用，支持设置工具是否要开启审核，支持给工具批量设置权限
-						</li>
-						<li>
-							支持设置定时任务，在制定的群/好友开启定时任务，支持定时发送固定文本/图片艾特指定的人/所有人，支持定时触发大模型
-						</li>
-						<li>人设管理支持批量设置人设</li>
-						<li>机器人出租模式，支持按群开启订阅模式</li>
-						<li>优化群聊总结图片样式</li>
-						<li>优化群聊排行榜交互，由发送文本改为发送图片</li>
-						<li>优化早安设置，早安图片支持自定义</li>
-						<li>优化下载文件可能导致文件损坏的问题</li>
-						<li>新增了几个内置 Skills，支持总结 PDF Excel Word</li>
-						<li>支持群聊消息监控，监控到特定的关键字后艾特指定的人、转发到指定的人</li>
-						<li>重构了记忆模块，优化记忆准确性、优化群成员关系建模，能描述更复杂的群成员关系</li>
-						<li>群里机器人支持仅管理员能触发，需要先在群聊查看群成员那里将指定群成员设置为管理员</li>
-					</ul>
-					<h4>欢迎加入我们</h4>
-					<img
-						src="https://img.houhoukang.com/char-room-qrcode.jpg?v=20260726"
-						style={{ width: 100, height: 150, display: 'block' }}
-						alt="微信群二维码"
-					/>
-				</>
-			),
-			duration: 0,
-		});
-	}, []);
 
 	const { data, loading, refresh } = useRequest(
 		async () => {
@@ -112,13 +60,13 @@ const RobotList = () => {
 	});
 
 	return (
-		<div>
-			<RobotListHeader>
+		<div className="wx-accounts">
+			<RobotListHeader className="wx-account-list-header">
 				<Breadcrumb
 					items={[
 						{
 							key: 'robot-list',
-							title: <RobotListTitle>机器人列表</RobotListTitle>,
+							title: <RobotListTitle>微信账号</RobotListTitle>,
 						},
 					]}
 				/>
@@ -127,10 +75,10 @@ const RobotList = () => {
 					icon={<PlusOutlined />}
 					onClick={setOnNewOpen.setTrue}
 				>
-					创建机器人
+					添加账号
 				</Button>
 			</RobotListHeader>
-			<RobotListFilter>
+			<RobotListFilter className="wx-account-list-filter">
 				<Row
 					align="middle"
 					wrap={false}
@@ -139,7 +87,7 @@ const RobotList = () => {
 					<Col flex="1 1 auto">
 						<Input
 							size="large"
-							placeholder="搜索机器人"
+							placeholder="搜索微信账号"
 							prefix={<SearchOutlined />}
 							allowClear
 							onKeyDown={ev => {
@@ -167,10 +115,10 @@ const RobotList = () => {
 					</Col>
 				</Row>
 			</RobotListFilter>
-			<RobotListContent>
+			<RobotListContent className="wx-account-list-content">
 				<Spin spinning={loading}>
 					{data?.items?.length ? (
-						<RobotCardsContainer>
+						<RobotCardsContainer className="wx-robot-grid">
 							{data.items.map(item => {
 								return (
 									<Robot

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Docs as Code 交接"
+  short_description: "随 Git 交付维护文档、决策、验证证据与 agent 接手上下文"
+  default_prompt: "使用 $docs-as-code-handoff 整理本次变更的相关文档、验证证据和交接上下文，并检查它们随代码一起交付。"

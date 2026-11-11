@@ -20,23 +20,18 @@ class AnswerProfile(BaseModel):
     greeting: str = Field(default="你好，有什么想了解的？直接问就好。", min_length=1, max_length=240)
 
 
-def _profile_key(knowledge_base_id: str) -> str:
-    return f"answer_profile:{knowledge_base_id}"
-
-
 def load_answer_profile(db: Any, knowledge_base_id: str) -> AnswerProfile:
-    stored = db.get_meta(_profile_key(knowledge_base_id))
+    stored = db.get_meta(f"answer_profile:{knowledge_base_id}")
     if stored:
         try:
             return AnswerProfile.model_validate_json(stored)
         except (ValidationError, ValueError):
-            # Invalid persisted style must not weaken the fixed generation rules.
             pass
     return AnswerProfile()
 
 
 def save_answer_profile(db: Any, knowledge_base_id: str, profile: AnswerProfile) -> None:
-    db.set_meta(_profile_key(knowledge_base_id), profile.model_dump_json())
+    db.set_meta(f"answer_profile:{knowledge_base_id}", profile.model_dump_json())
 
 
 def answer_system_prompt(profile: AnswerProfile) -> str:

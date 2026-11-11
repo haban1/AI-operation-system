@@ -1,5 +1,7 @@
 import http from 'node:http';
+import { discoverAiModels } from './services/ai-model-discovery.js';
 import crypto from 'node:crypto';
+import { buildLocalRagTestRequest } from './services/rag-local-test.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { config, ROOT } from './config.js';
@@ -26,26 +28,28 @@ import { createAiSignalProxy, isAiSignalProxyPath } from './services/ai-signal-p
 import { getCreativeWorkbenchStatus } from './services/creative-workbench.js';
 import { proxyAiStudio } from './services/ai-studio-proxy.js';
 import { createContentLibrary, ContentLibraryError } from './services/content-library.js';
+import { createHotTopicKnowledge } from './services/hot-topic-knowledge.js';
+import { createPlatformAnalytics } from './services/platform-analytics.js';
+import { createPlatformAnalyticsScheduler } from './services/platform-analytics-scheduler.js';
 import { createContentLibrarySeedLoader } from './services/content-library-seeds.js';
 import { createStudioOutputLibrary, createStudioOutputSource } from './services/content-library-studio.js';
 import { createVideoStudioProxy } from './services/video-studio-proxy.js';
 import { enqueueMiniProgramReply, startMiniProgramCallbackWorker, stopMiniProgramCallbackWorker } from './services/mini-program-callback.js';
 import { MINI_PROGRAM_MESSAGE_PATH, cleanupExpiredMiniProgramNonces, startMiniProgramNonceCleanupWorker, stopMiniProgramNonceCleanupWorker } from './services/mini-program-auth.js';
 import { startMiniProgramProcessingWorker, stopMiniProgramProcessingWorker } from './services/mini-program-processing.js';
+import { miniProgramConnectionSummary, MiniProgramConnectionError } from './services/mini-program-connection.js';
+import { getMiniProgramBridgeStatus, testMiniProgramBridge, configureMiniProgramBridge, startMiniProgramBridgeWorker, stopMiniProgramBridgeWorker } from './services/mini-program-bridge.js';
 import { handleMiniProgramOpenMessage } from './services/mini-program-http.js';
 import { MiniProgramAdminError, getMiniProgramStatus, listMiniProgramConversations, getMiniProgramConversationMessages, handoffMiniProgramConversation, retryMiniProgramNotification, retryMiniProgramCallback } from './services/mini-program-admin.js';
 import { describeAiReplyFailure, isAiReplyTimeout } from './services/ai-reply-error.js';
 import { randomIntervalMs } from './services/polling.js';
-import { clearAiApiKey, clearWecomWebhookUrl, getAiSettings, getAiSettingsSummary, getMasterSwitch, getMessageCollectionSettings, getPlatformSmartReply, getPlatformSmartReplyMap, getWecomSettingsSummary, saveAiSettings, saveMasterSwitch, saveMessageCollectionSettings, savePlatformSmartReply, saveWecomWebhookUrl } from './services/settings.js';
+import { redactAiSecrets, clearAiApiKey, clearWecomWebhookUrl, getAiSettings, getAiSettingsSummary, getMasterSwitch, getMessageCollectionSettings, getPlatformSmartReply, getPlatformSmartReplyMap, getWecomSettingsSummary, saveAiSettings, saveMasterSwitch, saveMessageCollectionSettings, savePlatformSmartReply, saveWecomWebhookUrl } from './services/settings.js';
 import { aiUsageOverview, listAiCallLogs, recordAiCall } from './services/ai-usage.js';
 import { deleteMaterialKnowledgeDraft, getMaterialKnowledgeDraft, listMaterialKnowledgeDrafts, markMaterialKnowledgeDraftFailed, markMaterialKnowledgeDraftImported, markMaterialKnowledgeDraftImporting, saveMaterialKnowledgeDraft, updateMaterialKnowledgeDraft } from './services/material-knowledge-drafts.js';
 import { validatePublishPrecheck } from './services/publish-validation.js';
 import { reviewPublishContent } from './services/content-compliance.js';
 import { buildMockAiReview, validateAiReviewApproval } from './services/ai-compliance.js';
 import { buildPublishIdempotencyKey, deriveTaskStatus, hashString } from './services/workflow.js';
-import { commitKnowledgeImport, knowledgeImportTemplateCsv, listKnowledgeImports, previewKnowledgeImport } from './services/knowledge-import.js';
-import { getKnowledgeImportPreview, queueKnowledgeImportMetadataEnrichment } from './services/knowledge-import-enrichment.js';
-import { suggestKnowledgeMetadata } from './services/knowledge-metadata-suggestion.js';
 import { DEFAULT_KNOWLEDGE_SUBCATEGORY, PUBLIC_KNOWLEDGE_CATEGORY, SYSTEM_KNOWLEDGE_CATEGORIES, knowledgeCategoryForPlatform, knowledgeCategorySortIndex, resolveKnowledgeCategory, resolveKnowledgeSubcategory, validateKnowledgeCategoryName, validateKnowledgeSubcategoryName } from './services/knowledge-category.js';
 import { listKnowledgeSubcategoryCache, removeKnowledgeSubcategoryCache, touchKnowledgeSubcategory } from './services/knowledge-subcategory-cache.js';
 import { PLATFORM_REPLY_LIMITS, countUnicodeCharacters, getReplyLimit, validateKnowledgeAnswerLength, validateReplyTextLength } from './services/platform-reply-policy.js';
@@ -70,7 +74,7 @@ import { isPlatformRuntimeEnabled, platformRuntimeMap, platformRuntimeRows } fro
 import { ensureIssueBlock, issueContext, jobBlockedByRuntime, parsedDiagnosis, releaseIssueBlocks, runtimeBlockSummary } from './services/runtime-blocks.js';
 import { diagnoseIssue } from './services/issue-diagnosis.js';
 import { assessCollectedMessageIdentity } from './services/message-sender-identity.js';
-import { clearSessionCookie, createSessionToken, credentialsMatch, revokeSessionFromRequest, sessionCookie, sessionFromRequest } from './services/auth.js';
+import { clearSessionCookie, createSessionRevocationStore, createSessionToken, credentialsMatch, revokeSessionFromRequest, sessionCookie, sessionFromRequest, sessionTokenFromRequest } from './services/auth.js';
 import { acquireInstanceLock } from './services/instance-lock.js';
 import { browserControlSummary, completeBrowserCommand, createBrowserCommand, deferBrowserCommand, getBrowserCommand, listBrowserCommands, markBrowserCommandClaimed } from './services/browser-command.js';
 import { isBrowserCommandNonIdempotent } from './services/browser-control-policy.js';
@@ -80,39 +84,21 @@ import { isOldConversationRecoveryJob, priorityForJob } from './services/job-pri
 import { eligibleForRecoveryScan, hasIncrementalConversationWork, recoveryConversationIds } from './services/conversation-recovery-policy.js';
 import { buildRecoveryGroups, recoveryTargets } from './services/conversation-recovery-scheduler.js';
 import { upsertPlatformContentInventory } from './services/platform-content-inventory.js';
+import { matchPublishedDouyinContent } from './services/douyin-published-content-match.js';
 import { resolveManagedCommentTarget } from './services/managed-comment-target.js';
 import { buildMessageReplyCsv, messageReplyExportFilename } from './services/message-export.js';
 import { composeGroundedMultiReply, detectGreetingIntent, detectManualHandoffCommand, GREETING_REPLY, HANDOFF_NOT_FOUND_REPLY, knowledgeGapReply, normalizeManualHandoffPhrase, splitUserQuestions } from './services/conversation-intent.js';
-import { deleteKnowledgeAlias, listKnowledgeAliases, listKnowledgeAliasTasks, queueKnowledgeAliasGeneration, setKnowledgeAliasSelections, setKnowledgeAliasStatus, startKnowledgeAliasWorker } from './services/knowledge-alias.js';
-import { deleteManualHandoffAlias, listManualHandoffAliases, listManualHandoffAliasTasks, queueManualHandoffAliasGeneration, setManualHandoffAliasSelections, setManualHandoffAliasStatus, startManualHandoffAliasWorker } from './services/manual-handoff-alias.js';
 import { evaluateReply } from './services/reply-engine.js';
 import { MESSAGE_ROUTE, outerRouteReplyResult, routeIncomingMessage } from './services/message-router.js';
-import { enabledManualHandoffPhrases } from './services/manual-handoff-phrases.js';
 import { RagClient } from './services/rag-client.js';
-import { buildFormalRagRequest, formalRagReplyResult, routeBusinessClarification, validateFormalRagResponseSnapshot } from './services/formal-rag-routing.js';
+import { buildFormalRagRequest, commentHandoffOfferResult, formalRagReplyResult, routeBusinessClarification, validateFormalRagResponseSnapshot } from './services/formal-rag-routing.js';
+import { composeCommentHandoffOffer } from './services/comment-handoff-offer.js';
+import { commentHandoffConfirmation, findCommentHandoffOffer } from './services/comment-handoff-confirmation.js';
 import { enforceBusinessGuidanceLimit, nextBusinessGuidanceAttempt, businessGuidanceProgress } from './services/conversation-policy.js';
 import { backfillMessageConversations, conversationForMessage, ensureMessageConversation, isMessageConversationCurrent, recentConversationMessages, withConversationSerial } from './services/conversation-store.js';
 import { buildCollectionChannelPlans, collectionPlanAlreadyActive, platformChannelSplitEnabled } from './services/channel-job-scheduler.js';
 import { collectionLedgerChannels, persistCollectedMessageLedger, persistCollectedMessageRuntimeStates } from './services/collection-message-ledger.js';
 import { claimPendingReplyBatchForGeneration, replyBatchSourceEvents, requeueReplyBatchGeneration } from './services/message-event-store.js';
-import { createXiaozhiSession, deleteXiaozhiSession, getXiaozhiOptions, getXiaozhiTestAnswerHistory, getXiaozhiTestAnswers, runXiaozhiChat, updateXiaozhiTestAnswerDecision } from './services/xiaozhi-test-service.js';
-import { getDisabledXiaozhiKnowledgeIds, getXiaozhiProductionKnowledgePolicy } from './services/xiaozhi-test-decisions.js';
-
-const BUILTIN_MANUAL_HANDOFF_EXAMPLES = Object.freeze([
-  '转人工', '帮我转人工', '帮我转个人工', '我要人工回复', '请帮我转接一下客服', '给我找一位工作人员'
-]);
-
-
-function manualHandoffPhraseInput(value) {
-  const phrase = String(value || '').normalize('NFC').replace(/\s+/g, ' ').trim();
-  if (!phrase) throw new Error('转人工说法不能为空');
-  const characterCount = countUnicodeCharacters(phrase);
-  if (characterCount < 2) throw new Error('转人工说法至少需要2个字符');
-  if (characterCount > 80) throw new Error('转人工说法不能超过80个字符');
-  const normalizedPhrase = normalizeManualHandoffPhrase(phrase);
-  if (normalizedPhrase.length < 2) throw new Error('转人工说法不能只包含标点或空格');
-  return { phrase, normalizedPhrase, characterCount };
-}
 
 const publicDir = path.join(ROOT, 'public');
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png' };
@@ -328,12 +314,22 @@ function secureTokenMatch(supplied, expected) {
   const left = Buffer.from(String(supplied || '')); const right = Buffer.from(String(expected || ''));
   return left.length === right.length && left.length > 0 && crypto.timingSafeEqual(left, right);
 }
-function adminSession(req) {
+const adminSessionRevocations = createSessionRevocationStore(db);
+function adminSessionOptions() {
+  return { username: config.adminUsername, secret: config.sessionSecret, revocationStore: adminSessionRevocations };
+}
+function adminSession(req, res) {
   if (!config.authEnabled) return { sub: config.adminUsername, disabled: true };
-  return sessionFromRequest(req, { username: config.adminUsername, secret: config.sessionSecret });
+  const session = sessionFromRequest(req, adminSessionOptions());
+  if (session && res) {
+    const token = session.persistent === true && session.exp === null ? sessionTokenFromRequest(req)
+      : createSessionToken({ username: session.sub, secret: config.sessionSecret, nowMs: session.iat, nonce: session.nonce });
+    res.setHeader('Set-Cookie', sessionCookie(token, { secure: config.sessionCookieSecure }));
+  }
+  return session;
 }
 function requireAdminSession(req, res) {
-  const session = adminSession(req);
+  const session = adminSession(req, res);
   if (session) return session;
   fail(res, 401, '管理员登录已过期或尚未登录', null, 'AUTH_REQUIRED');
   return null;
@@ -1329,7 +1325,7 @@ function preparePublishRequest(data, { complianceMaxAgeMs = config.aiReviewMaxAg
   let materialSha;
   try { materialSha = sha256LocalFile(materialPath); }
   catch { throw publishRequestError(400, '本地素材不存在或不可读取，请重新检测素材'); }
-  contentLibrary.assertPublishMaterial(materialPath, materialSha);
+  const libraryMaterial = contentLibrary.assertPublishMaterial(materialPath, materialSha, { contentLibraryItemId: data.contentLibraryItemId });
   const precheckSha = String(data.precheck?.meta?.sha256 || '').toLowerCase();
   if (!precheckSha || precheckSha !== materialSha) throw publishRequestError(409, '素材文件已发生变化，请重新检测素材并执行 AI 审核');
   let compliance = data.aiReview;
@@ -1365,7 +1361,7 @@ function preparePublishRequest(data, { complianceMaxAgeMs = config.aiReviewMaxAg
   const effectiveMaterialMeta = data.materialMeta || data.precheck.meta || {};
   return {
     data: { ...normalizedData, aiReview: compliance }, title, bodyText, materialPath, targets, contentOrigin, retryOfTaskId,
-    compliance, verified, materialSha, idempotencyKey, publishMode, effectiveMaterialMeta
+    compliance, verified, materialSha, idempotencyKey, publishMode, effectiveMaterialMeta, libraryMaterial
   };
 }
 
@@ -1380,6 +1376,7 @@ function createPreparedPublishTask(prepared, { idempotencyKey = prepared.idempot
       run('UPDATE publish_targets SET draft_fingerprint=? WHERE id=?', JSON.stringify(draftFingerprint), targetId);
       createJob(account.device_id, 'PUBLISH', { taskId, targetId, retryOfTaskId: prepared.retryOfTaskId, platformCode: target.platformCode, accountId: account.id, accountName: account.display_name, profileName: account.profile_name, title: prepared.title, body: prepared.bodyText, materialPath: prepared.materialPath, materialMeta: prepared.effectiveMaterialMeta, materialSha256: prepared.materialSha, draftFingerprint, taskCreatedAt: stamp, precheck: prepared.data.precheck, compliance: prepared.compliance, publishMode: prepared.publishMode, managementConfirmed: prepared.data.managementConfirmed === true, contentOrigin: prepared.contentOrigin }, { idempotencyKey: `publish:target:${targetId}` });
     }
+    hotTopicKnowledge.enqueue({ taskId, material: prepared.libraryMaterial });
     if (typeof onCreated === 'function') onCreated({ taskId, stamp });
     db.exec('COMMIT');
     return { taskId, task: getTask(taskId), compliance: prepared.compliance };
@@ -1887,6 +1884,24 @@ function operationsRecommendations({ pendingManual, knowledgeGaps, failedPublish
   return list.slice(0, 4);
 }
 
+function operationsAnalyticsSummary(options) {
+  const summary = platformAnalytics.summary(options);
+  summary.coverage.missing = summary.coverage.missing.map(item => {
+    if (item.reason !== 'NEVER_COLLECTED') return item;
+    const latest = row("SELECT status,result,created_at FROM agent_jobs WHERE job_type='COLLECT_ANALYTICS' AND CAST(json_extract(payload,'$.accountId') AS INTEGER)=? ORDER BY id DESC LIMIT 1", item.accountId);
+    if (!latest) return item;
+    const result = json(latest.result, {}), observed = result.analytics?.accountIdentity;
+    const bound = row('SELECT platform_user_id,platform_user_name FROM accounts WHERE id=?', item.accountId);
+    const mismatch = observed && ((bound?.platform_user_id && observed.id && String(bound.platform_user_id) !== observed.id)
+      || (!bound?.platform_user_id && bound?.platform_user_name && typeof observed.name === 'string' && observed.name && bound.platform_user_name.normalize('NFKC').trim() !== observed.name.normalize('NFKC').trim()));
+    const reason = mismatch ? 'ACCOUNT_IDENTITY_CHANGED' : latest.status === 'QUEUED' ? 'COLLECTION_QUEUED'
+      : latest.status === 'RUNNING' ? 'COLLECTION_RUNNING' : latest.status === 'FAILED'
+        ? Array.isArray(result.analytics?.evidence?.issues) && result.analytics.evidence.issues.includes('ANALYTICS_TIMEOUT') ? 'DATA_PAGE_TIMEOUT' : 'DATA_PAGE_NOT_READY' : item.reason;
+    return { ...item, reason, collectionStatus: latest.status, lastAttemptAt: latest.created_at };
+  });
+  return summary;
+}
+
 function buildOperationsDashboard({ rangeDays = 7, platformCode = null } = {}) {
   const safeRangeDays = Math.min(90, Math.max(1, Number(rangeDays) || 7));
   const selectedPlatform = platformCode && platformCode !== 'all' ? String(platformCode) : null;
@@ -1921,6 +1936,7 @@ function buildOperationsDashboard({ rangeDays = 7, platformCode = null } = {}) {
     updatedAt: now(),
     rangeDays: safeRangeDays,
     platformCode: selectedPlatform || 'all',
+    analytics: operationsAnalyticsSummary({ platformCode: selectedPlatform, rangeDays: safeRangeDays }),
     pendingNote: OPERATIONS_PENDING_NOTE,
     // 6 个核心 KPI 与设计稿严格一致：曝光量 / 新增关注 / 有效引流 / 活动报名 / 实际到场 / 入群。
     // 这 6 项在接入平台数据源与活动报名系统前一律为 PENDING_SOURCE，前端显示「待接入」，不使用估算值。
@@ -2056,6 +2072,13 @@ function messageConversationKey(message) {
 
 function activeHandoffIntent(message) {
   return row(`SELECT * FROM manual_handoff_intents WHERE conversation_key=? AND status IN ('WAITING_USER_CONFIRMATION','REQUESTED','NOTIFY_QUEUED','NOTIFIED') AND expires_at>? ORDER BY id DESC LIMIT 1`, messageConversationKey(message), now());
+}
+
+function pendingCommentHandoffOffer(message) {
+  const intents = rows(`SELECT * FROM manual_handoff_intents WHERE platform_code=? AND account_id=? AND message_type='COMMENT'
+    AND status='WAITING_USER_CONFIRMATION' AND expires_at>?`, message.platform_code, message.account_id, now());
+  const candidates = intents.map(intent => ({ intent, sourceMessage: row('SELECT * FROM messages WHERE id=? AND deleted_at IS NULL', intent.source_message_id) }));
+  return findCommentHandoffOffer(message, candidates);
 }
 
 function rememberHandoffIntent(message, unresolvedQuestions) {
@@ -2224,6 +2247,13 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
     return markMessageIgnoredOfficial(messageId, storedSourceAssessment, json(message.context_json, {}), stamp);
   }
   const isPrivateMessage = String(message.message_type || '').toUpperCase() === 'PRIVATE_MESSAGE';
+  if (message.message_type === 'COMMENT' && message.manual_handoff_intent_id) {
+    const requestedIntent = row(`SELECT request_message_id,status FROM manual_handoff_intents WHERE id=?`, message.manual_handoff_intent_id);
+    // The Outbox retries delivery; reprocessing the same confirmation must not create another notification.
+    if (Number(requestedIntent?.request_message_id) === Number(message.id) && ['NOTIFY_QUEUED', 'NOTIFIED'].includes(requestedIntent?.status)) {
+      return markHumanFollowupMessage(message.id, { notificationId: message.wecom_notification_id, confirmed: requestedIntent.status === 'NOTIFIED', reason: `人工请求#${message.manual_handoff_intent_id}已提交，通知由Outbox继续处理` });
+    }
+  }
   const handlingConversation = conversationForMessage(message);
   if (isPrivateMessage && conversationAutomationDisabled(handlingConversation)) {
     const handlingReason = handlingConversation?.handoff_reason || '该用户已进入人工处理流程';
@@ -2247,7 +2277,8 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
     run(`UPDATE messages SET status='NEW',decision='SMART_REPLY_PAUSED',reason='该平台智能回复已关闭，消息保留等待且未创建发送任务',reply_job_id=NULL,updated_at=? WHERE id=?`, stamp, messageId);
     return row('SELECT * FROM messages WHERE id=?', messageId);
   }
-  const existingIntent = isPrivateMessage ? activeHandoffIntent(message) : null;
+  const commentOffer = message.message_type === 'COMMENT' ? pendingCommentHandoffOffer(message) : null;
+  const existingIntent = isPrivateMessage ? activeHandoffIntent(message) : commentOffer?.intent;
   // 兼容旧数据：人工意图已通知但会话状态尚未迁移时，也必须直接交给人工，禁止再发等待话术。
   if (existingIntent?.status === 'NOTIFIED') {
     const handlingReason = `人工请求#${existingIntent.id}已通知，后续消息继续交由人工处理`;
@@ -2266,9 +2297,12 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
     markHumanFollowupMessage(message.id, { notificationId: notification.notificationId, confirmed: notification.delivered, reason: handlingReason });
     return row('SELECT * FROM messages WHERE id=?', messageId);
   }
-  // 私信保留用户确认指令；评论未命中知识时由下方知识判断直接转人工。
-  const routeDecision = routeIncomingMessage({ message, conversation: handlingConversation, sourceAssessment: storedSourceAssessment, customHandoffPhrases: isPrivateMessage ? enabledManualHandoffPhrases() : [] });
-  const handoffCommand = routeDecision.handoffCommand;
+  // 评论的普通肯定只能确认同一用户实际收到的邀约；明确“转人工”仍可直接提出请求。
+  const routeDecision = routeIncomingMessage({ message, conversation: handlingConversation, sourceAssessment: storedSourceAssessment, customHandoffPhrases: [] });
+  const commentConfirmation = commentOffer && ![MESSAGE_ROUTE.HUMAN_HANDOFF, MESSAGE_ROUTE.IGNORE].includes(routeDecision.route)
+    ? commentHandoffConfirmation(message.content) : null;
+  const handoffCommand = routeDecision.handoffCommand || (commentConfirmation === 'ACCEPT'
+    ? { matched: true, reason: '用户确认需要人工协助' } : null);
   if (handoffCommand?.matched) {
     if (message.platform_code === MINI_PROGRAM_PLATFORM_CODE) {
       await notifyManual(message, 'KNOWLEDGE_GAP_CONFIRMED', '', handoffCommand.reason || '用户明确要求转人工');
@@ -2284,7 +2318,7 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
     const unresolved = json(intent.unresolved_questions_json, []);
     const notificationMessage = { ...sourceMessage, content: unresolved.length ? unresolved.join('\n') : sourceMessage.content };
     markMessageWecomStatus(message.id, 'PENDING');
-    const notification = await notifyManual(notificationMessage, 'KNOWLEDGE_GAP_CONFIRMED', '用户明确要求转人工', `用户输入“${message.content}”，请人工处理此前无法确认的问题`, { handoff: true, conversationId: message.conversation_id, messageId: message.id, idempotencyKey: `wecom:handoff:message:${message.id}` });
+    const notification = await notifyManual(notificationMessage, 'KNOWLEDGE_GAP_CONFIRMED', '用户明确要求转人工', `用户输入“${message.content}”，请人工处理此前无法确认的问题`, { handoff: true, conversationId: message.conversation_id, messageId: message.id, idempotencyKey: isPrivateMessage ? `wecom:handoff:message:${message.id}` : `wecom:comment-handoff:intent:${intent.id}` });
     const wecomStatus = notification.delivered ? 'SENT' : (notification.simulated ? 'SIMULATED' : 'PENDING');
     markMessageWecomStatus(message.id, wecomStatus, notification.notificationId);
     if (sourceMessage.id && sourceMessage.id !== message.id) markMessageWecomStatus(sourceMessage.id, wecomStatus, notification.notificationId);
@@ -2326,6 +2360,15 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
   if (!weiboPrecision.ok) {
     run(`UPDATE messages SET status='MANUAL_REQUIRED',decision='WEIBO_MESSAGE_PRECISION',reason=?,rule_version='weibo-message-precision-2026.08.06.1',reply_job_id=NULL,updated_at=? WHERE id=?`, weiboPrecision.message, stamp, messageId);
     await notifyManual(message, 'MESSAGE_PRECISION_MANUAL', '微博消息需人工确认', weiboPrecision.message);
+    return row('SELECT * FROM messages WHERE id=?', messageId);
+  }
+
+  if (commentConfirmation === 'DECLINE') {
+    run("UPDATE manual_handoff_intents SET status='DECLINED',updated_at=? WHERE id=? AND status='WAITING_USER_CONFIRMATION'", now(), commentOffer.intent.id);
+    const replyText = '好的，有其他问题也可以继续留言。';
+    const replyContext = { handoffOffered: false, handoffRequested: false, handoffDeclined: true };
+    run('UPDATE messages SET reply_context_json=?,updated_at=? WHERE id=?', JSON.stringify(replyContext), now(), message.id);
+    await queueStaticReply(message, replyText, { decision: 'COMMENT_HANDOFF_DECLINED', reason: '用户暂不需要人工协助，继续保留自动回复', handoffIntentId: commentOffer.intent.id, responseMode: 'COMMENT_HANDOFF_DECLINED', replaceCancelledReplyJob, replyBatch, replyContext });
     return row('SELECT * FROM messages WHERE id=?', messageId);
   }
 
@@ -2400,7 +2443,7 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
     } else {
       replyResult = await evaluateReply({
         message, platformCode: message.platform_code, messageType: message.message_type, recentMessages, pendingIntent,
-        searchOptions: { excludedKnowledgeIds: getDisabledXiaozhiKnowledgeIds() }, taskId: messageId,
+        taskId: messageId,
         minimumConfidence: config.autoReplyThreshold, maxGuidanceAttempts: config.businessGuidanceMaxAttempts,
         guidanceAttemptOverride: isPrivateMessage ? nextClarificationAttempt : null
       });
@@ -2439,6 +2482,22 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
     return row('SELECT * FROM messages WHERE id=?', messageId);
   }
 
+  // A knowledge gap may offer help, but only the later user confirmation sends a handoff notification.
+  if (message.message_type === 'COMMENT' && replyResult.decision === 'COMMENT_KNOWLEDGE_GAP') {
+    replyResult = { ...replyResult, ...commentHandoffOfferResult({ ragStatus: replyResult.ragStatus || 'NO_ANSWER', maxGuidanceAttempts: config.businessGuidanceMaxAttempts }) };
+  }
+  if (replyResult.decision === 'COMMENT_HANDOFF_OFFER') {
+    const offer = await composeCommentHandoffOffer({ question: message.content, platformCode: message.platform_code, taskId: message.id });
+    const currentMessage = row('SELECT * FROM messages WHERE id=?', message.id);
+    if (!currentMessage || currentMessage.deleted_at || currentMessage.handled_at || terminalMessageStatuses.has(String(currentMessage.status || '').toUpperCase()) || ['REPLY_QUEUED', 'REPLY_RUNNING'].includes(String(currentMessage.status || '').toUpperCase())) return currentMessage;
+    if (!isMessageConversationCurrent(currentMessage)) {
+      run(`UPDATE messages SET status='SUPERSEDED',decision='SUPERSEDED_BY_NEW_MESSAGE',reason='生成期间同一会话收到更新消息，旧回复已作废',reply_job_id=NULL,updated_at=? WHERE id=?`, now(), message.id);
+      if (replyBatch?.id) requeueReplyBatchGeneration(replyBatch.id, 'MESSAGE_CONVERSATION_VERSION_CHANGED');
+      return row('SELECT * FROM messages WHERE id=?', message.id);
+    }
+    replyResult = { ...replyResult, replyText: offer.replyText, offerModel: offer.model, offerFallback: offer.fallback };
+  }
+
   // Older knowledge and generators may count code points; enforce the actual channel budget
   // before queueStaticReply so an oversized answer follows the normal human handoff flow.
   if (replyResult.replyText) {
@@ -2460,7 +2519,7 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
   run(`UPDATE messages SET subquestions_json=?,message_group_id=?,reply_context_json=?,updated_at=? WHERE id=?`,
     JSON.stringify({ questions: replyResult.resolvedQuestions || [], matches: compactMatches, unknownQuestions: replyResult.unknownQuestions || [], truncated: replyResult.truncated === true }),
     (replyResult.resolvedQuestions || []).length > 1 ? `message-${message.id}` : null,
-    JSON.stringify({ contextUsed: replyResult.contextUsed, topicSwitched: replyResult.topicSwitched, matchMethod: replyResult.matchMethod, guidanceAttempt: replyResult.guidanceAttempt || 0, maxGuidanceAttempts: replyResult.maxGuidanceAttempts || config.businessGuidanceMaxAttempts, handoffOffered: replyResult.handoffOffered === true, handoffRequested: replyResult.handoffRequested === true, clarificationCandidate: replyResult.clarificationCandidate || null, clarificationConfirmed: replyResult.clarificationConfirmed === true, clarificationDenied: replyResult.clarificationDenied === true, pendingIntentRecovered, contextExpired, identityConfidence: message.identity_confidence, recentMessageIds: recentMessages.map(item => item.id) }),
+    JSON.stringify({ contextUsed: replyResult.contextUsed, topicSwitched: replyResult.topicSwitched, matchMethod: replyResult.matchMethod, ragStatus: replyResult.ragStatus, guidanceAttempt: replyResult.guidanceAttempt || 0, maxGuidanceAttempts: replyResult.maxGuidanceAttempts || config.businessGuidanceMaxAttempts, handoffOffered: replyResult.handoffOffered === true, handoffRequested: replyResult.handoffRequested === true, offerModel: replyResult.offerModel, offerFallback: replyResult.offerFallback, clarificationCandidate: replyResult.clarificationCandidate || null, clarificationConfirmed: replyResult.clarificationConfirmed === true, clarificationDenied: replyResult.clarificationDenied === true, pendingIntentRecovered, contextExpired, identityConfidence: message.identity_confidence, recentMessageIds: recentMessages.map(item => item.id) }),
     now(), message.id);
 
   if (replyResult.action === 'HANDOFF' && (message.message_type === 'COMMENT' || replyResult.decision === 'REPLY_TOO_LONG' || replyResult.handoffRequested)) {
@@ -2482,7 +2541,7 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
 
   let handoffIntent = null;
   const formalRagResult = replyResult.matchMethod === 'FORMAL_RAG';
-  const unresolvedQuestions = formalRagResult ? [] : (replyResult.unknownQuestions || []);
+  const unresolvedQuestions = formalRagResult && !replyResult.handoffOffered ? [] : (replyResult.unknownQuestions || []);
   const guidanceProgress = businessGuidanceProgress(replyResult, conversation?.clarification_attempts, { messageType: message.message_type, maxGuidanceAttempts: config.businessGuidanceMaxAttempts });
   if (conversation) {
     if (guidanceProgress.answered) {
@@ -2491,21 +2550,21 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
       const candidate = replyResult.clarificationCandidate || null;
       run(`UPDATE conversations SET clarification_attempts=?,pending_intent_json=?,updated_at=? WHERE id=?`, guidanceProgress.attempts, candidate ? JSON.stringify({ ...candidate, original_user_message: message.content, source_message_id: message.id, attempt: guidanceProgress.attempts, created_at: now() }) : null, now(), conversation.id);
     } else if (replyResult.handoffOffered) {
-      run(`UPDATE conversations SET clarification_attempts=?,pending_intent_json=NULL,handoff_offered_at=COALESCE(handoff_offered_at,?),updated_at=? WHERE id=?`, config.businessGuidanceMaxAttempts, now(), now(), conversation.id);
+      run(`UPDATE conversations SET clarification_attempts=?,pending_intent_json=NULL,handoff_offered_at=COALESCE(handoff_offered_at,?),updated_at=? WHERE id=?`, isPrivateMessage ? config.businessGuidanceMaxAttempts : 0, now(), now(), conversation.id);
     }
   }
   if (unresolvedQuestions.length) {
     const gapReason = `以下问题没有可靠知识答案：${unresolvedQuestions.join('；')}`;
     replyResult.reason = `${replyResult.reason} / ${gapReason}`;
-  } else if ((replyResult.matches || []).length) {
+  } else if ((replyResult.matches || []).length || (message.message_type === 'COMMENT' && replyResult.ragStatus === 'ANSWERED')) {
     // 命中可靠知识后结束此前尚未确认的人工意图，新的模糊咨询将重新计数。
     run(`UPDATE manual_handoff_intents SET status='RESOLVED_BY_KNOWLEDGE',updated_at=? WHERE conversation_key=? AND status='WAITING_USER_CONFIRMATION'`, now(), messageConversationKey(message));
   }
   const handoffQuestions = unresolvedQuestions.length
     ? unresolvedQuestions
     : (replyResult.handoffOffered ? [`连续${replyResult.guidanceAttempt || config.businessGuidanceMaxAttempts}轮仍未明确具体业务：${message.content}`] : []);
-  // 私信在存在未解决问题时保留人工意图；纯闲聊只有达到配置轮次并明确展示转人工入口后才建立。
-  if (isPrivateMessage && handoffQuestions.length && (replyResult.handoffOffered || existingIntent)) handoffIntent = rememberHandoffIntent(message, handoffQuestions);
+  // 评论仅建立等待用户确认的意图，不进入人工状态，也不提前通知。
+  if ((isPrivateMessage || message.message_type === 'COMMENT') && handoffQuestions.length && (replyResult.handoffOffered || existingIntent)) handoffIntent = rememberHandoffIntent(message, handoffQuestions);
 
   await queueStaticReply(message, replyResult.replyText, {
     decision: replyResult.decision,
@@ -3752,6 +3811,12 @@ function stopConversationRecoverySchedule() {
 }
 
 const contentLibrary = createContentLibrary(config);
+const platformAnalytics = createPlatformAnalytics({ db });
+const platformAnalyticsScheduler = createPlatformAnalyticsScheduler({ db, createJob,
+  enabled: config.rpaMode === 'five_platform_assisted' && process.env.OPERATIONS_ANALYTICS_ENABLED !== 'false',
+  canRunBusinessJob: job => isRecoveryJobTypeClaimable(job.job_type) && !jobBlockedByRuntime(json(job.payload, {}), job.job_type),
+  canRunAccount: account => operationsEnabled() && isPlatformRuntimeEnabled(getPlatformRuntimeMap()[account.platform_code])
+    && !jobBlockedByRuntime({ platformCode: account.platform_code, accountId: account.id }, 'COLLECT_ANALYTICS') });
 const contentLibrarySeedReady = createContentLibrarySeedLoader({ library: contentLibrary, root: config.contentLibrarySeedRoot, enabled: config.contentLibrarySeedEnabled }).load().then(result => {
   if (result.items.length) console.log(`[content-library seeds] imported=${result.imported} approved=${result.approved} retained=${result.retained} failed=${result.failed}`);
   for (const warning of result.warnings) console.warn(`[content-library seeds] ${warning}`);
@@ -3832,18 +3897,18 @@ async function api(req, res, url) {
   });
   if (req.method === 'GET' && pathname === '/api/health') return ok(res, { service: 'cloud-web', time: now(), qwenMode: getAiSettingsSummary().mode });
   if (req.method === 'GET' && pathname === '/api/auth/session') {
-    const session = adminSession(req);
+    const session = adminSession(req, res);
     return ok(res, { authenticated: Boolean(session), username: session?.sub || null, authEnabled: config.authEnabled });
   }
   if (req.method === 'POST' && pathname === '/api/auth/login') {
     if (!config.authEnabled) return ok(res, { authenticated: true, username: config.adminUsername, authEnabled: false });
     const data = await body(req);
     if (!credentialsMatch(data.username, data.password, config.adminUsername, config.adminPassword)) return fail(res, 401, '用户名或密码错误', null, 'INVALID_CREDENTIALS');
-    const token = createSessionToken({ username: config.adminUsername, secret: config.sessionSecret, ttlMs: config.sessionTtlMs });
-    return send(res, 200, { ok: true, authenticated: true, username: config.adminUsername }, { 'Set-Cookie': sessionCookie(token, { ttlMs: config.sessionTtlMs, secure: config.sessionCookieSecure }) });
+    const token = createSessionToken({ username: config.adminUsername, secret: config.sessionSecret });
+    return send(res, 200, { ok: true, authenticated: true, username: config.adminUsername }, { 'Set-Cookie': sessionCookie(token, { secure: config.sessionCookieSecure }) });
   }
   if (req.method === 'POST' && pathname === '/api/auth/logout') {
-    revokeSessionFromRequest(req);
+    revokeSessionFromRequest(req, adminSessionOptions());
     return send(res, 200, { ok: true, authenticated: false }, { 'Set-Cookie': clearSessionCookie({ secure: config.sessionCookieSecure }) });
   }
   if (pathname.startsWith('/api/agent/')) {
@@ -3911,6 +3976,13 @@ async function api(req, res, url) {
   if (pathname.startsWith('/api/wechat/')) return proxyWechatAdmin(req, res, url);
   if (pathname.startsWith('/api/mini-program/')) {
     try {
+      if (req.method === 'GET' && pathname === '/api/mini-program/connection') return ok(res, { connection: miniProgramConnectionSummary(), transport: getMiniProgramBridgeStatus() });
+      if (req.method === 'POST' && pathname === '/api/mini-program/connection') return ok(res, { connection: await configureMiniProgramBridge(await body(req)), transport: getMiniProgramBridgeStatus() });
+      if (req.method === 'POST' && pathname === '/api/mini-program/connection/test') {
+        const data = await body(req);
+        if (!data || Array.isArray(data) || Object.keys(data).length) throw new MiniProgramConnectionError('连通性检查不接受额外参数');
+        return ok(res, { result: await testMiniProgramBridge() });
+      }
       if (req.method === 'GET' && pathname === '/api/mini-program/status') return ok(res, { status: getMiniProgramStatus() });
       if (req.method === 'GET' && pathname === '/api/mini-program/conversations') {
         if (url.searchParams.getAll('status').length > 1 || url.searchParams.getAll('limit').length > 1) {
@@ -3935,7 +4007,7 @@ async function api(req, res, url) {
       }
       return fail(res, 404, '接口不存在', null, 'MINI_PROGRAM_ADMIN_NOT_FOUND');
     } catch (error) {
-      if (error instanceof MiniProgramAdminError) return fail(res, error.statusCode, error.message, null, error.code);
+      if (error instanceof MiniProgramAdminError || error instanceof MiniProgramConnectionError) return fail(res, error.statusCode, error.message, null, error.code);
       if (['INVALID_JSON', 'JSON_CONTENT_TYPE_REQUIRED', 'REQUEST_BODY_TOO_LARGE'].includes(error.code)) {
         return fail(res, error.statusCode, '小程序管理请求格式无效', null, error.code);
       }
@@ -3977,6 +4049,12 @@ async function api(req, res, url) {
     const rangeParam = url.searchParams.get('range') === '30d' ? 30 : 7;
     return ok(res, { dashboard: buildOperationsDashboard({ rangeDays: rangeParam, platformCode: url.searchParams.get('platform') }) });
   }
+  if (req.method === 'POST' && pathname === '/api/operations-dashboard/collect') {
+    const data = await body(req);
+    const platformCode = data.platformCode && data.platformCode !== 'all' ? String(data.platformCode) : null;
+    if (platformCode && !['douyin','wechat_channels','bilibili','weibo'].includes(platformCode)) return fail(res, 400, '该平台暂未启用运营数据采集');
+    return ok(res, platformAnalyticsScheduler.enqueue({ platformCode, force: true }));
+  }
   if (req.method === 'GET' && pathname === '/api/material-knowledge-drafts') {
     return ok(res, { drafts: listMaterialKnowledgeDrafts({ includeImported: url.searchParams.get('includeImported') === 'true', limit: url.searchParams.get('limit') || 100 }) });
   }
@@ -3994,11 +4072,11 @@ async function api(req, res, url) {
     const safeTitle = String(draft.title || '视频知识内容').replace(/[\/:*?"<>|]+/g, '-').slice(0, 80) || '视频知识内容';
     try {
       const operatorId = adminSession(req)?.sub || 'admin';
-      const result = requireRagAdminResult(await formalRagClient.uploadDocument({
+      const result = requireRagAdminResult(await formalRagClient.saveFile({
         content: Buffer.from(draft.contentMarkdown, 'utf8'),
         filename: `AI知识草稿-${safeTitle}.md`,
         mimeType: 'text/markdown',
-        metadata: { knowledgeBaseId: config.ragKnowledgeBaseId, uploadedBy: operatorId }
+        knowledgeBaseId: config.ragKnowledgeBaseId, uploadedBy: operatorId
       }), '知识草稿加入 RAG 失败');
       const saved = markMaterialKnowledgeDraftImported(draftId, result);
       return send(res, 202, { ok: true, draft: saved, document: result });
@@ -4064,143 +4142,55 @@ async function api(req, res, url) {
     const result = requireRagAdminResult(await formalRagClient.systemStatus(), '读取 RAG 系统状态失败');
     return ok(res, { rag: { enabled: true, configured: true, knowledgeBaseId: config.ragKnowledgeBaseId, ...result } });
   }
-  if (req.method === 'GET' && pathname === '/api/rag/answer-profile') {
+  if (['GET', 'PUT'].includes(req.method) && pathname === '/api/rag/answer-profile') {
     requireRagAdminEnabled();
-    const result = requireRagAdminResult(await formalRagClient.getAnswerProfile({ knowledgeBaseId: config.ragKnowledgeBaseId }), '读取回答风格失败');
+    const knowledgeBaseId = config.ragKnowledgeBaseId;
+    const result = requireRagAdminResult(req.method === 'GET'
+      ? await formalRagClient.getAnswerProfile({ knowledgeBaseId })
+      : await formalRagClient.saveAnswerProfile({ knowledgeBaseId, profile: await body(req) }), '回答风格操作失败');
     return ok(res, result);
   }
-  if (req.method === 'PUT' && pathname === '/api/rag/answer-profile') {
+  if (req.method === 'POST' && pathname === '/api/rag/test-query') {
     requireRagAdminEnabled();
-    const data = await body(req, 24 * 1024);
-    const result = requireRagAdminResult(await formalRagClient.saveAnswerProfile({ knowledgeBaseId: config.ragKnowledgeBaseId, profile: data }), '保存回答风格失败');
-    return ok(res, result);
+    const input = buildLocalRagTestRequest(await body(req), {
+      knowledgeBaseId: config.ragKnowledgeBaseId, operatorId: adminSession(req)?.sub || 'admin'
+    });
+    const response = requireRagAdminResult(await formalRagClient.queryFormalKnowledge(input), '知识库测试失败');
+    const snapshot = validateFormalRagResponseSnapshot(input, response);
+    if (!snapshot.ok) throw httpError(502, snapshot.code, '测试结果与当前会话不一致，请重新测试');
+    if (!['ANSWERED', 'NO_ANSWER'].includes(response.result)) throw httpError(502, 'INVALID_RAG_TEST_RESPONSE', '测试服务返回了无效结果');
+    return ok(res, { response, mode: 'LOCAL_TEST' });
   }
-  if (req.method === 'GET' && pathname === '/api/rag/documents') {
+  if (req.method === 'GET' && pathname === '/api/rag/files') {
     requireRagAdminEnabled();
-    const result = requireRagAdminResult(await formalRagClient.listDocuments({ knowledgeBaseId: config.ragKnowledgeBaseId }), '读取 RAG 文档失败');
+    const result = requireRagAdminResult(await formalRagClient.listFiles({ knowledgeBaseId: config.ragKnowledgeBaseId }), '读取文件失败');
     return ok(res, { documents: result.documents || [] });
   }
-  if (req.method === 'POST' && pathname === '/api/rag/documents') {
+  const ragFileMatch = pathname.match(/^\/api\/rag\/files\/([^/]+)$/);
+  if ((req.method === 'POST' && pathname === '/api/rag/files') || (req.method === 'PUT' && ragFileMatch)) {
     requireRagAdminEnabled();
     const data = await body(req, Math.ceil(config.ragUploadMaxBytes * 4 / 3) + 512 * 1024);
     const filename = String(data.filename || '').trim();
-    if (!filename) throw httpError(400, 'RAG_FILENAME_REQUIRED', 'filename 不能为空');
-    // Web 上传只接收文件本身，不接收客户端自定义标题、部门、来源、平台或分类元数据。
-    // 服务端仅补充统一知识库 ID 和当前操作人，避免其他调用方重新形成知识范围或运营必填字段。
-    const content = decodeRagUploadContent(data.contentBase64);
-    const operatorId = adminSession(req)?.sub || 'admin';
-    const result = requireRagAdminResult(await formalRagClient.uploadDocument({
-      content,
-      filename,
+    if (!filename) throw httpError(400, 'RAG_FILENAME_REQUIRED', '请选择文件');
+    const result = requireRagAdminResult(await formalRagClient.saveFile({
+      documentId: ragFileMatch ? decodeURIComponent(ragFileMatch[1]) : null,
+      content: decodeRagUploadContent(data.contentBase64), filename,
       mimeType: String(data.mimeType || 'application/octet-stream'),
-      // 运营上传统一进入业务 RAG；忽略客户端传入的其他知识库 ID，避免再次形成平台库。
-      metadata: { knowledgeBaseId: config.ragKnowledgeBaseId, uploadedBy: operatorId }
-    }), '上传 RAG 文档失败');
+      knowledgeBaseId: config.ragKnowledgeBaseId, uploadedBy: adminSession(req)?.sub || 'admin'
+    }), '保存文件失败');
     return send(res, 202, { ok: true, document: result });
   }
-  const ragDocumentChunksMatch = pathname.match(/^\/api\/rag\/documents\/([^/]+)\/chunks$/);
-  if (req.method === 'GET' && ragDocumentChunksMatch) {
+  const ragFileContentMatch = pathname.match(/^\/api\/rag\/files\/([^/]+)\/chunks$/);
+  if (req.method === 'GET' && ragFileContentMatch) {
     requireRagAdminEnabled();
-    const result = requireRagAdminResult(await formalRagClient.getDocumentChunks({ documentId: decodeURIComponent(ragDocumentChunksMatch[1]), version: url.searchParams.get('version') || null }), '读取 RAG 文档内容失败');
-    return ok(res, { documentId: result.documentId || decodeURIComponent(ragDocumentChunksMatch[1]), documentVersion: result.documentVersion || Number(url.searchParams.get('version')) || null, chunks: result.chunks || [] });
+    const result = requireRagAdminResult(await formalRagClient.fileContent({ documentId: decodeURIComponent(ragFileContentMatch[1]), knowledgeBaseId: config.ragKnowledgeBaseId }), '读取文件内容失败');
+    return ok(res, { chunks: result.chunks || [] });
   }
-  const ragDocumentMatch = pathname.match(/^\/api\/rag\/documents\/([^/]+)$/);
-  if (req.method === 'GET' && ragDocumentMatch) {
+  if (req.method === 'DELETE' && ragFileMatch) {
     requireRagAdminEnabled();
-    const result = requireRagAdminResult(await formalRagClient.getDocument({ documentId: decodeURIComponent(ragDocumentMatch[1]), version: url.searchParams.get('version') || null }), '读取 RAG 文档状态失败');
+    const result = requireRagAdminResult(await formalRagClient.removeFile({ documentId: decodeURIComponent(ragFileMatch[1]), knowledgeBaseId: config.ragKnowledgeBaseId }), '删除文件失败');
     return ok(res, { document: result });
   }
-  if (req.method === 'DELETE' && ragDocumentMatch) {
-    requireRagAdminEnabled();
-    const result = requireRagAdminResult(await formalRagClient.deleteDocument({ documentId: decodeURIComponent(ragDocumentMatch[1]) }), '删除 RAG 文档失败');
-    return ok(res, { document: result });
-  }
-  if (req.method === 'POST' && pathname === '/api/rag/releases') {
-    requireRagAdminEnabled();
-    const data = await body(req);
-    if (!String(data.testSessionId || '').trim()) throw httpError(400, 'RAG_TEST_SESSION_REQUIRED', '发布前必须提供 testSessionId');
-    const result = requireRagAdminResult(await formalRagClient.createRelease({
-      knowledgeBaseId: config.ragKnowledgeBaseId,
-      testSessionId: data.testSessionId,
-      baseReleaseId: data.baseReleaseId || null,
-      candidateDocuments: Array.isArray(data.candidateDocuments) ? data.candidateDocuments : [],
-      publishedBy: adminSession(req)?.sub || 'admin',
-      publishNote: String(data.publishNote || '')
-    }), '创建 RAG 发布版本失败');
-    return send(res, 202, { ok: true, release: result });
-  }
-  if (req.method === 'GET' && pathname === '/api/rag/releases') {
-    requireRagAdminEnabled();
-    const result = requireRagAdminResult(await formalRagClient.listReleases({ knowledgeBaseId: config.ragKnowledgeBaseId }), '读取 RAG 发布版本失败');
-    return ok(res, { active: result.active || null, releases: result.releases || [] });
-  }
-  const ragRollbackMatch = pathname.match(/^\/api\/rag\/releases\/([^/]+)\/rollback$/);
-  if (req.method === 'POST' && ragRollbackMatch) {
-    requireRagAdminEnabled();
-    const data = await body(req);
-    const releaseId = decodeURIComponent(ragRollbackMatch[1]);
-    const result = requireRagAdminResult(await formalRagClient.rollbackRelease({ releaseId, operatorId: adminSession(req)?.sub || 'admin', note: String(data.note || '') }), '回滚 RAG 发布版本失败');
-    return ok(res, { release: result });
-  }
-  const ragReleaseMembersMatch = pathname.match(/^\/api\/rag\/releases\/([^/]+)\/members$/);
-  if (req.method === 'GET' && ragReleaseMembersMatch) {
-    requireRagAdminEnabled();
-    const result = requireRagAdminResult(await formalRagClient.getReleaseMembers({ releaseId: decodeURIComponent(ragReleaseMembersMatch[1]) }), '读取 RAG 已应用文件失败');
-    return ok(res, { releaseId: result.releaseId || decodeURIComponent(ragReleaseMembersMatch[1]), members: result.members || [] });
-  }
-  const ragReleaseDocumentsMatch = pathname.match(/^\/api\/rag\/releases\/([^/]+)\/documents$/);
-  if (req.method === 'GET' && ragReleaseDocumentsMatch) {
-    requireRagAdminEnabled();
-    const releaseId = decodeURIComponent(ragReleaseDocumentsMatch[1]);
-    const result = requireRagAdminResult(await formalRagClient.getReleaseMembers({ releaseId }), '读取 RAG 发布版本文档失败');
-    const documentReferences = [];
-    const seenDocuments = new Set();
-    for (const member of result.members || []) {
-      const documentId = String(member.documentId || member.document_id || '').trim();
-      const documentVersion = Number(member.documentVersion || member.document_version) || null;
-      if (!documentId || !documentVersion) continue;
-      const key = `${documentId}:${documentVersion}`;
-      if (seenDocuments.has(key)) continue;
-      seenDocuments.add(key);
-      documentReferences.push({ documentId, documentVersion });
-    }
-    const documents = await Promise.all(documentReferences.map(async reference => {
-      const document = requireRagAdminResult(await formalRagClient.getDocument({ documentId: reference.documentId, version: reference.documentVersion }), '读取 RAG 发布版本文档信息失败');
-      return {
-        documentId: reference.documentId,
-        documentVersion: reference.documentVersion,
-        filename: String(document.filename || document.title || '知识文档'),
-        uploadedAt: document.createdAt || document.created_at || document.versionCreatedAt || document.version_created_at || document.updatedAt || document.updated_at || null
-      };
-    }));
-    return ok(res, { releaseId: result.releaseId || result.release_id || releaseId, documents });
-  }
-  const ragReleaseMatch = pathname.match(/^\/api\/rag\/releases\/([^/]+)$/);
-  if (req.method === 'GET' && ragReleaseMatch) {
-    requireRagAdminEnabled();
-    const result = requireRagAdminResult(await formalRagClient.getRelease({ releaseId: decodeURIComponent(ragReleaseMatch[1]) }), '读取 RAG 发布版本失败');
-    return ok(res, { release: result });
-  }  if (req.method === 'GET' && pathname === '/api/xiaozhi/options') return ok(res, { options: await getXiaozhiOptions() });
-  if (req.method === 'POST' && pathname === '/api/xiaozhi/sessions') {
-    const data = await body(req);
-    return ok(res, { session: createXiaozhiSession({ ...data, operatorId: adminSession(req)?.sub || 'admin' }) });
-  }
-  if (req.method === 'POST' && pathname === '/api/xiaozhi/chat') {
-    const data = await body(req);
-    return ok(res, await runXiaozhiChat({ ...data, operatorId: adminSession(req)?.sub || 'admin' }));
-  }
-  const xiaozhiAnswersMatch = pathname.match(/^\/api\/xiaozhi\/sessions\/([0-9a-f-]+)\/answers$/i);
-  if (req.method === 'GET' && xiaozhiAnswersMatch) return ok(res, { answers: await getXiaozhiTestAnswers(xiaozhiAnswersMatch[1], adminSession(req)?.sub || 'admin') });
-  const xiaozhiDecisionMatch = pathname.match(/^\/api\/xiaozhi\/sessions\/([0-9a-f-]+)\/answers\/([^/]+)\/decision$/i);
-  if (req.method === 'PUT' && xiaozhiDecisionMatch) {
-    const data = await body(req);
-    const answer = await updateXiaozhiTestAnswerDecision({ sessionId: xiaozhiDecisionMatch[1], answerId: xiaozhiDecisionMatch[2], ...data, operatorId: adminSession(req)?.sub || 'admin' });
-    return ok(res, { answer });
-  }
-  const xiaozhiHistoryMatch = pathname.match(/^\/api\/xiaozhi\/sessions\/([0-9a-f-]+)\/answers\/([^/]+)\/history$/i);
-  if (req.method === 'GET' && xiaozhiHistoryMatch) return ok(res, { history: await getXiaozhiTestAnswerHistory(xiaozhiHistoryMatch[2], xiaozhiHistoryMatch[1], adminSession(req)?.sub || 'admin') });
-  const xiaozhiSessionMatch = pathname.match(/^\/api\/xiaozhi\/sessions\/([0-9a-f-]+)$/i);
-  if (req.method === 'DELETE' && xiaozhiSessionMatch) return ok(res, { deleted: deleteXiaozhiSession(xiaozhiSessionMatch[1], adminSession(req)?.sub || 'admin') });
   if (req.method === 'GET' && pathname === '/api/browser-control/summary') return ok(res, { browserControl: browserControlSummary() });
   if (req.method === 'GET' && pathname === '/api/browser-control/commands') {
     return ok(res, { commands: listBrowserCommands({ limit: url.searchParams.get('limit'), platformCode: url.searchParams.get('platformCode'), status: url.searchParams.get('status') }) });
@@ -4402,9 +4392,14 @@ async function api(req, res, url) {
     try { return ok(res, { settings: saveAiSettings(data, data.updatedBy || '运营席位') }); }
     catch (error) { if (error.code === 'INVALID_AI_SETTINGS') return fail(res, 400, error.message); throw error; }
   }
+  if (req.method === 'POST' && pathname === '/api/settings/ai/models') {
+    const data = await body(req);
+    try { return ok(res, await discoverAiModels(data, getAiSettings())); }
+    catch (error) { return fail(res, error.code === 'INVALID_AI_SETTINGS' ? 400 : 502, error.message); }
+  }
   if (req.method === 'POST' && pathname === '/api/settings/ai/test') {
     try { return ok(res, { result: await testAiConnection() }); }
-    catch (error) { return fail(res, 502, 'AI 连接测试失败', error.message); }
+    catch (error) { return fail(res, 502, 'AI 连接测试失败', redactAiSecrets(error.message)); }
   }
   if (req.method === 'POST' && pathname === '/api/settings/ai/clear-key') return ok(res, { settings: clearAiApiKey() });
   if (req.method === 'GET' && pathname === '/api/settings/message-collection') return ok(res, { settings: { ...getMessageCollectionSettings(), enabled: config.autoCollectEnabled, nextCollectionAt: nextAutomaticMessageCollectionAt } });
@@ -4465,7 +4460,10 @@ async function api(req, res, url) {
     if (!previous) return fail(res, 404, '\u5e73\u53f0\u8d26\u53f7\u4e0d\u5b58\u5728');
     if (previous.platform_code === MINI_PROGRAM_PLATFORM_CODE) return fail(res, 409, '小程序账号不使用浏览器登录状态', null, 'MINI_PROGRAM_DEDICATED_API_REQUIRED');
     const loginStatus = data.state === 'READY' ? 'READY' : data.state === 'LOGIN' || data.state === 'EXPIRED' ? 'EXPIRED' : data.state === 'VERIFY_REQUIRED' ? 'VERIFY_REQUIRED' : 'UNKNOWN';
-    const confirmedExpired = previous.login_status === 'READY' && isConfirmedLoginExpired(data, config.loginStatusLogoutConfirmations);
+    const confirmedExpired = isConfirmedLoginExpired(data, config.loginStatusLogoutConfirmations)
+      && !row(`SELECT id FROM issues WHERE source='LOGIN_MONITOR' AND category='ACCOUNT_LOGIN'
+        AND related_type='ACCOUNT' AND related_id=?
+        AND status IN ('OPEN','DIAGNOSING','DIAGNOSED','RETRYING') LIMIT 1`, String(id));
     run(`UPDATE accounts SET login_status=?,login_checked_at=?,login_message=?,login_url=?,login_source='LOCAL_AGENT',login_evidence=? WHERE id=?`, loginStatus, data.checkedAt, String(data.message || ''), String(data.url || ''), JSON.stringify(data.evidence || []), id);
     let alert = null;
     if (loginStatus === 'READY') {
@@ -4862,280 +4860,6 @@ async function api(req, res, url) {
     const jobIds = plans.map(plan => createJob(account.device_id, 'COLLECT_MESSAGES', { platformCode: 'xiaohongshu', accountId: account.id, profileName: account.profile_name, channelType: plan.channelType, queueLane: plan.queueLane, types: plan.types, noteCandidates: messageNoteCandidates('xiaohongshu', account.id) }, { idempotencyKey: `collect:xhs:${account.id}:${bucket}${plan.idempotencySuffix}` }));
     return ok(res, { jobId: jobIds[0], jobIds });
   }
-  if (req.method === 'GET' && pathname === '/api/knowledge/import/template') {
-    const csv = knowledgeImportTemplateCsv();
-    return send(res, 200, Buffer.from(csv, 'utf8'), {
-      'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="knowledge-import-template.csv"; filename*=UTF-8''${encodeURIComponent('知识库导入模板.csv')}`
-    });
-  }
-  if (req.method === 'GET' && pathname === '/api/knowledge/imports') return ok(res, { imports: listKnowledgeImports() });
-  if (req.method === 'POST' && pathname === '/api/knowledge/import/preview') {
-    const data = await body(req, 12_000_000);
-    const preview = await previewKnowledgeImport(data);
-    const enrichment = queueKnowledgeImportMetadataEnrichment(preview.batchId);
-    return ok(res, { ...preview, enrichment });
-  }
-  if (req.method === 'GET' && /^\/api\/knowledge\/import\/\d+$/.test(pathname)) {
-    const batchId = parseId(pathname, /^\/api\/knowledge\/import\/(\d+)$/);
-    const preview = getKnowledgeImportPreview(batchId);
-    if (!preview) return fail(res, 404, '导入批次不存在');
-    return ok(res, preview);
-  }
-  if (req.method === 'POST' && /^\/api\/knowledge\/import\/\d+\/enrich$/.test(pathname)) {
-    const batchId = parseId(pathname, /^\/api\/knowledge\/import\/(\d+)\/enrich$/);
-    const data = await body(req);
-    try { return ok(res, { enrichment: queueKnowledgeImportMetadataEnrichment(batchId, { force: data.force === true }) }); }
-    catch (error) { return fail(res, 409, error.message); }
-  }
-  if (req.method === 'POST' && pathname === '/api/knowledge/metadata-suggestions') {
-    const data = await body(req);
-    const platformCategory = knowledgeCategoryForPlatform(data.platformCode);
-    const allowedCategories = Array.isArray(data.allowedCategories) && data.allowedCategories.length
-      ? data.allowedCategories
-      : platformCategory ? [PUBLIC_KNOWLEDGE_CATEGORY, platformCategory] : SYSTEM_KNOWLEDGE_CATEGORIES;
-    try {
-      return ok(res, { suggestion: await suggestKnowledgeMetadata({
-        question: data.question,
-        answer: data.answer,
-        originalMessage: data.originalMessage || '',
-        platformCode: data.platformCode || '',
-        allowedCategories,
-        preferredCategory: data.currentCategory || platformCategory || PUBLIC_KNOWLEDGE_CATEGORY,
-        taskId: data.taskId || null
-      }) });
-    } catch (error) { return fail(res, 400, error.message); }
-  }
-  if (req.method === 'POST' && pathname === '/api/knowledge/import/commit') {
-    const data = await body(req);
-    const result = commitKnowledgeImport(data);
-    for (const knowledgeId of result.knowledgeIds || []) queueKnowledgeAliasGeneration(knowledgeId, { requestedBy: data.importedBy || '知识导入' });
-    return ok(res, result);
-  }
-  if (req.method === 'GET' && pathname === '/api/manual-handoff-phrases') {
-    return ok(res, {
-      phrases: rows(`SELECT p.*,
-        (SELECT COUNT(*) FROM manual_handoff_phrase_aliases a WHERE a.phrase_id=p.id AND a.phrase_version=p.version) AS alias_count,
-        (SELECT COUNT(*) FROM manual_handoff_phrase_aliases a WHERE a.phrase_id=p.id AND a.phrase_version=p.version AND a.status='ENABLED' AND a.validation_status='VALID') AS enabled_alias_count,
-        (SELECT t.status FROM manual_handoff_alias_generation_tasks t WHERE t.phrase_id=p.id ORDER BY t.id DESC LIMIT 1) AS alias_task_status,
-        (SELECT t.error_message FROM manual_handoff_alias_generation_tasks t WHERE t.phrase_id=p.id ORDER BY t.id DESC LIMIT 1) AS alias_task_error
-        FROM manual_handoff_phrases p ORDER BY CASE p.status WHEN 'ENABLED' THEN 0 ELSE 1 END,p.id DESC`),
-      builtinExamples: BUILTIN_MANUAL_HANDOFF_EXAMPLES,
-      matchRule: '完整句匹配，忽略空格和常见标点；仅私信生效；AI 相似说法需人工勾选启用'
-    });
-  }
-  if (req.method === 'POST' && pathname === '/api/manual-handoff-phrases') {
-    const data = await body(req);
-    let input;
-    try { input = manualHandoffPhraseInput(data.phrase); }
-    catch (error) { return fail(res, 400, error.message); }
-    if (detectManualHandoffCommand(input.phrase).matched) return fail(res, 409, '该说法已由系统内置规则支持，无需重复添加');
-    if (row('SELECT id FROM manual_handoff_phrases WHERE normalized_phrase=?', input.normalizedPhrase)) return fail(res, 409, '该转人工说法已经存在');
-    const stamp = now();
-    const operator = String(data.createdBy || '运营人员').trim() || '运营人员';
-    const id = Number(run('INSERT INTO manual_handoff_phrases(phrase,normalized_phrase,status,version,created_by,updated_by,created_at,updated_at) VALUES(?,?,\'ENABLED\',1,?,?,?,?)', input.phrase, input.normalizedPhrase, operator, operator, stamp, stamp).lastInsertRowid);
-    const generationTask = queueManualHandoffAliasGeneration(id, { requestedBy: operator });
-    return send(res, 201, { ok: true, phrase: row('SELECT * FROM manual_handoff_phrases WHERE id=?', id), generationTask });
-  }
-  if (req.method === 'PUT' && /^\/api\/manual-handoff-phrases\/\d+$/.test(pathname)) {
-    const id = parseId(pathname, /^\/api\/manual-handoff-phrases\/(\d+)$/);
-    if (!row('SELECT id FROM manual_handoff_phrases WHERE id=?', id)) return fail(res, 404, '转人工说法不存在');
-    const data = await body(req);
-    let input;
-    try { input = manualHandoffPhraseInput(data.phrase); }
-    catch (error) { return fail(res, 400, error.message); }
-    if (detectManualHandoffCommand(input.phrase).matched) return fail(res, 409, '该说法已由系统内置规则支持，无需重复保存');
-    const duplicate = row('SELECT id FROM manual_handoff_phrases WHERE normalized_phrase=? AND id<>?', input.normalizedPhrase, id);
-    if (duplicate) return fail(res, 409, '该转人工说法已经存在');
-    const operator = String(data.updatedBy || '运营人员').trim() || '运营人员';
-    run('UPDATE manual_handoff_phrases SET phrase=?,normalized_phrase=?,version=version+1,updated_by=?,updated_at=? WHERE id=?', input.phrase, input.normalizedPhrase, operator, now(), id);
-    const generationTask = queueManualHandoffAliasGeneration(id, { requestedBy: operator, force: true });
-    return ok(res, { phrase: row('SELECT * FROM manual_handoff_phrases WHERE id=?', id), generationTask });
-  }
-  if (req.method === 'POST' && /^\/api\/manual-handoff-phrases\/\d+\/(enable|disable)$/.test(pathname)) {
-    const match = pathname.match(/^\/api\/manual-handoff-phrases\/(\d+)\/(enable|disable)$/);
-    const id = Number(match[1]);
-    if (!row('SELECT id FROM manual_handoff_phrases WHERE id=?', id)) return fail(res, 404, '转人工说法不存在');
-    const data = await body(req);
-    const status = match[2] === 'enable' ? 'ENABLED' : 'DISABLED';
-    run('UPDATE manual_handoff_phrases SET status=?,updated_by=?,updated_at=? WHERE id=?', status, String(data.updatedBy || '运营人员').trim() || '运营人员', now(), id);
-    return ok(res, { phrase: row('SELECT * FROM manual_handoff_phrases WHERE id=?', id) });
-  }
-  if (req.method === 'DELETE' && /^\/api\/manual-handoff-phrases\/\d+$/.test(pathname)) {
-    const id = parseId(pathname, /^\/api\/manual-handoff-phrases\/(\d+)$/);
-    const item = row('SELECT * FROM manual_handoff_phrases WHERE id=?', id);
-    if (!item) return fail(res, 404, '转人工说法不存在');
-    run('DELETE FROM manual_handoff_phrases WHERE id=?', id);
-    return ok(res, { deleted: { id: item.id, phrase: item.phrase } });
-  }
-  if (req.method === 'GET' && /^\/api\/manual-handoff-phrases\/\d+\/aliases$/.test(pathname)) {
-    const id = parseId(pathname, /^\/api\/manual-handoff-phrases\/(\d+)\/aliases$/);
-    if (!row('SELECT id FROM manual_handoff_phrases WHERE id=?', id)) return fail(res, 404, '转人工说法不存在');
-    return ok(res, { aliases: listManualHandoffAliases(id) });
-  }
-  if (req.method === 'GET' && pathname === '/api/manual-handoff-alias-generation-tasks') {
-    return ok(res, { tasks: listManualHandoffAliasTasks(url.searchParams.get('limit') || 500) });
-  }
-  if (req.method === 'POST' && /^\/api\/manual-handoff-phrases\/\d+\/aliases\/regenerate$/.test(pathname)) {
-    const id = parseId(pathname, /^\/api\/manual-handoff-phrases\/(\d+)\/aliases\/regenerate$/);
-    if (!row('SELECT id FROM manual_handoff_phrases WHERE id=?', id)) return fail(res, 404, '转人工说法不存在');
-    const data = await body(req);
-    const task = queueManualHandoffAliasGeneration(id, { requestedBy: String(data.requestedBy || '运营人员').trim() || '运营人员', force: true });
-    return send(res, 202, { ok: true, task });
-  }
-  if (req.method === 'POST' && /^\/api\/manual-handoff-phrases\/\d+\/aliases\/selections$/.test(pathname)) {
-    const id = parseId(pathname, /^\/api\/manual-handoff-phrases\/(\d+)\/aliases\/selections$/);
-    const data = await body(req);
-    const selection = setManualHandoffAliasSelections(id, data.enabledIds || []);
-    if (!selection) return fail(res, 404, '转人工说法不存在');
-    return ok(res, { selection });
-  }
-  if (req.method === 'POST' && /^\/api\/manual-handoff-aliases\/\d+\/(enable|disable)$/.test(pathname)) {
-    const match = pathname.match(/^\/api\/manual-handoff-aliases\/(\d+)\/(enable|disable)$/);
-    try {
-      const alias = setManualHandoffAliasStatus(Number(match[1]), match[2] === 'enable' ? 'ENABLED' : 'DISABLED');
-      if (!alias) return fail(res, 404, '转人工相似说法不存在');
-      return ok(res, { alias });
-    } catch (error) { return fail(res, 409, error.message); }
-  }
-  if (req.method === 'DELETE' && /^\/api\/manual-handoff-aliases\/\d+$/.test(pathname)) {
-    const id = parseId(pathname, /^\/api\/manual-handoff-aliases\/(\d+)$/);
-    const deleted = deleteManualHandoffAlias(id);
-    if (!deleted) return fail(res, 404, '转人工相似说法不存在');
-    return ok(res, { deleted });
-  }
-  if (req.method === 'GET' && pathname === '/api/knowledge-aliases') {
-    return ok(res, { aliases: listKnowledgeAliases({ search: url.searchParams.get('search') || '', status: url.searchParams.get('status') || '', category: url.searchParams.get('category') || '', knowledgeId: url.searchParams.get('knowledgeId'), limit: url.searchParams.get('limit') || 500 }) });
-  }
-  if (req.method === 'GET' && pathname === '/api/knowledge-alias-generation-tasks') return ok(res, { tasks: listKnowledgeAliasTasks(url.searchParams.get('limit') || 200) });
-  if (req.method === 'POST' && /^\/api\/knowledge\/\d+\/aliases\/regenerate$/.test(pathname)) {
-    const id = parseId(pathname, /^\/api\/knowledge\/(\d+)\/aliases\/regenerate$/);
-    if (!row('SELECT id FROM knowledge WHERE id=?', id)) return fail(res, 404, '知识不存在或已删除');
-    return ok(res, { task: queueKnowledgeAliasGeneration(id, { requestedBy: '管理员手动重新生成', force: true }) });
-  }
-  if (req.method === 'POST' && pathname === '/api/knowledge-aliases/generate-all') {
-    const items = rows("SELECT id FROM knowledge WHERE status IN ('DRAFT','PUBLISHED') ORDER BY id");
-    const tasks = items.map(item => queueKnowledgeAliasGeneration(item.id, { requestedBy: '管理员批量生成' })).filter(Boolean);
-    return ok(res, { queued: tasks.length, tasks });
-  }
-
-  if (req.method === 'POST' && /^\/api\/knowledge\/\d+\/aliases\/selections$/.test(pathname)) {
-    const id = parseId(pathname, /^\/api\/knowledge\/(\d+)\/aliases\/selections$/);
-    const data = await body(req);
-    const result = setKnowledgeAliasSelections(id, data.enabledIds || []);
-    if (!result) return fail(res, 404, '知识不存在或已删除');
-    return ok(res, { selection: result, aliases: listKnowledgeAliases({ knowledgeId: id, limit: 1000 }) });
-  }
-  if (req.method === 'POST' && /^\/api\/knowledge-aliases\/\d+\/(enable|disable)$/.test(pathname)) {
-    const match = pathname.match(/^\/api\/knowledge-aliases\/(\d+)\/(enable|disable)$/);
-    const alias = setKnowledgeAliasStatus(Number(match[1]), match[2] === 'enable' ? 'ENABLED' : 'DISABLED');
-    if (!alias) return fail(res, 404, '相似问法不存在');
-    return ok(res, { alias });
-  }
-  if (req.method === 'DELETE' && /^\/api\/knowledge-aliases\/\d+$/.test(pathname)) {
-    const id = parseId(pathname, /^\/api\/knowledge-aliases\/(\d+)$/);
-    const deleted = deleteKnowledgeAlias(id);
-    if (!deleted) return fail(res, 404, '相似问法不存在');
-    return ok(res, { deleted });
-  }
-  if (req.method === 'DELETE' && pathname === '/api/knowledge/categories') return fail(res, 405, '六个系统知识大类为固定框架，不能删除；可删除其中的小类或单条知识');
-  if (req.method === 'DELETE' && pathname === '/api/knowledge/subcategories') {
-    const requestedCategory = url.searchParams.get('category');
-    const requestedSubcategory = url.searchParams.get('subcategory');
-    const categoryValidation = validateKnowledgeCategoryName(requestedCategory);
-    if (!categoryValidation.ok) return fail(res, 400, categoryValidation.message);
-    const subcategoryValidation = validateKnowledgeSubcategoryName(requestedSubcategory);
-    if (!subcategoryValidation.ok) return fail(res, 400, subcategoryValidation.message);
-    const data = await body(req);
-    if (String(data.confirmText || '').trim() !== '删除') return fail(res, 409, '请输入“删除”确认操作');
-    const whereSql = "COALESCE(NULLIF(TRIM(category),''),?)=? AND COALESCE(NULLIF(TRIM(subcategory),''),?)=?";
-    const params = [PUBLIC_KNOWLEDGE_CATEGORY, categoryValidation.name, DEFAULT_KNOWLEDGE_SUBCATEGORY, subcategoryValidation.name];
-    const count = Number(row(`SELECT COUNT(*) AS c FROM knowledge WHERE ${whereSql}`, ...params).c);
-    if (!count) return fail(res, 404, '小类不存在或已删除');
-    const deleted = deleteKnowledgeScope(whereSql, params);
-    removeKnowledgeSubcategoryCache(categoryValidation.name, subcategoryValidation.name);
-    return ok(res, { deleted, category: categoryValidation.name, subcategory: subcategoryValidation.name });
-  }
-  if (req.method === 'GET' && pathname === '/api/knowledge/categories') {
-    const categories = getKnowledgeCategories();
-    return ok(res, {
-      categories,
-      systemCategories: SYSTEM_KNOWLEDGE_CATEGORIES,
-      defaultSubcategory: DEFAULT_KNOWLEDGE_SUBCATEGORY,
-      replyLimits: PLATFORM_REPLY_LIMITS,
-      total: categories.reduce((sum, item) => sum + item.total, 0)
-    });
-  }
-  if (req.method === 'GET' && pathname === '/api/knowledge') {
-    const requestedCategory = url.searchParams.get('category');
-    const requestedSubcategory = url.searchParams.get('subcategory');
-    if (requestedCategory === null && requestedSubcategory !== null) return fail(res, 400, '选择小类前必须先选择大类');
-    if (requestedCategory === null) return ok(res, { knowledge: rows('SELECT * FROM knowledge ORDER BY id DESC') });
-    const categoryValidation = validateKnowledgeCategoryName(requestedCategory);
-    if (!categoryValidation.ok) return fail(res, 400, categoryValidation.message);
-    if (requestedSubcategory === null) return ok(res, { knowledge: rows("SELECT * FROM knowledge WHERE COALESCE(NULLIF(TRIM(category),''),?)=? ORDER BY id DESC", PUBLIC_KNOWLEDGE_CATEGORY, categoryValidation.name), category: categoryValidation.name });
-    const subcategoryValidation = validateKnowledgeSubcategoryName(requestedSubcategory);
-    if (!subcategoryValidation.ok) return fail(res, 400, subcategoryValidation.message);
-    return ok(res, { knowledge: rows("SELECT * FROM knowledge WHERE COALESCE(NULLIF(TRIM(category),''),?)=? AND COALESCE(NULLIF(TRIM(subcategory),''),?)=? ORDER BY id DESC", PUBLIC_KNOWLEDGE_CATEGORY, categoryValidation.name, DEFAULT_KNOWLEDGE_SUBCATEGORY, subcategoryValidation.name), category: categoryValidation.name, subcategory: subcategoryValidation.name });
-  }
-  if (req.method === 'POST' && pathname === '/api/knowledge') {
-    const data = await body(req);
-    if (!data.question?.trim() || !data.answer?.trim()) return fail(res, 400, '标准问题和标准答案不能为空');
-    let category; let subcategory;
-    try { category = resolveKnowledgeCategory(data); subcategory = resolveKnowledgeSubcategory(data); }
-    catch (error) { return fail(res, 400, error.message); }
-    const question = String(data.question || '').trim().normalize('NFC');
-    const answer = String(data.answer || '').trim().normalize('NFC');
-    if (countUnicodeCharacters(question) > 500) return fail(res, 400, '标准问题不能超过500个Unicode字符');
-    const answerLength = validateKnowledgeAnswerLength({ category, answer });
-    if (!answerLength.ok) return fail(res, 400, answerLength.message, { characterCount: answerLength.count, characterLimit: answerLength.limit });
-    const stamp = now();
-    const id = Number(run(`INSERT INTO knowledge(question,answer,keywords,status,version,source,review_status,category,subcategory,created_at,updated_at) VALUES(?,?,?,'DRAFT',1,?,'PENDING_REVIEW',?,?,?,?)`, question, answer, data.keywords?.trim() || '', data.source || 'MANUAL', category, subcategory, stamp, stamp).lastInsertRowid);
-    touchKnowledgeSubcategory(category, subcategory, stamp);
-    const aliasTask = queueKnowledgeAliasGeneration(id, { requestedBy: data.createdBy || '知识新建' });
-    return send(res, 201, { ok: true, knowledge: row('SELECT * FROM knowledge WHERE id=?', id), aliasTask });
-  }
-  if (req.method === 'PUT' && /^\/api\/knowledge\/\d+$/.test(pathname)) {
-    const id = parseId(pathname, /^\/api\/knowledge\/(\d+)$/);
-    const item = row('SELECT * FROM knowledge WHERE id=?', id);
-    if (!item) return fail(res, 404, '知识不存在或已删除');
-    const data = await body(req);
-    const question = String(data.question || '').trim().normalize('NFC');
-    const answer = String(data.answer || '').trim().normalize('NFC');
-    const keywords = String(data.keywords || '').trim();
-    if (!question || !answer) return fail(res, 400, '标准问题和标准答案不能为空');
-    if (countUnicodeCharacters(question) > 500) return fail(res, 400, '标准问题不能超过500个Unicode字符');
-    let category; let subcategory;
-    try { category = resolveKnowledgeCategory(data); subcategory = resolveKnowledgeSubcategory(data); }
-    catch (error) { return fail(res, 400, error.message); }
-    const answerLength = validateKnowledgeAnswerLength({ category, answer });
-    if (!answerLength.ok) return fail(res, 400, answerLength.message, { characterCount: answerLength.count, characterLimit: answerLength.limit });
-    const stamp = now();
-    const editor = String(data.editedBy || '').trim() || item.reviewed_by || null;
-    const reviewedAt = item.status === 'PUBLISHED' ? stamp : item.reviewed_at;
-    run(`UPDATE knowledge SET question=?,answer=?,keywords=?,category=?,subcategory=?,version=COALESCE(version,1)+1,reviewed_by=?,reviewed_at=?,updated_at=? WHERE id=?`, question, answer, keywords, category, subcategory, editor, reviewedAt, stamp, id);
-    touchKnowledgeSubcategory(category, subcategory, stamp);
-    run(`UPDATE knowledge_gaps SET normalized_question=?,suggested_answer=?,updated_at=? WHERE message_id IN (SELECT id FROM messages WHERE knowledge_id=?)`, question, answer, stamp, id);
-    const aliasTask = queueKnowledgeAliasGeneration(id, { requestedBy: data.editedBy || '知识修改', force: true });
-    return ok(res, { knowledge: row('SELECT * FROM knowledge WHERE id=?', id), aliasTask });
-  }
-  if (req.method === 'DELETE' && /^\/api\/knowledge\/\d+$/.test(pathname)) {
-    const id = parseId(pathname, /^\/api\/knowledge\/(\d+)$/);
-    const item = row('SELECT * FROM knowledge WHERE id=?', id);
-    if (!item) return fail(res, 404, '知识不存在或已删除');
-    const deleted = deleteKnowledgeScope('id=?', [id]);
-    return ok(res, { deleted, knowledge: { id: item.id, question: item.question, category: item.category, subcategory: item.subcategory } });
-  }
-  if (req.method === 'POST' && /^\/api\/knowledge\/\d+\/publish$/.test(pathname)) {
-    const id = parseId(pathname, /^\/api\/knowledge\/(\d+)\/publish$/); const data = await body(req); const item = row('SELECT * FROM knowledge WHERE id=?', id); if (!item) return fail(res, 404, '知识不存在');
-    const answerLength = validateKnowledgeAnswerLength({ category: item.category, answer: item.answer });
-    if (!answerLength.ok) return fail(res, 409, answerLength.message, { characterCount: answerLength.count, characterLimit: answerLength.limit });
-    const stamp = now();
-    run("UPDATE knowledge SET status='PUBLISHED',review_status='APPROVED',reviewed_by=?,reviewed_at=?,published_at=?,updated_at=? WHERE id=?", data.reviewedBy || '技术部审核', stamp, stamp, stamp, id);
-    const aliasTask = queueKnowledgeAliasGeneration(id, { requestedBy: data.reviewedBy || '知识发布' });
-    return ok(res, { knowledge: row('SELECT * FROM knowledge WHERE id=?', id), aliasTask });
-  }
-  if (req.method === 'POST' && /^\/api\/knowledge\/\d+\/disable$/.test(pathname)) { const id = parseId(pathname, /^\/api\/knowledge\/(\d+)\/disable$/); const item = row('SELECT id FROM knowledge WHERE id=?', id); if (!item) return fail(res, 404, '知识不存在'); run("UPDATE knowledge SET status='DISABLED',updated_at=? WHERE id=?", now(), id); return ok(res); }
   if (req.method === 'GET' && pathname === '/api/knowledge-gaps') {
     const gaps = rows(`SELECT g.*,m.platform_code,m.user_name,m.content,m.external_url,m.created_at AS message_created_at,m.status AS message_status,m.decision,m.knowledge_id,m.reply_text,m.subquestions_json,k.category AS knowledge_category,k.subcategory AS knowledge_subcategory,(SELECT COUNT(*) FROM knowledge_aliases a WHERE a.knowledge_id=m.knowledge_id AND a.knowledge_version=k.version) AS alias_count,(SELECT t.status FROM knowledge_alias_generation_tasks t WHERE t.knowledge_id=m.knowledge_id ORDER BY t.id DESC LIMIT 1) AS alias_task_status,(SELECT t.error_message FROM knowledge_alias_generation_tasks t WHERE t.knowledge_id=m.knowledge_id ORDER BY t.id DESC LIMIT 1) AS alias_task_error FROM knowledge_gaps g JOIN messages m ON m.id=g.message_id LEFT JOIN knowledge k ON k.id=m.knowledge_id WHERE g.deleted_at IS NULL ORDER BY g.id DESC`)
       .filter(isActualKnowledgeGap)
@@ -5154,20 +4878,7 @@ async function api(req, res, url) {
     const reason = String(data.reason || '运营人员从知识库列表中移除').trim().slice(0, 500) || '运营人员从知识库列表中移除';
     run('UPDATE knowledge_gaps SET deleted_at=?,deleted_by=?,delete_reason=?,updated_at=? WHERE id=? AND deleted_at IS NULL', stamp, deletedBy, reason, stamp, id);
     return ok(res, { deleted: true, alreadyDeleted: false, gapId: id, deletedAt: stamp, deletedBy });
-  }  if (req.method === 'POST' && /^\/api\/knowledge-gaps\/\d+\/publish$/.test(pathname)) {
-    const id = parseId(pathname, /^\/api\/knowledge-gaps\/(\d+)\/publish$/); const data = await body(req); const gap = row('SELECT g.*,m.platform_code FROM knowledge_gaps g JOIN messages m ON m.id=g.message_id WHERE g.id=?', id); if (!gap || gap.deleted_at) return fail(res, 404, '待补充知识不存在或已删除'); if (!data.answer?.trim()) return fail(res, 400, '标准答案不能为空');
-    let category; let subcategory;
-    try { category = resolveKnowledgeCategory(data); subcategory = resolveKnowledgeSubcategory(data); }
-    catch (error) { return fail(res, 400, error.message); }
-    const stamp = now();
-    const knowledgeId = Number(run(`INSERT INTO knowledge(question,answer,keywords,status,version,source,review_status,reviewed_by,reviewed_at,published_at,category,subcategory,created_at,updated_at) VALUES(?,?,?,'PUBLISHED',1,'KNOWLEDGE_GAP','APPROVED',?,?,?,?,?,?,?)`, data.question?.trim() || gap.normalized_question, data.answer.trim(), data.keywords?.trim() || '', data.reviewedBy || '技术部审核', stamp, stamp, category, subcategory, stamp, stamp).lastInsertRowid);
-    touchKnowledgeSubcategory(category, subcategory, stamp);
-    run("UPDATE knowledge_gaps SET suggested_answer=?,status='PUBLISHED',review_note=?,reviewed_by=?,reviewed_at=?,resolved_at=?,updated_at=? WHERE id=?", data.answer.trim(), data.reviewNote || '', data.reviewedBy || '技术部审核', stamp, stamp, stamp, id);
-    run('UPDATE messages SET knowledge_id=?,knowledge_question_snapshot=?,knowledge_answer_snapshot=?,updated_at=? WHERE id=?', knowledgeId, data.question?.trim() || gap.normalized_question, data.answer.trim(), stamp, gap.message_id);
-    const aliasTask = queueKnowledgeAliasGeneration(knowledgeId, { requestedBy: data.reviewedBy || '知识缺口发布' });
-    return ok(res, { knowledgeId, knowledge: row('SELECT * FROM knowledge WHERE id=?', knowledgeId), aliasTask });
-  }
-  if (req.method === 'GET' && pathname === '/api/issues') {
+  }  if (req.method === 'GET' && pathname === '/api/issues') {
     return ok(res, { issues: rows('SELECT * FROM issues ORDER BY id DESC LIMIT 300').map(issueView) });
   }
   const issueDiagnosesMatch = pathname.match(/^\/api\/issues\/(\d+)\/diagnoses$/);
@@ -5495,7 +5206,7 @@ async function api(req, res, url) {
           j.id
         LIMIT 100`, data.deviceId, stamp, ...requestedPlatformCodes, ...requestedQueueLanes,
         ...reservedPlatformCodes, ...reservedPublishIds, ...reservedPublishIds);
-      const pendingConversationJobs = rows(`SELECT id,job_type,payload,status FROM agent_jobs
+      const pendingConversationJobs = rows(`SELECT id,job_type,payload,status,available_at FROM agent_jobs
         WHERE device_id=? AND status IN ('QUEUED','RUNNING')`, data.deviceId)
         .map(item => ({ ...item, payload: json(item.payload, {}) }));
       let job = null;
@@ -5537,6 +5248,11 @@ async function api(req, res, url) {
           candidate.queue_lane = 'PRIVATE_MESSAGE';
         }
         const candidatePlatformCode = String(candidatePayload.platformCode || '').trim().toLowerCase();
+        if (candidate.job_type === 'COLLECT_ANALYTICS' && pendingConversationJobs.some(other =>
+          other.id !== candidate.id && other.job_type !== 'COLLECT_ANALYTICS'
+          && String(other.payload.platformCode || '').trim().toLowerCase() === candidatePlatformCode
+          && (other.status === 'RUNNING' || ((!other.available_at || other.available_at <= stamp)
+            && isRecoveryJobTypeClaimable(other.job_type) && !jobBlockedByRuntime(other.payload, other.job_type))))) continue;
         if (candidatePlatformCode) {
           const candidateLane = String(candidatePayload.queueLane || candidatePayload.channelType || candidatePayload.messageType || (candidate.job_type === 'COLLECT_MESSAGES' ? 'COMBINED' : 'GENERAL')).trim().toUpperCase();
           const runningPlatformJobs = rows(`SELECT id,job_type,payload FROM agent_jobs
@@ -5601,6 +5317,10 @@ async function api(req, res, url) {
       let payload = json(job.payload, {});
       const leaseMs = job.job_type === 'PUBLISH' ? config.agentPublishJobLeaseMs : config.agentJobLeaseMs;
       run("UPDATE agent_jobs SET status='RUNNING',attempts=attempts+1,claimed_at=?,lease_expires_at=? WHERE id=?", stamp, futureIso(leaseMs), job.id);
+      if (job.job_type === 'COLLECT_ANALYTICS') {
+        payload = { ...payload, analyticsClaimToken: crypto.randomUUID() };
+        run("UPDATE agent_jobs SET payload=? WHERE id=? AND status='RUNNING'", JSON.stringify(payload), job.id);
+      }
       if (isOldConversationRecoveryJob(job.job_type, payload)) {
         for (const conversationId of recoveryConversationIds(payload)) {
           run("UPDATE conversations SET last_recovery_scan_at=?,updated_at=? WHERE id=? AND handling_mode='BOT_ACTIVE'", stamp, stamp, conversationId);
@@ -5822,6 +5542,31 @@ async function api(req, res, url) {
         db.exec('ROLLBACK');
         throw error;
       }
+    } else if (job.job_type === 'COLLECT_ANALYTICS') {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const current = row('SELECT * FROM agent_jobs WHERE id=?', id);
+        const currentPayload = json(current?.payload, {});
+        if (current?.status !== 'RUNNING' || !currentPayload.analyticsClaimToken
+            || data.analyticsClaimToken !== currentPayload.analyticsClaimToken
+            || !current.lease_expires_at || current.lease_expires_at <= stamp) {
+          db.exec('ROLLBACK'); return ok(res, { ignored: true, reason: 'STALE_ANALYTICS_COMPLETION' });
+        }
+        let analyticsStatus = outerStatus, analyticsResult = result;
+        if (['SUCCESS','PARTIAL_SUCCESS'].includes(outerStatus)) {
+          try {
+            const account = row('SELECT profile_name FROM accounts WHERE id=? AND platform_code=?', payload.accountId, payload.platformCode);
+            if (!account || account.profile_name !== payload.profileName) throw new Error('账号浏览器配置已变化，忽略旧采集结果');
+            platformAnalytics.record({ accountId: payload.accountId, platformCode: payload.platformCode, jobId: id, analytics: result.analytics });
+          } catch (error) {
+            analyticsStatus = 'FAILED';
+            analyticsResult = { ...result, code: error.code || 'ANALYTICS_EVIDENCE_INVALID', message: error.message };
+          }
+        }
+        run("UPDATE agent_jobs SET status=?,result=?,completed_at=?,lease_expires_at=NULL WHERE id=? AND status='RUNNING'", analyticsStatus, JSON.stringify(analyticsResult), stamp, id);
+        db.exec('COMMIT');
+        return ok(res, { jobId: id, status: analyticsStatus });
+      } catch (error) { db.exec('ROLLBACK'); throw error; }
     } else if (job.job_type === 'DETECT_MANUAL_REPLY') {
       const completed = run("UPDATE agent_jobs SET status=?,result=?,completed_at=?,lease_expires_at=NULL WHERE id=? AND status='RUNNING'", outerStatus, JSON.stringify(result), stamp, id);
       if (completed.changes !== 1) return ok(res, { ignored: true, reason: 'STALE_MANUAL_REPLY_DETECTION' });
@@ -5855,6 +5600,15 @@ async function api(req, res, url) {
             lastSeenAt: stamp,
             evidenceJson: { ...evidence, collectionJobId: id, accountId: payload.accountId, platformCode: payload.platformCode }
           });
+          if (payload.platformCode === 'douyin') {
+            const candidates = rows(`SELECT t.id,t.platform_code,t.status,t.platform_post_id,t.submitted_at,p.title,p.body
+              FROM publish_targets t JOIN publish_tasks p ON p.id=t.task_id
+              WHERE t.account_id=? AND t.platform_code='douyin' AND t.status='PUBLISHED'`, payload.accountId);
+            const match = matchPublishedDouyinContent({ ...observation, verificationStatus, evidenceJson: evidence }, candidates);
+            if (match) run(`UPDATE publish_targets SET platform_post_id=COALESCE(platform_post_id,?),platform_url=COALESCE(platform_url,?),updated_at=?
+              WHERE id=? AND account_id=? AND status='PUBLISHED' AND (platform_post_id IS NULL OR platform_post_id=?)`,
+            match.platformPostId, match.platformUrl, stamp, match.targetId, payload.accountId, match.platformPostId);
+          }
         } catch (error) {
           console.warn('[platform-content-inventory] ignored invalid sidecar observation', {
             jobId: id,
@@ -6055,6 +5809,8 @@ function isServerMainModule() {
   } catch { return false; }
 }
 const formalRagClient = new RagClient();
+const hotTopicKnowledge = createHotTopicKnowledge({ db, ragClient: formalRagClient,
+  enabled: config.ragAdminEnabled && formalRagClient.configured, knowledgeBaseId: config.ragKnowledgeBaseId });
 const serverInstanceLock = acquireInstanceLock(config.databasePath + '.server.lock', { enabled: config.instanceLockEnabled, label: 'cloud-web' });
 const server = http.createServer(async (req, res) => {
   if (!applyCors(req, res)) return fail(res, 403, '请求来源不在允许列表中', null, 'CORS_ORIGIN_DENIED');
@@ -6111,13 +5867,14 @@ server.listen(config.port, config.host, () => {
   const aiSettings = getAiSettingsSummary();
   const messageCollection = getMessageCollectionSettings();
   console.log(`AI 调用模式：${aiSettings.mode}`);
-  startKnowledgeAliasWorker({ backfill: true });
-  startManualHandoffAliasWorker({ backfill: true });
   startNotificationOutboxWorker();
   startScheduledPublishScheduler();
+  hotTopicKnowledge.start();
+  platformAnalyticsScheduler.start();
   if (isServerMainModule()) {
     startMiniProgramProcessingWorker({ processMessage: processMessageWithRegistry });
     startMiniProgramCallbackWorker();
+    startMiniProgramBridgeWorker();
     startMiniProgramNonceCleanupWorker();
     try { cleanupExpiredMiniProgramNonces(); } catch {}
   }
@@ -6185,6 +5942,7 @@ function stopMiniProgramWorkers() {
   stopMiniProgramProcessingWorker();
   stopMiniProgramCallbackWorker();
   stopMiniProgramNonceCleanupWorker();
+  return stopMiniProgramBridgeWorker();
 }
 async function shutdownServer(signal) {
   if (serverShuttingDown) return;
@@ -6193,7 +5951,9 @@ async function shutdownServer(signal) {
   stopConversationRecoverySchedule();
   stopNotificationOutboxWorker();
   stopScheduledPublishScheduler();
-  stopMiniProgramWorkers();
+  await hotTopicKnowledge.stop();
+  platformAnalyticsScheduler.stop();
+  await stopMiniProgramWorkers();
   await new Promise(resolve => server.close(resolve));
   if (config.localAgentAutoStart) {
     const agentShutdown = await shutdownLocalAgent({ reason: `WEB_${signal}` });

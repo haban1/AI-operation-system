@@ -170,9 +170,9 @@ const GlobalSettings = (props: IProps) => {
 	};
 
 	return (
-		<div>
+		<div className="wx-global-settings">
 			<Spin spinning={loading}>
-				<div style={{ maxHeight: 'calc(100vh - 180px)', overflow: 'auto' }}>
+				<div className="wx-settings-form">
 					<Form
 						layout="vertical"
 						form={form}
@@ -187,7 +187,7 @@ const GlobalSettings = (props: IProps) => {
 							<Input />
 						</Form.Item>
 						<ParamsGroup
-							title="AI聊天设置"
+							title="自动回复与模型"
 							style={{ marginTop: 10 }}
 						>
 							<Alert
@@ -203,7 +203,7 @@ const GlobalSettings = (props: IProps) => {
 							<Form.Item
 								layout="horizontal"
 								name="chat_ai_enabled"
-								label="聊天AI"
+								label="AI 自动回复"
 								valuePropName="checked"
 							>
 								<Switch
@@ -218,7 +218,7 @@ const GlobalSettings = (props: IProps) => {
 								{({ getFieldValue }) => {
 									if (getFieldValue('chat_ai_enabled')) {
 										return (
-											<>
+											<div className="wx-ai-fields">
 												<Form.Item
 													name="chat_ai_trigger"
 													label="AI触发词"
@@ -283,6 +283,7 @@ const GlobalSettings = (props: IProps) => {
 												<Form.Item
 													layout="horizontal"
 													name="memory_enabled"
+													className="wx-wide-field"
 													label="会话持久记忆"
 													valuePropName="checked"
 												>
@@ -346,13 +347,17 @@ const GlobalSettings = (props: IProps) => {
 												</Form.Item>
 												<Form.Item
 													name="chat_prompt"
+													className="wx-wide-field"
 													label="人设"
 													rules={[{ required: true, message: '人设不能为空' }]}
 													tooltip="人设是指在与AI进行对话时，系统会自动添加的提示信息，用于引导AI的回答方向和风格。"
 												>
-													<SystemPromptEditor robotId={props.robotId} />
+													<SystemPromptEditor
+														robotId={props.robotId}
+														height={240}
+													/>
 												</Form.Item>
-											</>
+											</div>
 										);
 									}
 									return null;
@@ -361,6 +366,7 @@ const GlobalSettings = (props: IProps) => {
 						</ParamsGroup>
 						<ParamsGroup
 							title="AI绘图设置"
+							collapsed
 							style={{ marginTop: 24 }}
 						>
 							<Alert
@@ -408,6 +414,7 @@ const GlobalSettings = (props: IProps) => {
 						</ParamsGroup>
 						<ParamsGroup
 							title="AI文本转语音设置"
+							collapsed
 							style={{ marginTop: 24 }}
 						>
 							<Alert
@@ -483,6 +490,7 @@ const GlobalSettings = (props: IProps) => {
 						</ParamsGroup>
 						<ParamsGroup
 							title="群聊欢迎新成员设置"
+							collapsed
 							style={{ marginTop: 24 }}
 						>
 							<Alert
@@ -631,6 +639,7 @@ const GlobalSettings = (props: IProps) => {
 						</ParamsGroup>
 						<ParamsGroup
 							title="群聊拍一拍设置"
+							collapsed
 							style={{ marginTop: 24 }}
 						>
 							<Alert
@@ -719,6 +728,7 @@ const GlobalSettings = (props: IProps) => {
 						</ParamsGroup>
 						<ParamsGroup
 							title="群聊退群提醒设置"
+							collapsed
 							style={{ marginTop: 24 }}
 						>
 							<Alert
@@ -778,6 +788,7 @@ const GlobalSettings = (props: IProps) => {
 						</ParamsGroup>
 						<ParamsGroup
 							title="群聊排行榜设置"
+							collapsed
 							style={{ marginTop: 24 }}
 						>
 							<Alert
@@ -859,6 +870,7 @@ const GlobalSettings = (props: IProps) => {
 						</ParamsGroup>
 						<ParamsGroup
 							title="群聊总结设置"
+							collapsed
 							style={{ marginTop: 24 }}
 						>
 							<Alert
@@ -939,6 +951,7 @@ const GlobalSettings = (props: IProps) => {
 						</ParamsGroup>
 						<ParamsGroup
 							title="每日早报设置"
+							collapsed
 							style={{ marginTop: 24 }}
 						>
 							<Alert
@@ -1006,6 +1019,7 @@ const GlobalSettings = (props: IProps) => {
 						</ParamsGroup>
 						<ParamsGroup
 							title="每日早安设置"
+							collapsed
 							style={{ marginTop: 24 }}
 						>
 							<Alert

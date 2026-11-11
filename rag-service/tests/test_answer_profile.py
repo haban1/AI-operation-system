@@ -112,5 +112,5 @@ def test_invalid_profile_never_overwrites_persisted_settings(profile_client, fie
 
 
 def test_production_mount_reuses_existing_auth_dependency():
-    source = (Path(__file__).parents[1] / "app" / "main.py").read_text()
+    source = (Path(__file__).parents[1] / "app" / "main.py").read_text(encoding="utf-8")
     assert "app.include_router(persona_router, dependencies=[Depends(require_auth)])" in source

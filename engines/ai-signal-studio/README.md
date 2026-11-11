@@ -4,6 +4,8 @@
 
 源码基于 `kinnyuww/ai-video-factory` 的 `d97ea17`，并包含后续本机的研究、多方案创作和评审模块。部署本系统使用当前仓库中的完整目录。
 
+热点选题支持 GitHub、可配置 RSS/Atom、微博热搜和本机小红书搜索；来源设置、小红书扫码、接口格式及部署说明见 [多来源热点采集](../../docs/多来源热点采集-20261104.md)。
+
 ## 原生独立运行
 
 先安装 Python 3.9+、Node.js 20+、FFmpeg（含 ffprobe）和 curl。Linux 另需中文字体，例如 `fonts-noto-cjk`。

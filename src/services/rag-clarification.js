@@ -24,24 +24,25 @@ export function businessSubjectClarificationReply(question, { script = 'auto' } 
   const text = compact(question).replace(/^(?:请问|請問|我想问|我想問|我想知道)/u, '').replace(/^(?:这个|這個|那个|那個)/u, '').replace(/(?:吗|嗎|呢)$/u, '');
   const traditional = script === 'traditional';
   if (/^(?:(?:要|需要)?多少(?:钱|錢)|(?:费用|費用|价格|價格|收费|收費)(?:是多少|多少|怎么样|怎麼樣)?|怎么收费|怎麼收費)$/u.test(text)) {
-    return traditional ? '您想了解哪項業務或服務的費用？請補充名稱，我再幫您查收費。' : '你想了解哪项业务或服务的费用？请补充名称，我再帮你查收费。';
+    return traditional ? '你問的是哪項服務的費用？發個名字我看看。' : '你问的是哪项服务的费用？发个名字我看看。';
   }
   if (/^(?:(?:要|需要|需准备|需準備|要准备|要準備)?(?:什么|什麼|哪些)(?:材料|资料|資料|证件|證件)|(?:材料|资料|資料|证件|證件)(?:要|需要)?(?:什么|什麼|哪些))$/u.test(text)) {
-    return traditional ? '您想辦理哪項業務？請補充業務名稱，我再說明需要的材料。' : '你想办理哪项业务？请补充业务名称，我再说明需要的材料。';
+    return traditional ? '你想辦哪件事？告訴我名字，我看看要準備什麼。' : '你想办哪件事？告诉我名字，我看看要准备什么。';
   }
   if (/^(?:(?:地址|地点|地點)(?:(?:是|在)?(?:哪|哪里|哪裡|哪儿|哪兒))?|(?:在|是)?(?:哪里|哪裡|哪儿|哪兒))$/u.test(text)) {
-    return traditional ? '您想找哪個機構或活動的地址？請補充名稱，我再幫您查地點。' : '你想找哪个机构或活动的地址？请补充名称，我再帮你查地点。';
+    return traditional ? '想找哪個機構或活動的地址？發個名字我看看。' : '想找哪个机构或活动的地址？发个名字我看看。';
   }
   if (/^(?:(?:怎么|怎麼|如何|怎样|怎樣)(?:报名|報名)|(?:我)?(?:想|要)(?:报名|報名)|(?:在)?(?:哪里|哪裡|哪儿|哪兒)(?:报名|報名|申请|申請|办理|辦理))$/u.test(text)) {
-    return traditional ? '您想報名或申請哪項業務、活動？請補充名稱，我再說明申請方式。' : '你想报名或申请哪项业务、活动？请补充名称，我再说明申请方式。';
+    if (/报名|報名/u.test(text)) return traditional ? '想報哪個活動或課程？發個名字就行。' : '想报哪个活动或课程？发个名字就行。';
+    return traditional ? '你問的是哪項業務？發個名字就行。' : '你问的是哪项业务？发个名字就行。';
   }
   // A broad catalogue question has a useful default scope: the selected KB.
   // Only an unresolved explicit referent needs the customer to name its object.
   const vaguePolicy = /^(?:请问|請問)?(?:这个|這個|那个|那個)(?:(?:有)?(?:什么|什麼|哪些|哪一些)政策|政策(?:有)?(?:什么|什麼|哪些|哪一些))(?:吗|嗎|呢)?$/u;
   if (!vaguePolicy.test(compact(question))) return null;
   return script === 'traditional'
-    ? '您想了解哪方面的政策？請補充政策名稱或涉及的業務，我再幫您查。'
-    : '你想了解哪方面的政策？请补充政策名称或涉及的业务，我再帮你查。';
+    ? '你想問哪方面的政策？說下政策名或相關業務。'
+    : '你想问哪方面的政策？说下政策名或相关业务。';
 }
 
 function relevantCandidate(response, question, context) {
@@ -74,7 +75,7 @@ export function ragClarificationReply(response, { question = '', context = [], s
   if (candidate) {
     const { topic, ...clarificationCandidate } = candidate;
     return {
-      replyText: traditional ? `您是想了解「${topic}」，對嗎？` : `你是想了解「${topic}」，对吗？`,
+      replyText: traditional ? `你問的是「${topic}」嗎？` : `你问的是「${topic}」吗？`,
       clarificationCandidate
     };
   }
@@ -83,11 +84,11 @@ export function ragClarificationReply(response, { question = '', context = [], s
   const topic = `${question} ${sourceTopic}`;
   let replyText;
   if (/社区|社區/u.test(topic) && /政策/u.test(topic)) {
-    replyText = traditional ? '您想了解哪個社區的政策？請補充社區名稱或所在地，我再幫您查。' : '你想了解哪个社区的政策？请补充社区名称或所在地，我再帮你查。';
+    replyText = traditional ? '你問的是哪個社區的政策？說下社區名或所在地。' : '你问的是哪个社区的政策？说下社区名或所在地。';
   } else if (/政策/u.test(topic)) {
-    replyText = traditional ? '您想了解哪方面的政策？請補充政策名稱或涉及的業務，我再幫您查。' : '你想了解哪方面的政策？请补充政策名称或涉及的业务，我再帮你查。';
+    replyText = traditional ? '你想問哪方面的政策？說下政策名或相關業務。' : '你想问哪方面的政策？说下政策名或相关业务。';
   } else {
     replyText = applicationClarificationReply(question, { script }) || knowledgeGapReply(question, { script, sourceTopic });
   }
-  return { replyText: denied ? `明白。${replyText}` : replyText, clarificationCandidate: null };
+  return { replyText, clarificationCandidate: null };
 }

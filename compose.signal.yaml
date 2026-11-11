@@ -26,6 +26,8 @@ services:
       SIGNAL_PORT: "8892"
       SIGNAL_BASE_PATH: /integrations/ai-signal
       SIGNAL_CONFIG_DIR: /app/runtime-config
+      SIGNAL_XHS_MCP_URL: http://host.docker.internal:9200/mcp
+      SIGNAL_WEIBO_AGENT_URL: http://host.docker.internal:17831
     # Only the authenticated Web proxy can expose this service to the browser.
     # No host port or main-system environment file is passed to Signal.
     volumes:

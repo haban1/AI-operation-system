@@ -14,6 +14,7 @@ import { douyinCommentOccurrenceAnchor } from '../../src/services/comment-identi
 import { assessAutoReplyEligibility } from '../../src/services/auto-reply-eligibility.js';
 import { isGreetingOnlyMessage } from '../../src/services/conversation-intent.js';
 import { normalizeReplyTextForComparison, validateReplyTextLength } from '../../src/services/platform-reply-policy.js';
+import { collectPlatformAnalytics } from '../platform-analytics.js';
 
 const channelPageScope = new AsyncLocalStorage();
 
@@ -423,6 +424,39 @@ export async function pageEvidenceText(page) {
   return clean([await bodyText(page), await visibleControlText(page)].filter(Boolean).join(' '));
 }
 
+export function withoutPublishContent(text, { title = '', body = '' } = {}) {
+  let result = clean(text);
+  const content = [body, title, ...String(body).split(/\n+/)].map(clean).filter(Boolean).sort((a, b) => b.length - a.length);
+  for (const value of content) result = result.split(value).join(' ');
+  return clean(result);
+}
+
+// Platform notices must not include the title/description the agent just filled.
+// Reading visible text nodes also keeps real notices outside an editor intact.
+export async function publishPageEvidenceText(page, payload = {}) {
+  const values = [];
+  for (const frame of pageFrames(page)) {
+    const body = frame.locator('body');
+    if (typeof body.evaluate !== 'function') return withoutPublishContent(await pageEvidenceText(page), payload);
+    const value = await body.evaluate(root => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const parts = [];
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const parent = node.parentElement;
+        if (!parent || parent.closest('input,textarea,[contenteditable]:not([contenteditable="false"]),script,style,noscript')) continue;
+        const style = getComputedStyle(parent);
+        if (style.display === 'none' || style.visibility === 'hidden' || !parent.getClientRects().length) continue;
+        parts.push(node.textContent || '');
+      }
+      return parts.join(' ');
+    }).catch(() => null);
+    if (value === null) return withoutPublishContent(await pageEvidenceText(page), payload);
+    values.push(value);
+  }
+  return clean(values.join(' '));
+}
+
 async function visiblePublishSignalText(page) {
   const selectors = [
     '[role="alert"]', '[role="status"]', '[aria-live="assertive"]', '[aria-live="polite"]',
@@ -449,8 +483,8 @@ export function reliablePublishSuccessEvidence({ url = '', signalText = '', page
   return { confirmed: true, source: spec.successTextScope === 'signals' ? 'visible-success-signal' : 'page-success-text' };
 }
 
-export function managementRecordStatus({ recordText = '', tabStatus = '', spec = {} } = {}) {
-  const normalizedRecord = clean(recordText);
+export function managementRecordStatus({ recordText = '', tabStatus = '', spec = {}, title = '', body = '' } = {}) {
+  const normalizedRecord = withoutPublishContent(recordText, { title, body });
   if (['PUBLISHED', 'REVIEWING', 'REJECTED'].includes(tabStatus)) return tabStatus;
   if (toRegex(spec.rejectedPattern, DEFAULT_REJECTED_RE).test(normalizedRecord)) return 'REJECTED';
   if (toRegex(spec.reviewingPattern, DEFAULT_REVIEWING_RE).test(normalizedRecord)) return 'REVIEWING';
@@ -544,7 +578,7 @@ export function assessManagementPublishRecord({ platformCode = '', title = '', b
     score += 15;
   }
 
-  const reviewStatus = managementRecordStatus({ recordText: normalizedRecord, tabStatus, spec });
+  const reviewStatus = managementRecordStatus({ recordText: normalizedRecord, tabStatus, spec, title, body });
   if (reviewStatus !== 'UNKNOWN') { matchedBy.push('STATUS_TAB'); score += 10; }
   const platformPostId = platformPostIdentity(platformCode, href);
   if (href) { matchedBy.push('PLATFORM_URL'); score += 8; }
@@ -2178,6 +2212,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
   async execute(job) {
     const lane = operationLaneForJob(job);
     return channelPageScope.run(lane, async () => {
+      if (job.job_type === 'COLLECT_ANALYTICS') return collectPlatformAnalytics(this, job.payload);
       if (job.job_type === 'DIAGNOSE_ISSUE') return this.runIssueDiagnosis({ ...job.payload, safeReadOnly: true, mode: 'READ_ONLY' });
       if (job.job_type === 'RUN_SMOKE_TEST') return { status: 'CANCELLED', result: { message: '页面巡检功能已下线', safeReadOnly: true } };
       if (job.job_type === 'PUBLISH') return this.publish(job.payload);
@@ -2207,7 +2242,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
     return { applied: true, contentOrigin: origin, selectedLabel: option.label };
   }
 
-  async waitForUploadAndPublishReady(page, timeoutMs = 180000, { allowDisabled = false } = {}) {
+  async waitForUploadAndPublishReady(page, timeoutMs = 180000, { allowDisabled = false, payload = {} } = {}) {
     const deadline = Date.now() + timeoutMs;
     let last = null;
     let stableReadySamples = 0;
@@ -2216,7 +2251,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
       const button = await findLabeledControl(page, this.spec.publishLabels || [], { enabled: false });
       const buttonVisible = Boolean(button && await button.locator.isVisible().catch(() => false));
       const buttonEnabled = Boolean(button && await isControlEnabled(button.locator));
-      const text = await allFrameText(page);
+      const text = await publishPageEvidenceText(page, payload);
       last = analyzePublishReadiness({ text, publishButtonVisible: buttonVisible, publishButtonEnabled: buttonEnabled });
       if (last.uploadFailed) {
         const error = new Error(`${this.spec.name}视频上传失败，平台提示重新上传`);
@@ -2272,7 +2307,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
       const declaration = await this.applyContentDeclaration(page, payload);
       reportStage('declaration-complete', { applied: declaration?.applied === true });
       reportStage('upload-readiness-start', { timeoutMs: uploadTimeoutMs });
-      const readiness = await this.waitForUploadAndPublishReady(page, uploadTimeoutMs, { allowDisabled: payload.publishMode !== 'AUTO' && !this.spec.draftRequiresPublishEnabled });
+      const readiness = await this.waitForUploadAndPublishReady(page, uploadTimeoutMs, { allowDisabled: payload.publishMode !== 'AUTO' && !this.spec.draftRequiresPublishEnabled, payload });
       reportStage('upload-readiness-complete', { ready: readiness?.ready === true });
       if (payload.publishMode !== 'AUTO' || payload.keepBrowserForeground === true) await page.bringToFront();
       return {
@@ -2369,7 +2404,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
     const page = await this.getPage();
     await page.goto(this.spec.publishUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     if (!await this.waitForReady(page)) {
-      if (VERIFY_RE.test(await pageEvidenceText(page))) return this.waitForManualSecurityVerification(page, payload, { submitAttempted: false });
+      if (VERIFY_RE.test(await publishPageEvidenceText(page, payload))) return this.waitForManualSecurityVerification(page, payload, { submitAttempted: false });
       return { status: 'NEEDS_CONFIRMATION', result: await this.evidence(payload, `等待人工登录${this.spec.name}超时；浏览器页面已保留`, page, 'login_required') };
     }
     if (this.spec.publishPageSettleMs) await page.waitForTimeout(this.spec.publishPageSettleMs);
@@ -2384,7 +2419,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
       const clickResult = await this.clickFinalPublish(page);
       if (!clickResult.clicked) return { status: 'NEEDS_CONFIRMATION', result: await this.preserveDraftForManualAction(page, payload, `${this.spec.name}自动发布未成功：最终发表按钮不是唯一可用按钮，未执行点击`, 'publish_button_unavailable', { ...prepared, clickResult, submitAttempted: false }) };
       if (clickResult.confirmation === 'AMBIGUOUS') return { status: 'NEEDS_CONFIRMATION', result: await this.evidence(payload, `已点击${this.spec.name}发表入口，但二次确认按钮不唯一；为防止误操作或重复发布，请人工核对`, page, 'publish_confirmation_ambiguous', { clickResult, submitAttempted: true, manualActionRequired: true, draftSaved: false }) };
-      const postClickText = await pageEvidenceText(page);
+      const postClickText = await publishPageEvidenceText(page, payload);
       if (VERIFY_RE.test(postClickText)) return this.waitForManualSecurityVerification(page, payload, { clickResult, submitAttempted: true });
       if (toRegex(this.spec.publishBlockedTextPattern, /$^/).test(postClickText)) {
         return { status: 'NEEDS_CONFIRMATION', result: await this.evidence(payload, `${this.spec.name}要求人工完成账号或安全验证，系统未绕过验证，也不会自动重试`, page, 'publish_verification_required', { clickResult, submitAttempted: true, manualActionRequired: true, draftSaved: false }) };
@@ -3574,6 +3609,23 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
       const historicalCollection = item.type === 'COMMENT' && this.platformCode === 'douyin'
         ? await this.collectHistoricalCommentMessages(page, payload, { inventory: readiness.inventory })
         : null;
+      if (historicalCollection && readiness.inventory?.ok) {
+        const verifiedKeys = new Set((historicalCollection.videoResults || [])
+          .filter(video => video.status === 'SUCCESS' && video.stopReason !== 'PLATFORM_COMMENT_COUNT_ZERO')
+          .map(video => video.sourceVideoKey));
+        for (const video of readiness.inventory.videos || []) {
+          const platformPostId = clean(video.sourceVideoKey);
+          if (!/^\d+$/.test(platformPostId)) continue;
+          contentInventory.push({
+            platformPostId,
+            title: clean(video.sourceVideoTitle) || null,
+            publishedAtRaw: clean(video.sourceVideoPublishedAt) || null,
+            opaqueKey: clean(video.sourceVideoOpaqueKey) || null,
+            verificationStatus: verifiedKeys.has(platformPostId) ? 'VERIFIED' : 'OBSERVED',
+            evidenceJson: { source: 'douyin_comment_video_picker', sourceVerified: verifiedKeys.has(platformPostId), commentCount: video.commentCount, inventoryReason: readiness.inventory.reason }
+          });
+        }
+      }
       const collected = historicalCollection?.messages || await this.extractMessages(page, item.type, payload, { inboxType: 'MAIN', scope: readiness.scope || page });
       if (item.type === 'PRIVATE_MESSAGE') {
         const mainEnrichment = this.platformCode === 'douyin'

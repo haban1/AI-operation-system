@@ -17,16 +17,6 @@ export const StyledCard = styled(Card)<{
 		box-shadow 0.24s ease,
 		border-color 0.24s ease;
 
-	&::before {
-		content: '';
-		position: absolute;
-		inset: 0 0 auto;
-		height: 90px;
-		background: linear-gradient(135deg, ${({ $heroStart }) => $heroStart}, ${({ $heroEnd }) => $heroEnd});
-		opacity: 0.78;
-		pointer-events: none;
-	}
-
 	&:hover {
 		border-color: ${({ $accent }) => $accent};
 		box-shadow: var(--ant-box-shadow-secondary);
@@ -42,7 +32,7 @@ export const StyledCard = styled(Card)<{
 		margin: 0;
 		padding: 8px 10px 10px;
 		border-top: 1px solid var(--ant-color-border-secondary);
-		background: linear-gradient(180deg, var(--ant-color-bg-container) 0%, var(--ant-color-fill-quaternary) 100%);
+		background: var(--ant-color-bg-container);
 	}
 
 	.ant-card-actions > li {

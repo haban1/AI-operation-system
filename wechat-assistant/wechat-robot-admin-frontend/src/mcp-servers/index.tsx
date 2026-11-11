@@ -52,22 +52,23 @@ const MCPServers = (props: IProps) => {
 	});
 
 	return (
-		<Spin spinning={loading}>
+		<Spin
+			spinning={loading}
+			className="wx-mcp-page"
+		>
 			<MCPToolbar>
 				<MCPToolbarInfo>
 					<MCPToolbarIcon>
 						<AppstoreAddOutlined />
 					</MCPToolbarIcon>
 					<MCPToolbarText>
-						前往{' '}
 						<MCPMarketLink
 							href="https://github.com/hp0912/wechat-robot-mcp-server"
 							target="_blank"
 							rel="noopener noreferrer"
 						>
 							MCP 市场
-						</MCPMarketLink>{' '}
-						探索更多工具
+						</MCPMarketLink>
 					</MCPToolbarText>
 				</MCPToolbarInfo>
 				<MCPToolbarButton
@@ -122,25 +123,27 @@ const MCPServers = (props: IProps) => {
 						onClose={onMCPServerEditorClose}
 					/>
 				)}
-				<Alert
-					style={{ position: 'absolute', bottom: 24, left: '50%', transform: 'translateX(-50%)' }}
-					title={
-						<span style={{ fontSize: 12 }}>
-							文生图/图生图/生成视频/文本转语音，这些功能已经从内置 MCP 服务中移除，请使用{' '}
-							<a
-								href="https://git.houhoukang.com/houhou/wechat-robot-skills"
-								target="_blank"
-								rel="noopener noreferrer"
-							>
-								Skills
-							</a>{' '}
-							替代这些功能。
-						</span>
-					}
-					type="warning"
-					closable
-					showIcon
-				/>
+				<details className="wx-inline-details">
+					<summary>功能说明</summary>
+					<Alert
+						title={
+							<span style={{ fontSize: 12 }}>
+								文生图/图生图/生成视频/文本转语音，这些功能已经从内置 MCP 服务中移除，请使用{' '}
+								<a
+									href="https://git.houhoukang.com/houhou/wechat-robot-skills"
+									target="_blank"
+									rel="noopener noreferrer"
+								>
+									Skills
+								</a>{' '}
+								替代这些功能。
+							</span>
+						}
+						type="warning"
+						closable
+						showIcon
+					/>
+				</details>
 			</div>
 		</Spin>
 	);

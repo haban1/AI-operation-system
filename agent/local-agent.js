@@ -27,6 +27,7 @@ import { jobOperationLockMode, jobQueueLane, platformWorkerPlans } from './job-o
 import { platformChannelSplitEnabled } from '../src/services/channel-job-scheduler.js';
 import { prepareRemoteJobMaterial } from './remote-job-material.js';
 import { isPublishSecurityChallenge } from '../src/services/publish-manual-verification.js';
+import { authorizeWeiboHotTopics, collectWeiboHotTopics, WEIBO_HOT_TOPICS_PATH } from './weibo-hot-topics.js';
 
 const execFileAsync = promisify(execFile);
 if (!['all', 'materials', 'browser'].includes(config.agentRole)) throw new Error('AGENT_ROLE 无效');
@@ -274,8 +275,10 @@ async function defer(job, runtime) {
   });
 }
 
-async function complete(jobId, output) {
-  const data = await cloud(`/api/agent/jobs/${jobId}/complete`, { method: 'POST', body: JSON.stringify(output) });
+async function complete(job, output) {
+  const completion = job.job_type === 'COLLECT_ANALYTICS'
+    ? { ...output, analyticsClaimToken: job.payload.analyticsClaimToken } : output;
+  const data = await cloud(`/api/agent/jobs/${job.id}/complete`, { method: 'POST', body: JSON.stringify(completion) });
   if (Array.isArray(data.manualPublishWaitPlatforms)) manualPublishWaitPlatforms = new Set(data.manualPublishWaitPlatforms);
   return data;
 }
@@ -404,7 +407,7 @@ async function processClaimedJob(job) {
               platformCode: job?.payload?.platformCode
             }
           };
-          await complete(job.id, output);
+          await complete(job, output);
           console.log(`[Agent:${jobScope}] Job#${job.id} -> NEEDS_CONFIRMATION (interrupted by platform stop)`);
         } else {
           await defer(job, error.runtime || platformCoordinator.effectiveRuntime(job?.payload?.platformCode));
@@ -422,7 +425,7 @@ async function processClaimedJob(job) {
             stack: error.stack
           }
         };
-        await complete(job.id, output);
+        await complete(job, output);
         console.log(`[Agent:${jobScope}] Job#${job.id} -> ${output.status}`);
       }
       return;
@@ -432,7 +435,7 @@ async function processClaimedJob(job) {
       return;
     }
     if (job.job_type === 'PUBLISH' && isPublishSecurityChallenge(guarded.output.result)) manualPublishWaitPlatforms.add(activePlatformCode);
-    await complete(job.id, guarded.output);
+    await complete(job, guarded.output);
     console.log(`[Agent:${jobScope}] Job#${job.id} -> ${guarded.output.status}`);
   } finally {
     activeJobCount = Math.max(0, activeJobCount - 1);
@@ -667,7 +670,7 @@ const localServer = http.createServer(async (req, res) => {
     const previewMatch = requestUrl.pathname.match(/^\/material-preview\/([0-9a-f-]+)$/i);
     const isMaterialPreview = ['GET','HEAD'].includes(req.method) && Boolean(previewMatch);
     const isHealthCheck = req.method === 'GET' && requestUrl.pathname === '/health';
-    if (!isHealthCheck && !isMaterialPreview && !agentRequestAuthorized(req)) {
+    if (!isHealthCheck && !isMaterialPreview && !agentRequestAuthorized(req) && !authorizeWeiboHotTopics(req, config.agentToken)) {
       return reply(res, 401, { ok: false, code: 'AGENT_AUTH_REQUIRED', message: 'Local Agent \u9274\u6743\u5931\u8d25' });
     }
     if (isMaterialPreview) return streamMaterialPreview(req, res, previewMatch[1]);
@@ -684,6 +687,13 @@ const localServer = http.createServer(async (req, res) => {
     const legacyXhsOperation = requestUrl.pathname.startsWith('/xiaohongshu/')
       && !['/xiaohongshu/status','/xiaohongshu/main-status'].includes(requestUrl.pathname);
     if (legacyXhsOperation) await requirePlatformRunning('xiaohongshu');
+    if (req.method === 'GET' && req.url === WEIBO_HOT_TOPICS_PATH) {
+      if (platformCoordinator.lockStates.get('weibo')?.active.size) {
+        return reply(res, 409, { ok: false, code: 'WEIBO_BUSY', message: '微博正在执行其他任务，请稍后刷新热点' });
+      }
+      const result = await withGuardedPlatformOperation('weibo', () => collectWeiboHotTopics(adapters.get('weibo')));
+      return reply(res, 200, { ok: true, ...result });
+    }
     if (req.method === 'GET' && req.url === '/health') return reply(res, 200, { ok: true, deviceId: config.deviceId, bindingId: agentBindingId, version: AGENT_VERSION, role: config.agentRole, runtimePlatform: process.platform, rpaMode: config.rpaMode, platformAllowlist: agentPlatformAllowlist, masterSwitchEnabled: platformCoordinator.masterSwitchEnabled, browserControl: browserController.capabilities(), ocrEnabled: config.ocrEnabled, ocrMode: config.qwenMode === 'online' && config.qwenApiKey ? 'ONLINE' : 'MANUAL_FALLBACK', loginMonitor: loginMonitorStatus() });
     if (req.method === 'POST' && req.url === '/control/shutdown') {
       const data = await readBody(req);

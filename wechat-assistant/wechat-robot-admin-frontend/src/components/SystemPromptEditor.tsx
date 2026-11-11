@@ -5,11 +5,13 @@ import React from 'react';
 import type { CSSProperties } from 'react';
 import type * as Api from '@/api/wechat-robot/wechat-robot';
 import { filterOption } from '@/common/filter-option';
+import { useThemeSettings } from '@/theme-settings/ThemeSettingsProvider';
 
 interface IProps {
 	className?: string;
 	style?: CSSProperties;
 	robotId: number;
+	height?: number;
 	value?: string;
 	onChange?: (value?: string) => void;
 }
@@ -20,6 +22,7 @@ const SystemPromptEditor = (props: IProps) => {
 	const { className = '', style = {} } = props;
 
 	const { message } = App.useApp();
+	const { resolvedThemeMode } = useThemeSettings();
 
 	const { data: prompts = [], loading } = useRequest(
 		async () => {
@@ -49,7 +52,7 @@ const SystemPromptEditor = (props: IProps) => {
 			className={className}
 			style={{
 				position: 'relative',
-				border: '1px solid #d9d9d9',
+				border: '1px solid var(--ant-color-border)',
 				borderRadius: 6,
 				padding: '8px 2px',
 				...style,
@@ -57,7 +60,8 @@ const SystemPromptEditor = (props: IProps) => {
 		>
 			<Editor
 				width="100%"
-				height="450px"
+				height={props.height || 450}
+				theme={resolvedThemeMode === 'dark' ? 'vs-dark' : 'light'}
 				language="text"
 				options={{
 					minimap: { enabled: false },
@@ -77,7 +81,7 @@ const SystemPromptEditor = (props: IProps) => {
 					top: 4,
 					right: 4,
 					zIndex: 9999,
-					background: '#fff',
+					background: 'var(--ant-color-bg-container)',
 					padding: 4,
 					borderRadius: 4,
 				}}

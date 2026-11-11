@@ -179,6 +179,7 @@ const Skill = (props: IProps) => {
 
 	return (
 		<Card
+			className="wx-tool-row"
 			title={
 				<SkillTitle>
 					<Avatar
@@ -206,8 +207,8 @@ const Skill = (props: IProps) => {
 							borderColor: 'var(--ant-color-border)',
 						},
 				body: {
-					height: 236,
-					overflow: 'hidden',
+					minHeight: 0,
+					overflow: 'visible',
 					display: 'flex',
 					flexDirection: 'column',
 					justifyContent: 'space-between',
@@ -231,54 +232,60 @@ const Skill = (props: IProps) => {
 				)
 			}
 		>
-			<Card.Meta
-				description={
-					<Typography.Paragraph
-						type="secondary"
-						styles={{
-							root: {
-								maxHeight: 72,
-								overflow: 'auto',
-							},
-						}}
-						ellipsis={{ rows: 4, expandable: true, symbol: '更多' }}
-					>
-						{props.skill.metadata?.description}
-					</Typography.Paragraph>
-				}
-			/>
+			<details className="wx-tool-description">
+				<summary>说明</summary>
+				<Card.Meta
+					description={
+						<Typography.Paragraph
+							type="secondary"
+							styles={{
+								root: {
+									maxHeight: 72,
+									overflow: 'auto',
+								},
+							}}
+							ellipsis={{ rows: 4, expandable: true, symbol: '更多' }}
+						>
+							{props.skill.metadata?.description}
+						</Typography.Paragraph>
+					}
+				/>
+			</details>
 			<div>
-				<SkillMetaGrid>
-					<SkillMetaItem>
-						<SkillMetaIcon>
-							<OpenAIOutlined />
-						</SkillMetaIcon>
-						<SkillMetaContent>
-							<SkillMetaLabel>来源</SkillMetaLabel>
-							{props.skill.source?.repo_url ? (
-								<SkillMetaLink
-									href={props.skill.source.repo_url}
-									target="_blank"
-									rel="noreferrer"
-									title={sourceText}
-								>
-									{sourceText}
-								</SkillMetaLink>
-							) : (
-								<SkillMetaValue title={sourceText}>{sourceText}</SkillMetaValue>
-							)}
-						</SkillMetaContent>
-					</SkillMetaItem>
-					<SkillMetaItem>
-						<SkillMetaIcon>
-							<ClockCircleOutlined />
-						</SkillMetaIcon>
-						<SkillMetaContent>
-							<SkillMetaLabel>安装时间</SkillMetaLabel>
-							<SkillMetaValue title={installedAtText}>{installedAtText}</SkillMetaValue>
-						</SkillMetaContent>
-					</SkillMetaItem>
-				</SkillMetaGrid>
+				<details className="wx-tool-metadata">
+					<summary>详细配置</summary>
+					<SkillMetaGrid>
+						<SkillMetaItem>
+							<SkillMetaIcon>
+								<OpenAIOutlined />
+							</SkillMetaIcon>
+							<SkillMetaContent>
+								<SkillMetaLabel>来源</SkillMetaLabel>
+								{props.skill.source?.repo_url ? (
+									<SkillMetaLink
+										href={props.skill.source.repo_url}
+										target="_blank"
+										rel="noreferrer"
+										title={sourceText}
+									>
+										{sourceText}
+									</SkillMetaLink>
+								) : (
+									<SkillMetaValue title={sourceText}>{sourceText}</SkillMetaValue>
+								)}
+							</SkillMetaContent>
+						</SkillMetaItem>
+						<SkillMetaItem>
+							<SkillMetaIcon>
+								<ClockCircleOutlined />
+							</SkillMetaIcon>
+							<SkillMetaContent>
+								<SkillMetaLabel>安装时间</SkillMetaLabel>
+								<SkillMetaValue title={installedAtText}>{installedAtText}</SkillMetaValue>
+							</SkillMetaContent>
+						</SkillMetaItem>
+					</SkillMetaGrid>
+				</details>
 				<SkillFooter>
 					<SkillStatusGroup>
 						<SkillStatusTag $tone={props.skill.source?.type === 'git' ? 'info' : 'neutral'}>

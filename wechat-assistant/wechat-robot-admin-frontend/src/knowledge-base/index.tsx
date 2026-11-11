@@ -23,7 +23,7 @@ const KnowledgeBaseIndex = (props: IProps) => {
 			activeKey={activeKey}
 			onChange={setActiveKey}
 			destroyOnHidden
-			style={{ marginTop: -16 }}
+			className="wx-knowledge-page"
 			tabBarExtraContent={<div key={activeKey}>{extraContentMap[activeKey]}</div>}
 			items={[
 				{

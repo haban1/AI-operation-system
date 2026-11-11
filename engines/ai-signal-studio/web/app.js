@@ -9,12 +9,12 @@ const sampleVersions={};
 const $=id=>document.getElementById(id);
 const escapeHTML=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=v=>v==null?'—':Number(v).toLocaleString('zh-CN');
-const titles={topics:'从一个好话题开始。',editor:'回看成片，按需微调。',studio:'三路创作，反馈后定稿。',library:'把好内容，留下来。',settings:'用你熟悉的模型创作。'};
-function tab(name){if(!titles[name])return;if(integratedWorkbench&&name==='library'){window.parent.postMessage({type:'content-workbench:open-library',source:'automatic'},location.origin);return}const u=new URL(location);u.searchParams.set('view',name);if(name==='editor'&&currentRun)u.searchParams.set('run',currentRun);else u.searchParams.delete('run');if(name==='studio'&&activeBatch)u.searchParams.set('comparison',activeBatch);else u.searchParams.delete('comparison');history.replaceState(null,'',u);document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.id===name));document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.tab===name));$('page-title').textContent=titles[name];window.scrollTo(0,0)}
+const titles={topics:'热点选题',editor:'成片详情',studio:'成片对比',library:'成片库',settings:'创作设置'};
+function tab(name){if(!titles[name])return;if(integratedWorkbench&&name==='library'){window.parent.postMessage({type:'content-workbench:open-library',source:'automatic'},location.origin);return}const u=new URL(location);u.searchParams.set('view',name);if(name==='editor'&&currentRun)u.searchParams.set('run',currentRun);else u.searchParams.delete('run');if(name==='studio'&&activeBatch)u.searchParams.set('comparison',activeBatch);else u.searchParams.delete('comparison');history.replaceState(null,'',u);document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.id===name));document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.tab===name));$('page-title').textContent=name==='topics'&&topicMode==='custom'?'自主选题':titles[name];document.body.dataset.signalView=name;document.querySelectorAll('#mode-custom,#mode-trending').forEach(x=>{const active=name==='topics'&&x.id===(topicMode==='custom'?'mode-custom':'mode-trending');x.classList.toggle('active',active);x.setAttribute('aria-pressed',String(active))});if(integratedWorkbench)window.parent.postMessage({type:'content-workbench:view-changed',view:name==='settings'?'settings':'automatic',title:$('page-title').textContent},location.origin);window.scrollTo(0,0)}
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tab(b.dataset.tab));
 function toast(message){$('toast').textContent=message;$('toast').style.display='block';setTimeout(()=>$('toast').style.display='none',4200)}
 async function api(path,body){const response=await fetch(appURL('api/'+path),body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});const result=await response.json();if(!response.ok)throw Error(result.error||'请求失败');return result}
-function pick(id){selected=state.feed.candidates.find(x=>x.id===id);if(!selected)return;document.querySelectorAll('.topic-card').forEach(x=>x.classList.toggle('selected',x.dataset.id===id));$('pick-title').textContent=selected.title;$('pick-description').textContent=selected.description;$('pick-metrics').innerHTML=`<div class="metrics"><div><strong>+${fmt(selected.weekly_stars)}</strong><span>本周新增 Star</span></div><div><strong>${fmt(selected.total_stars)}</strong><span>累计 Star</span></div></div>`;$('pick-source').href=selected.url;if(topicMode==='custom')updateTopicPanel();setBusy()}
+function pick(id){selected=state.feed.candidates.find(x=>x.id===id);if(!selected)return;document.querySelectorAll('.topic-card').forEach(x=>x.classList.toggle('selected',x.dataset.id===id));$('pick-title').textContent=selected.title;const description=selected.description||selected.discovery||'';$('pick-description').textContent=description.length>240?description.slice(0,240)+'…':description;drawPickedMetrics(selected);$('pick-source').href=safeSourceURL(selected.url);if(topicMode==='custom')updateTopicPanel();setBusy()}
 function generationIssue(){
  if(!connected)return '工作台连接中断，请确认服务已启动后重试。';
  if(state?.config.llm.provider!=='ollama'&&!state?.config.llm.api_key_configured)return '文稿 Token 尚未配置（重启后需重新填写）。请先到模型设置保存。';
@@ -27,23 +27,26 @@ function setBusy(){
  ['collect','compare','build','render'].forEach(id=>{$(id).disabled=!connected||busy||modelTesting||(id==='render'?!spec:(['compare','build'].includes(id)&&!hasTopic));});
  ['test-model','save-settings','test-voice'].forEach(id=>$(id).disabled=busy||modelTesting);
  $('generation-status').textContent=issue||(busy?'已有任务运行中，研究和创作进度会显示在上方。':hasTopic?'已就绪：可以生成三风格对比，或只生成所选风格。':topicMode==='custom'?'输入至少两个字的选题即可开始。':'先选择一个热点题材。');
+ $('generation-status').hidden=!issue&&!busy&&hasTopic;
  $('configure-model').hidden=!issue||!connected;
  $('configure-model').disabled=busy||modelTesting;
  document.querySelectorAll('[data-retry-comparison],[data-new-exploration],[data-supervise-feedback],[data-reject-all]').forEach(b=>b.disabled=busy||modelTesting||feedbackSubmitting||!connected);
  document.querySelectorAll('[data-select-agent]').forEach(b=>b.disabled=busy||feedbackSubmitting||!connected);
+ if($('save-sources'))$('save-sources').disabled=busy||modelTesting||xhsLoginBusy||!connected;
+ ['xhs-status','xhs-login'].forEach(id=>{if($(id))$(id).disabled=busy||xhsLoginBusy||!connected});
  const save=document.querySelector('[data-save-selection]');if(save)save.disabled=busy||feedbackSubmitting||!connected||save.dataset.changed!=='true';
 }
 $('configure-model').onclick=()=>tab('settings');
 function modelHints(){const p=$('provider').value;$('protocol-help').textContent=p==='responses'?'Responses 接口：服务地址填到 /v1；工作台会调用 /responses。':p==='compatible'?'Chat Completions 接口：服务地址填到 /v1；工作台会调用 /chat/completions。':'连接本机 Ollama 服务，不需要 Token。';const c=state?.config.llm;$('token-status').textContent=p==='ollama'?'本地服务不需要 Token。':(c?.api_key_configured?'已填写 Token。保存同一服务的其他设置时可以留空。':'尚未填写 Token；填写并保存后即可生成文稿。')+' Token仅保存在当前工作台进程内，重启后需重新填写。'}
 $('provider').onchange=modelHints;
-function drawFeed(){const f=state.feed;$('capture-time').textContent=f.collected_at?'采集于 '+new Date(f.collected_at).toLocaleString('zh-CN')+' · 周新增以 GitHub Trending 页面为准':'暂无采集记录';const labels={ok:'已采集',unavailable:'暂不可用',not_configured:'待接入'};$('source-status').innerHTML=(f.sources||[]).map(s=>`<span title="${escapeHTML(s.detail||'')}" class="source-chip ${s.status}">${escapeHTML(s.source)} · ${labels[s.status]||s.status}</span>`).join('');$('candidates').innerHTML=f.candidates.length?f.candidates.map((c,i)=>`<button class="topic-card" data-id="${escapeHTML(c.id)}"><div class="rank">${String(i+1).padStart(2,'0')}</div><div><div class="topic-title">${escapeHTML(c.title)}</div><div class="topic-owner">${escapeHTML(c.id)}</div><div class="topic-desc">${escapeHTML(c.description)}</div></div><div class="gain">+${fmt(c.weekly_stars)}<small>STARS THIS WEEK</small></div></button>`).join(''):'<div class="empty">还没有候选话题。点击刷新公开热点。</div>';document.querySelectorAll('.topic-card').forEach(b=>b.onclick=()=>pick(b.dataset.id));if(f.candidates.length)pick(f.candidates.some(c=>c.id===selected?.id)?selected.id:f.candidates[0].id);$('discussions').innerHTML=(f.discussions||[]).slice(0,8).map(d=>`<a class="discussion" href="${escapeHTML(d.url)}" target="_blank" rel="noreferrer">${escapeHTML(d.title)} ↗<small>${escapeHTML(d.source)} · ${fmt(d.score)} 分 · 仅作线索</small></a>`).join('')||'<div class="empty">点击刷新后读取可用的社区讨论。</div>'}
+function drawFeed(){renderHotFeed()}
 function drawRuns(){const libraryRuns=state.runs.filter(r=>$('library-history').checked||!r.comparison_id||r.comparison_selected);$('runs').innerHTML=libraryRuns.length?libraryRuns.map(r=>`<article class="run-card"><div class="run-cover">${r.video?`<img src="${appURL('runs/'+encodeURIComponent(r.id)+'/frames/00.png')}" alt="${escapeHTML(r.title)}">`:'DRAFT / 文稿'}</div><small>${r.comparison_selected?'<b class="library-badge">已选入成片库</b> · ':''}${r.video?'已生成预览':'文稿已生成'} · ${r.duration?Math.round(r.duration)+' 秒':'待配音'}</small><h3>${escapeHTML(r.title)}</h3><p>${escapeHTML(r.status)}</p><button class="primary" data-open="${escapeHTML(r.id)}">${r.video?'播放与详情':'查看未完成内容'} →</button></article>`).join(''):'<div class="empty">还没有入库成片。到对比任务勾选满意的版本，或打开历史版本查看。</div>';document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openRun(b.dataset.open))}
 async function openRun(id){try{currentRun=id;const response=await fetch(appURL('runs/'+encodeURIComponent(id)+'/script.json'));if(!response.ok)throw Error('文稿读取失败');spec=await response.json();$('script-title').textContent=spec.title;$('script-meta').textContent=spec.repo+' · '+(state.runs.find(r=>r.id===id)?.status||spec.editorial_status||'待复核')+(spec.review_flags?.length?' · 待检查表述：'+spec.review_flags.join('、'):'');$('scene-editor').innerHTML=spec.scenes.map((s,i)=>`<div class="scene-card"><div class="scene-top"><span>SCENE ${String(i+1).padStart(2,'0')} · ${escapeHTML(s.eyebrow||s.type)}</span><small>${escapeHTML(s.type)} / ${escapeHTML(s.sourceIds?.join(', '))}</small></div><div class="fields"><label>画面标题<input data-i="${i}" data-field="title" value="${escapeHTML(s.title)}"></label><label>重点文字<input data-i="${i}" data-field="highlight" value="${escapeHTML(s.highlight)}" ${s.type==='stats'?'readonly title="数字绑定已采集的来源"':''}></label><label class="full">辅助说明<input data-i="${i}" data-field="body" value="${escapeHTML(s.body)}"></label><label>画面要点（每行一项）<textarea data-i="${i}" data-field="items">${escapeHTML(s.items?.join('\n'))}</textarea></label><label>中文旁白（每行一个短句）<textarea data-i="${i}" data-field="narration">${escapeHTML(s.narration?.join('\n'))}</textarea></label></div></div>`).join('');document.querySelectorAll('[data-field]').forEach(el=>el.oninput=()=>{const k=el.dataset.field;spec.scenes[Number(el.dataset.i)][k]=['items','narration'].includes(k)?el.value.split('\n').filter(x=>x.trim()):el.value});const run=state.runs.find(x=>x.id===id);$('preview').pause();if(run?.video){$('preview').src=run.video;$('preview').classList.remove('hidden');$('preview-empty').classList.add('hidden');$('preview-meta').textContent=`${run.duration?.toFixed(1)||'—'} 秒 · 1080 × 1920 · 中文配音`; }else{$('preview').removeAttribute('src');$('preview').load();$('preview').classList.add('hidden');$('preview-empty').classList.remove('hidden');$('preview-meta').textContent='文稿准备好后，生成视频预览。'}$('source-links').innerHTML=(spec.sources||[]).map(s=>`<a href="${escapeHTML(s.url)}" target="_blank" rel="noreferrer">${escapeHTML(s.title||(s.id==='readme'?'官方资料':s.id==='trending'?'热点证据':s.id))} ↗</a>`).join('');$('optional-editor').open=false;$('research-detail').hidden=true;$('research-detail').innerHTML='';if(spec.research_available){const r=await fetch(appURL('runs/'+encodeURIComponent(id)+'/research.json'));if(r.ok){const report=await r.json();$('research-detail').innerHTML=researchHTML({summary:report.brief?.summary,sources:report.sources,limitations:report.limitations,queries:report.queries});$('research-detail').hidden=false}}tab('editor');setBusy()}catch(e){toast(e.message)}}
 async function refresh(initial=false){try{const next=await api('state');connected=true;const comparisonsChanged=!state||JSON.stringify(next.comparisons)!==JSON.stringify(state.comparisons);const feedChanged=!state||next.feed.collected_at!==state.feed.collected_at;const runsChanged=!state||JSON.stringify(next.runs)!==JSON.stringify(state.runs);state=next;if(feedChanged)drawFeed();if(runsChanged)drawRuns();if(comparisonsChanged)drawComparisons();const j=state.job;const job=$('job');job.classList.toggle('hidden',j.status==='idle');job.classList.toggle('failed',j.status==='failed');const jobTime=j.finished_at||j.started_at;const detail=j.diagnosis?.summary||(j.error||j.step).replace(/^[A-Za-z]+Error:\s*/,'');$('job-summary').textContent=j.status==='failed'?'上次任务未完成'+(jobTime?'（'+new Date(jobTime).toLocaleString('zh-CN')+'）':'')+' · '+detail:(j.status==='running'?'◌ ':'')+j.step;const logLabels={'error.log':'查看错误日志','llm-response.txt':'模型原始输出','llm-response-repair.txt':'自动修复输出','generation.json':'调用与校验记录','research.json':'查看研究记录'};$('job-links').innerHTML=(j.status==='failed'?Object.entries(j.logs||{}).map(([name,url])=>`<a href="${escapeHTML(url)}" target="_blank" rel="noreferrer">${logLabels[name]||escapeHTML(name)} ↗</a>`).join(''):'')+(j.comparison_url?`<a href="${escapeHTML(j.comparison_url)}">查看该任务与重试 ↗</a>`:'')+(j.model?`<span>当次模型：${escapeHTML(j.model)}</span>`:'');const key=(j.started_at||'')+j.status;if(j.status==='done'&&key!==seenJob&&j.run&&!initial){await openRun(j.run)}seenJob=key;setBusy();if(initial){setTopicMode(topicMode);drawStyleSelect();drawStyles();const c=state.config.llm;$('provider').value=c.provider;$('base-url').value=c.base_url;$('model').value=c.model;const t=state.config.tts;$('tts-provider').value=t.provider||'qwen';$('tts-voice').value=t.edge_voice||'zh-CN-YunjianNeural';$('tts-rate').value=t.rate||'+15%';$('tts-style-presets').checked=t.use_style_presets!==false;$('tts-pitch').value=t.pitch||'+0Hz';$('speech-url').value=t.openai_base_url||'https://api.openai.com/v1';$('speech-model').value=t.openai_model||'gpt-4o-mini-tts';$('speech-voice').value=t.openai_voice||'coral';$('speech-instructions').value=t.openai_instructions||'';$('tts-info').textContent=t.provider==='edge'?'Edge 在线语音 · '+t.edge_voice+' · '+t.rate:'本地 Qwen · '+t.voice;}modelHints();voiceHints();}catch(e){connected=false;setBusy();if(initial)toast('工作台连接失败：'+e.message)}}
 async function start(action,payload={}){try{await api(action,payload);await refresh()}catch(e){toast(e.message)}}
 async function startGeneration(action){
  if(topicMode!=='custom'&&!selected){toast('请先选一个题材');return}
- let payload={repo:selected?.id,style_id:$('style-select').value};
+ let payload={candidate_id:selected?.id,style_id:$('style-select').value};
  if(topicMode==='custom'){
   if(!$('custom-topic').reportValidity())return;
   const urls=$('custom-urls').value.split('\n').map(x=>x.trim()).filter(Boolean);
@@ -58,6 +61,7 @@ async function startGeneration(action){
   await refresh();if(action==='compare'){drawComparisons();tab('studio')}
  }catch(e){toast(e.message)}
 }
+bindSourceControls();
 $('collect').onclick=()=>start('collect');
 $('compare').onclick=()=>startGeneration('compare');
 $('build').onclick=()=>startGeneration('build');
@@ -132,7 +136,7 @@ async function submitSupervisorFeedback(batch,allRejected=false){
   delete feedbackDrafts[batch.id];
   await refresh();
   tab('studio');
-  toast(allRejected?'已交给 Supervisor 重做三路视频':'已交给 Supervisor 按反馈重做指定路线');
+  toast(allRejected?'已提交，重新生成三版':'已提交，按反馈重做');
  }catch(e){toast(e.message)}finally{feedbackSubmitting=false;setBusy()}
 }
 function drawComparisons(){
@@ -143,14 +147,14 @@ function drawComparisons(){
  $('batch-select').disabled=!batches.length;
  $('batch-select').onchange=()=>{activeBatch=$('batch-select').value;drawComparisons();tab('studio')};
  if(!batch){
-  $('comparison-summary').textContent='从热点中选择项目，或输入自主选题，点击“三位 Agent 随机探索”。完成后在这里多选成片、逐路反馈，或让 Supervisor 重做三路。';
+  $('comparison-summary').textContent='选择热点或自主选题，生成三版后在此对比、入库或反馈重做。';
   $('agent-comparison').innerHTML='';$('review-panel').innerHTML='';$('comparison-feedback').innerHTML='';$('comparison-actions').innerHTML='';return;
  }
  const draft=feedbackDrafts[batch.id]||{global_feedback:'',agent_feedback:{}};
  const savedSelected=new Set(batch.selected_styles|| (batch.selected_style?[batch.selected_style]:[]));
  const pending=pendingSelections[batch.id]||Array.from(savedSelected);
  pendingSelections[batch.id]=pending;
- $('comparison-summary').innerHTML=`<strong>${escapeHTML(batch.repo)}</strong> · 第 ${batch.round||1} 轮 · ${escapeHTML(batch.stage)}${batch.source_url?`<p><a href="${escapeHTML(batch.source_url)}" target="_blank" rel="noreferrer">三路共用的资料来源 ↗</a></p>`:''}${batch.error?`<p class="error-text">${escapeHTML(batch.error)}</p>`:''}${batch.round>1?`<p>这是 Supervisor 按上一轮反馈调整后的第 ${batch.round} 轮。原始成片仍保留在历史记录中。</p>`:batch.experiment?'<p>本轮重新抽取开场、叙事、画面、口吻与节奏；三个 Agent 各自设计提示词并制作。</p>':'<p>历史任务 · 固定风格模式。</p>'}${batch.research?researchHTML(batch.research):''}`;
+ $('comparison-summary').innerHTML=`<strong>${escapeHTML(batch.repo)}</strong> · 第 ${batch.round||1} 轮 · ${escapeHTML(batch.stage)}${batch.source_url?`<p><a href="${escapeHTML(batch.source_url)}" target="_blank" rel="noreferrer">三路共用的资料来源 ↗</a></p>`:''}${batch.error?`<p class="error-text">${escapeHTML(batch.error)}</p>`:''}${batch.round>1?`<p>按反馈调整后的第 ${batch.round} 轮，原成片保留在历史记录。</p>`:batch.experiment?'<p>本轮生成三种创作方案。</p>':'<p>历史任务 · 固定风格模式。</p>'}${batch.research?researchHTML(batch.research):''}`;
  const oldVideos=new Map([...$('agent-comparison').querySelectorAll('video')].map(v=>[v.getAttribute('src'),v]));
  const states={queued:'待开始',running:'进行中',done:'已完成',failed:'未完成'};
  $('agent-comparison').innerHTML=batch.agents.map(a=>{
@@ -159,7 +163,7 @@ function drawComparisons(){
   <div class="sample-kicker">${escapeHTML(a.name)}</div><h3>${escapeHTML(a.title||a.brief?.name||'准备独立创作')}</h3>${creativeDetails(a)}
   <p class="agent-status ${escapeHTML(a.status)}">${states[a.status]||escapeHTML(a.status)} · ${escapeHTML(a.stage)}${saved?' · 已在成片库':''}</p>
   ${a.status==='done'&&a.video?`<video controls playsinline preload="metadata" aria-label="${escapeHTML(a.name)}对比成片" src="${escapeHTML(a.video)}" poster="${appURL('runs/'+encodeURIComponent(a.run)+'/frames/00.png')}"></video><small>${Number(a.duration).toFixed(1)} 秒</small>`:'<div class="agent-placeholder">'+escapeHTML(a.error||a.stage)+'</div>'}
-  ${a.pitch?`<details class="creator-pitch"><summary>创作 Agent 的说明 · 自评</summary><p>${escapeHTML(a.pitch.approach)}</p>${safeList(a.pitch.strengths)}<p>取舍：${escapeHTML(a.pitch.tradeoff)}</p></details>`:''}
+  ${a.pitch?`<details class="creator-pitch"><summary>创作说明 · 自评</summary><p>${escapeHTML(a.pitch.approach)}</p>${safeList(a.pitch.strengths)}<p>取舍：${escapeHTML(a.pitch.tradeoff)}</p></details>`:''}
   ${a.status==='done'?`<div class="sample-actions"><label class="selection-control"><input type="checkbox" data-select-agent="${escapeHTML(id)}" ${checked?'checked':''} ${batch.status==='running'?'disabled':''}><span>${checked?'已勾选入库':'选入成片库'}</span></label><button class="secondary" data-open="${escapeHTML(a.run)}">播放与详情</button></div><label class="route-feedback">给这一路的反馈<textarea data-feedback-agent="${escapeHTML(id)}" rows="2" maxlength="2000" placeholder="例如：稍微太长，结尾再收紧一些">${escapeHTML(draft.agent_feedback[id]||'')}</textarea></label><a class="download-video" href="${escapeHTML(a.video)}" download>下载 MP4 ↓</a>`:''}
  ${a.history?.length?`<details class="creator-pitch"><summary>此前版本 · ${a.history.length} 条</summary>${a.history.map(h=>`<p>第 ${h.round} 轮 · ${escapeHTML(h.title||'未完成')}${h.video?` <a href="${escapeHTML(h.video)}" target="_blank" rel="noreferrer">播放旧版 ↗</a>`:''}</p>`).join('')}</details>`:''}
  </article>`;
@@ -178,7 +182,7 @@ function drawComparisons(){
   setBusy();
  });
  const feedbackEnabled=batch.status!=='running';
- $('comparison-feedback').innerHTML=`<section class="feedback-panel"><div class="eyebrow">SUPERVISOR FEEDBACK</div><h2>看完之后，告诉 Supervisor 怎么改</h2><p>可以只填写某一路，也可以填写统一反馈。比如“整体太长”“开头不够抓人”“结尾没有落点”。</p><label>统一反馈<textarea id="global-feedback" rows="3" maxlength="2000" placeholder="对全部路线的要求，例如：三条都太长，压到一分钟左右，并补一个更明确的结尾" ${feedbackEnabled?'':'disabled'}>${escapeHTML(draft.global_feedback)}</textarea></label><div class="feedback-actions"><button class="primary" data-supervise-feedback ${feedbackEnabled?'':'disabled'}>按反馈重做指定路线</button><button class="secondary" data-reject-all ${feedbackEnabled?'':'disabled'}>三版全部否决，重做三版</button></div><p class="note">“重做指定路线”会根据统一反馈和各路反馈决定范围；“三版全部否决”会让三位 Agent 全部重新生成。</p></section>`;
+ $('comparison-feedback').innerHTML=`<section class="feedback-panel"><div class="eyebrow">SUPERVISOR FEEDBACK</div><h2>修改反馈</h2><p>可填写单路或统一反馈。</p><label>统一反馈<textarea id="global-feedback" rows="3" maxlength="2000" placeholder="对全部路线的要求，例如：三条都太长，压到一分钟左右，并补一个更明确的结尾" ${feedbackEnabled?'':'disabled'}>${escapeHTML(draft.global_feedback)}</textarea></label><div class="feedback-actions"><button class="primary" data-supervise-feedback ${feedbackEnabled?'':'disabled'}>按反馈重做指定路线</button><button class="secondary" data-reject-all ${feedbackEnabled?'':'disabled'}>三版全部否决，重做三版</button></div><p class="note">“重做指定路线”会根据统一反馈和各路反馈决定范围；“三版全部否决”会让三位 Agent 全部重新生成。</p></section>`;
  document.querySelectorAll('[data-feedback-agent],#global-feedback').forEach(el=>el.oninput=()=>{feedbackDrafts[batch.id]=feedbackPayload()});
  if(batch.supervisor)$('comparison-feedback').insertAdjacentHTML('beforeend',`<p class="supervisor-summary"><strong>第 ${batch.supervisor.round} 轮调整：</strong>${escapeHTML(batch.supervisor.summary)}</p>`);
  const review=batch.review||{};
@@ -191,7 +195,7 @@ function drawComparisons(){
  }
  const selectedCount=pending.length;
  const selectionChanged=pending.length!==savedSelected.size||pending.some(id=>!savedSelected.has(id));
- $('comparison-actions').innerHTML=`<span id="selection-count" class="selection-note">已勾选 ${selectedCount} 条${savedSelected.size?' · 已保存 '+savedSelected.size+' 条':''}</span>${batch.status!=='running'?`<button class="primary" data-save-selection data-changed="${selectionChanged}" ${selectionChanged?'':'disabled'}>${selectedCount?'保存选择并进入成片库':'清空已选成片'}</button>`:''}${savedSelected.size?'<button class="secondary" data-open-library>打开成片库</button>':''}${batch.status!=='running'&&batch.status!=='done'?`<button class="secondary" data-retry-comparison="${escapeHTML(batch.id)}">${batch.agents.every(a=>a.status==='done')?'重试独立评审':'重试未完成分支并评审'}</button><span class="note">已完成的视频会保留。</span>`:''}${batch.status!=='running'?`<button class="secondary" data-new-exploration="${escapeHTML(batch.id)}">同题再探索 · 换一组随机方案</button>`:''}`;
+ $('comparison-actions').innerHTML=`<span id="selection-count" class="selection-note">已勾选 ${selectedCount} 条${savedSelected.size?' · 已保存 '+savedSelected.size+' 条':''}</span>${batch.status!=='running'?`<button class="primary" data-save-selection data-changed="${selectionChanged}" ${selectionChanged?'':'disabled'}>${selectedCount?'保存选择并进入成片库':'清空已选成片'}</button>`:''}${savedSelected.size?'<button class="secondary" data-open-library>打开成片库</button>':''}${batch.status!=='running'&&batch.status!=='done'?`<button class="secondary" data-retry-comparison="${escapeHTML(batch.id)}">${batch.agents.every(a=>a.status==='done')?'重试独立评审':'重试未完成分支并评审'}</button><span class="note">已完成的视频会保留。</span>`:''}${batch.status!=='running'?`<button class="secondary" data-new-exploration="${escapeHTML(batch.id)}">同题再生成三版</button>`:''}`;
  document.querySelector('[data-save-selection]')?.addEventListener('click',async()=>{try{const ids=pendingSelections[batch.id]||[],runIds=batch.agents.filter(a=>ids.includes(agentKey(a))&&a.run).map(a=>a.run);await api('comparison-choice',{comparison_id:batch.id,agent_ids:ids});delete pendingSelections[batch.id];await refresh();if(ids.length&&integratedWorkbench){window.parent.postMessage({type:'content-workbench:outputs-changed'},location.origin);tab('library');toast('已保存选择；成片自动同步到素材库')}else{if(ids.length)tab('library');toast(ids.length?'已将 '+ids.length+' 条成片加入成片库':'已清空选择，原视频保留在历史版本中')}}catch(e){toast(e.message)}});
  document.querySelector('[data-open-library]')?.addEventListener('click',()=>tab('library'));
  document.querySelector('[data-supervise-feedback]')?.addEventListener('click',()=>submitSupervisorFeedback(batch,false));
@@ -212,20 +216,21 @@ function updateTopicPanel(){
  const custom=topicMode==='custom';
  if(custom){
   $('pick-title').textContent=$('custom-title').value.trim()||'从你的问题开始';
-  $('pick-description').textContent='研究 Agent 先找资料并整理证据，创作 Agent 再完成文稿、配音与成片。';
+  $('pick-description').textContent='搜索资料后生成文稿、配音与视频。';
   $('pick-metrics').innerHTML='';
  }
  $('pick-source').hidden=custom;
- $('creation-route').textContent=custom?'拆分问题 → 搜索与核实 → 创作 → 配音与成片':'核实资料 → 完整叙事 → 配音与动效 → 成片';
- $('compare').textContent=custom?'研究并让三位 Agent 随机探索 →':'三位 Agent 随机探索 →';
- $('build').textContent=custom?'研究并生成一条视频':'仅按所选风格生成一条';
+ $('creation-route').textContent=custom?'资料研究、文稿、配音与成片自动完成。':'资料核实、文稿、配音与成片自动完成。';
+ $('compare').textContent=custom?'研究并生成三版':'生成三版对比';
+ $('build').textContent=custom?'研究并生成单条':'生成单条';
 }
 function setTopicMode(mode){
  topicMode=mode;
  const custom=mode==='custom';
  $('custom-topic').hidden=!custom;$('candidates').hidden=custom;$('feed-heading').hidden=custom;$('source-status').hidden=custom;
+ $('source-controls').hidden=custom;document.querySelector('.topic-evidence').hidden=custom;
  $('discussions').hidden=custom;document.querySelector('.discussion-heading').hidden=custom;
- for(const [id,active] of [['mode-custom',custom],['mode-trending',!custom]]){$(id).classList.toggle('active',active);$(id).setAttribute('aria-pressed',String(active))}
+ for(const [id,active] of [['mode-custom',custom],['mode-trending',!custom]]){$(id).classList.toggle('active',active&&$('topics').classList.contains('active'));$(id).setAttribute('aria-pressed',String(active&&$('topics').classList.contains('active')))}
  const u=new URL(location);if(custom)u.searchParams.set('topic','custom');else u.searchParams.delete('topic');history.replaceState(null,'',u);
  if(!custom&&selected)pick(selected.id);updateTopicPanel();setBusy();
 }
@@ -233,7 +238,8 @@ function researchHTML(report){
  const sources=report.sources||[];
  return `<details class="research-report"><summary>研究资料 · ${sources.length} 个已读取来源</summary><p>${escapeHTML(report.summary||'资料整理中')}</p><ul>${sources.map(s=>`<li><a href="${escapeHTML(s.url)}" target="_blank" rel="noreferrer">[${escapeHTML(s.id)}] ${escapeHTML(s.title)} ↗</a><small>读取于 ${escapeHTML(s.retrieved_at?new Date(s.retrieved_at).toLocaleString('zh-CN'):'本次研究')}</small></li>`).join('')}</ul>${report.limitations?.length?'<h4>资料局限</h4>'+safeList(report.limitations):''}<p class="note">检索问题：${escapeHTML((report.queries||[]).join('；'))}</p></details>`;
 }
-$('mode-custom').onclick=()=>setTopicMode('custom');
-$('mode-trending').onclick=()=>setTopicMode('trending');
+$('mode-custom').onclick=()=>{setTopicMode('custom');tab('topics')};
+$('mode-trending').onclick=()=>{setTopicMode('trending');tab('topics')};
+window.addEventListener('message',event=>{if(event.origin!==location.origin||event.source!==window.parent||event.data?.type!=='content-studio:navigate')return;if(event.data.view==='settings')tab('settings');else if(event.data.view==='topics'){setTopicMode('trending');tab('topics')}else if(event.data.view==='current'){const active=document.querySelector('section.tab.active')?.id||'topics';window.parent.postMessage({type:'content-workbench:view-changed',view:active==='settings'?'settings':'automatic',title:active==='topics'&&topicMode==='custom'?'自主选题':titles[active]},location.origin)}});
 $('custom-title').oninput=()=>{updateTopicPanel();setBusy()};
 $('custom-topic').onsubmit=e=>{e.preventDefault();startGeneration('build')};

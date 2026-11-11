@@ -1,6 +1,6 @@
 import { FileWordOutlined, GithubOutlined, LogoutOutlined, UserOutlined } from '@ant-design/icons';
 import { useRequest } from 'ahooks';
-import { Alert, App, Avatar, Button, Dropdown, Layout, Skeleton, Watermark } from 'antd';
+import { Alert, App, Avatar, Button, Dropdown, Layout, Skeleton } from 'antd';
 import type { MenuProps } from 'antd';
 import React from 'react';
 import { Outlet } from 'react-router-dom';
@@ -8,7 +8,7 @@ import styled from 'styled-components';
 import logo from '../public/logo.svg';
 import { UrlLogin } from './constant/redirect-url';
 import { UserContext } from './context/user';
-import { ThemeSwitch, useThemeSettings } from './theme-settings';
+import { ThemeSwitch } from './theme-settings';
 import { isEmbedded } from './utils/embedded';
 
 const { Header } = Layout;
@@ -26,9 +26,9 @@ const headerStyle: React.CSSProperties = {
 	paddingRight: 20,
 	height: 60,
 	lineHeight: '60px',
-	background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
-	borderBottom: '1px solid rgba(255,255,255,0.08)',
-	boxShadow: '0 2px 16px rgba(0,0,0,0.25)',
+	background: 'var(--ant-color-bg-container)',
+	borderBottom: '1px solid var(--ant-color-border-secondary)',
+	boxShadow: 'none',
 };
 
 const Logo = styled.div`
@@ -45,74 +45,17 @@ const Logo = styled.div`
 		border-radius: 8px;
 		background: url('${logo}') center / contain no-repeat;
 		flex-shrink: 0;
-		filter: drop-shadow(0 2px 6px rgba(82, 196, 26, 0.4));
 	}
 
 	.title {
-		color: #ffffff;
-		font-weight: 700;
+		color: var(--ant-color-text);
+		font-weight: 550;
 		font-size: 16px;
 		letter-spacing: 0.5px;
 		white-space: nowrap;
 
 		@media (max-width: 639px) {
 			display: none;
-		}
-	}
-`;
-
-const LogoDivider = styled.div`
-	width: 1px;
-	height: 24px;
-	background: rgba(255, 255, 255, 0.15);
-	margin-right: 16px;
-
-	@media (max-width: 639px) {
-		display: none;
-	}
-`;
-
-const Nav = styled.nav`
-	display: flex;
-	align-items: center;
-	gap: 4px;
-
-	.nav-item {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		padding: 0 16px;
-		border-radius: 3px;
-		cursor: pointer;
-		color: rgba(255, 255, 255, 0.85);
-		font-size: 14px;
-		font-weight: 500;
-		background: rgba(255, 255, 255, 0.08);
-		transform: skewX(-12deg);
-		transition:
-			background 0.2s,
-			color 0.2s;
-
-		&:hover {
-			background: rgba(255, 255, 255, 0.18);
-			color: #ffffff;
-		}
-
-		.nav-icon,
-		span {
-			display: inline-flex;
-			align-items: center;
-			transform: skewX(12deg);
-		}
-
-		.nav-icon {
-			font-size: 16px;
-		}
-
-		span {
-			@media (max-width: 639px) {
-				display: none;
-			}
 		}
 	}
 `;
@@ -126,7 +69,7 @@ const UserArea = styled.div`
 	cursor: pointer;
 
 	.username {
-		color: rgba(255, 255, 255, 0.9);
+		color: var(--ant-color-text-secondary);
 		font-size: 14px;
 		font-weight: 500;
 		max-width: 120px;
@@ -148,12 +91,14 @@ const HeaderActions = styled.div`
 
 const AppLayout = () => {
 	const { message } = App.useApp();
-	const { resolvedThemeMode } = useThemeSettings();
-
-	const watermarkColor = resolvedThemeMode === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.06)';
 
 	// 获取用户详情
-	const { data: user, loading: userLoading, error, refresh } = useRequest(
+	const {
+		data: user,
+		loading: userLoading,
+		error,
+		refresh,
+	} = useRequest(
 		async () => {
 			const resp = await window.wechatRobotClient.user.selfList();
 			return resp.data.data;
@@ -182,6 +127,19 @@ const AppLayout = () => {
 
 	const items: MenuProps['items'] = [
 		{
+			key: 'docs',
+			label: '使用文档',
+			icon: <FileWordOutlined />,
+			onClick: () => window.open('https://wechat-doc.houhoukang.com', '_blank'),
+		},
+		{
+			key: 'github',
+			label: 'GitHub',
+			icon: <GithubOutlined />,
+			onClick: () => window.open('https://github.com/hp0912/wechat-robot-client', '_blank'),
+		},
+		{ type: 'divider' },
+		{
 			key: 'signout',
 			label: '登出',
 			icon: <LogoutOutlined />,
@@ -193,7 +151,14 @@ const AppLayout = () => {
 	];
 
 	if (isEmbedded && error && !user) {
-		return <Alert type="error" title="微信助手暂时无法加载" description={error.message} action={<Button onClick={refresh}>重试</Button>} />;
+		return (
+			<Alert
+				type="error"
+				title="微信助手暂时无法加载"
+				description={error.message}
+				action={<Button onClick={refresh}>重试</Button>}
+			/>
+		);
 	}
 
 	if (!user || userLoading) {
@@ -211,38 +176,14 @@ const AppLayout = () => {
 	}
 
 	return (
-		<Watermark
-			content={`微信机器人管理后台: ${user.display_name}`}
-			font={{ color: watermarkColor }}
-		>
+		<>
 			<Layout style={rootStyle}>
 				<Header style={headerStyle}>
 					<div style={{ display: 'flex', alignItems: 'center' }}>
 						<Logo>
 							<div className="icon" />
-							<div className="title">微信机器人管理后台</div>
+							<div className="title">微信客服</div>
 						</Logo>
-						<LogoDivider />
-						<Nav>
-							<div
-								className="nav-item"
-								onClick={() => {
-									window.open('https://github.com/hp0912/wechat-robot-client', '_blank');
-								}}
-							>
-								<GithubOutlined className="nav-icon" />
-								<span>GitHub</span>
-							</div>
-							<div
-								className="nav-item"
-								onClick={() => {
-									window.open('https://wechat-doc.houhoukang.com', '_blank');
-								}}
-							>
-								<FileWordOutlined className="nav-icon" />
-								<span>使用文档</span>
-							</div>
-						</Nav>
 					</div>
 					<HeaderActions>
 						<ThemeSwitch />
@@ -257,7 +198,7 @@ const AppLayout = () => {
 									src={user.avatar_url}
 									alt={user.display_name}
 									icon={<UserOutlined />}
-									style={{ backgroundColor: '#0f3460', flexShrink: 0 }}
+									style={{ backgroundColor: 'var(--ant-color-primary-bg)', flexShrink: 0 }}
 								/>
 								<span className="username">{user.display_name}</span>
 							</UserArea>
@@ -272,7 +213,7 @@ const AppLayout = () => {
 					</UserContext.Provider>
 				</Layout>
 			</Layout>
-		</Watermark>
+		</>
 	);
 };
 

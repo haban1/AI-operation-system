@@ -19,5 +19,22 @@
     "voice": "Vivian",
     "instruction": "用清晰自然的普通话讲解科技话题。",
     "use_style_presets": true
+  },
+  "sources": {
+    "github": true,
+    "weibo": true,
+    "xiaohongshu": true,
+    "hackernews": true,
+    "reddit": true,
+    "xhs_keywords": [
+      "人工智能"
+    ],
+    "xhs_note_type": "不限",
+    "rss": [
+      {
+        "name": "IT之家",
+        "url": "https://www.ithome.com/rss/"
+      }
+    ]
   }
 }

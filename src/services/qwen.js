@@ -1,3 +1,4 @@
+import { beginAiConnectionTest, finishAiConnectionTest } from './ai-connection-status.js';
 import { getAiSettings, redactAiSecrets } from './settings.js';
 import { recordAiCall } from './ai-usage.js';
 import { countUnicodeCharacters, truncateUnicodeSafely } from './platform-reply-policy.js';
@@ -345,7 +346,7 @@ export async function composeReply({ userMessage, knowledge, taskId = null, maxL
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       const retryInstruction = attempt === 1 ? '' : '上一次事实核验未通过：' + lastVerificationReason + '。请修正后重新组织回复。';
       const sceneInstruction = isComment ? '这是评论区：优先1句，必要时2句，直接回答，不使用私信客服开场。' : context.length ? '这是连续私信：承接前文，不重新打招呼，不让用户重复已经说过的信息。' : '这是私信首轮：直接处理问题，确实缺信息时才精准追问。';
-      const systemPrompt = '你是熟悉社区业务的真人运营，正在直接回复用户。先理解用户这一轮真正想解决什么，再自然接话。知识答案决定“事实是什么”，你可以自由决定“怎么说”：允许调整语序、合并句子和口语化改写，但不能改变或编造时间、地点、金额、条件、范围、政策、联系方式、例外、肯定或否定结论，也不能新增办理结果或服务承诺。只回答当前问题真正需要的内容；重要条件和例外不能省略。不要复述用户问题，不要写“关于您提出的问题”“根据知识库”“这边为您”“具体业务”等客服模板，不要靠堆叠“呀、呢、啦、哦、～”制造亲切感，也不要每次以“你好”开头。' + sceneInstruction + scriptInstruction + '回复不超过' + maxLength + '个Unicode字符。' + retryInstruction + '严格输出JSON：{"reply":"最终回复"}。';
+      const systemPrompt = '你是社区运营团队的智能助手，像日常发消息一样自然回复，不要冒充真人。先理解用户这一轮真正想解决什么，先给简短结论，再补必要的信息。知识答案决定“事实是什么”，你可以自由决定“怎么说”：允许调整语序、合并句子和口语化改写，但不能改变或编造时间、地点、金额、条件、范围、政策、联系方式、例外、肯定或否定结论，也不能新增办理结果或服务承诺。只回答当前问题真正需要的内容；重要条件和例外不能省略。一般用1到3句短句，资料中的完整清单不必照搬；用户明确要全部内容时才展开。不要写报告式标题、无关背景或结尾的万能追问，不必每条都加问号。不要复述用户问题，不要写“关于您提出的问题”“根据知识库”“这边为您”“具体业务”等客服模板，不要靠堆叠“呀、呢、啦、哦、～”制造亲切感，也不要每次以“你好”开头。' + sceneInstruction + scriptInstruction + '回复不超过' + maxLength + '个Unicode字符。' + retryInstruction + '严格输出JSON：{"reply":"最终回复"}。';
       const data = await requestChatCompletion(settings, {
         model: settings.model,
         temperature: 0.42,
@@ -412,7 +413,7 @@ export async function composeMultiReply({ userMessage, matches = [], unknownQues
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       const retryInstruction = attempt === 1 ? '' : '上一次事实核验未通过：' + lastVerificationReason + '。请修正后重新组织回复。';
       const sceneInstruction = isComment ? '这是评论区：尽量1到2句，短而直接。' : context.length ? '这是连续私信：自然承接前文，不重新问候。' : '这是私信首轮：直接回答，缺什么只问什么。';
-      const systemPrompt = '你是熟悉社区业务的真人运营。用户一条消息里问了多件事，你要把每件事都听懂后合成一次自然回复。知识答案决定事实，你可以口语化改写和调整顺序，但不能改变或编造时间、地点、金额、条件、范围、联系方式、例外、肯定或否定结论，也不能新增办理结果或承诺。明确区分：哪些已经有可靠答案，哪些仍需用户补充信息；不能用一个含糊的“可以的”覆盖多个问题。待确认话术可以自然改写，但必须保留它真正追问的缺失信息。不要复述用户问题，不要写“关于您提出的问题”“根据知识库”“这边为您”“具体业务”等模板，不默认编号，不机械添加“你好”。' + sceneInstruction + scriptInstruction + '回复不超过' + maxLength + '个Unicode字符。' + retryInstruction + '严格输出JSON：{"reply":"最终回复"}。';
+      const systemPrompt = '你是社区运营团队的智能助手，像日常发消息一样自然回复，不要冒充真人。用户一条消息里问了多件事，先回答重点，再把相关信息合成一次自然回复。知识答案决定事实，你可以口语化改写和调整顺序，但不能改变或编造时间、地点、金额、条件、范围、联系方式、例外、肯定或否定结论，也不能新增办理结果或承诺。明确区分：哪些已经有可靠答案，哪些仍需用户补充信息；不能用一个含糊的“可以的”覆盖多个问题。待确认话术可以自然改写，但必须保留它真正追问的缺失信息。用短句自然衔接，不必每件事单独做标题，不把完整资料粘贴出来；用户要全部细节时再展开。不要复述用户问题，不要写“关于您提出的问题”“根据知识库”“这边为您”“具体业务”等模板，不默认编号，不机械添加“你好”。' + sceneInstruction + scriptInstruction + '回复不超过' + maxLength + '个Unicode字符。' + retryInstruction + '严格输出JSON：{"reply":"最终回复"}。';
       const data = await requestChatCompletion(settings, {
         model: settings.model,
         temperature: 0.45,
@@ -443,44 +444,6 @@ export async function composeMultiReply({ userMessage, matches = [], unknownQues
   }
 }
 
-function parseJsonArray(value) {
-  if (Array.isArray(value)) return value;
-  const text = String(value || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-  try {
-    const parsed = JSON.parse(text);
-    if (Array.isArray(parsed)) return parsed;
-    if (Array.isArray(parsed?.aliases)) return parsed.aliases;
-  } catch {}
-  const start = text.indexOf('[');
-  const end = text.lastIndexOf(']');
-  if (start >= 0 && end > start) return JSON.parse(text.slice(start, end + 1));
-  throw new Error('AI 相似问法生成未返回有效 JSON 数组');
-}
-
-function mockKnowledgeAliases(question = '') {
-  const source = String(question || '').trim().replace(/[？?。！!]+$/g, '');
-  if (!source) return [];
-  const variants = new Set([source]);
-  const prefixes = ['', '请问', '我想问一下', '想咨询一下', '麻烦问下', '您好，请问'];
-  const suffixes = ['', '吗', '呢', '可以告诉我吗'];
-  for (const prefix of prefixes) {
-    for (const suffix of suffixes) variants.add(`${prefix}${source}${suffix}`);
-  }
-  const replacements = [
-    ['是否可以', '可不可以'], ['是否可以', '能不能'], ['可不可以', '行不行'], ['可不可以', '是否可以'],
-    ['能不能', '可不可以'], ['行不行', '可不可以'], ['如何', '怎么'], ['怎么', '如何'],
-    ['是否收费', '要不要钱'], ['是否收费', '收费吗'], ['费用', '多少钱'], ['地址', '在哪里'],
-    ['时间', '什么时候'], ['报名', '怎么报名'], ['孩子', '小孩'], ['小孩', '孩子']
-  ];
-  for (const [from, to] of replacements) {
-    for (const item of [...variants]) if (item.includes(from)) variants.add(item.replaceAll(from, to));
-  }
-  return [...variants]
-    .map(item => item.replace(/请问请问/g, '请问').replace(/[？?。！!]+$/g, '').trim())
-    .filter((item, index, all) => item && all.indexOf(item) === index && item !== source)
-    .slice(0, 30);
-}
-
 export function detectChineseScript(value = '') {
   const text = String(value || '');
   const traditionalHits = (text.match(/[體臺灣為與這個來時會後裡麼問學習開關閉發現應該讓從將還進過內寶綁銀錢費報名資訊聯絡]/g) || []).length;
@@ -488,194 +451,6 @@ export function detectChineseScript(value = '') {
   if (traditionalHits > simplifiedHits) return 'traditional';
   if (simplifiedHits > traditionalHits) return 'simplified';
   return 'neutral';
-}
-
-export async function generateKnowledgeAliases({ knowledge, taskId = null, count = 30 }) {
-  if (!knowledge?.question) throw new Error('知识标准问题为空，无法生成相似问法');
-  const settings = getAiSettings();
-  const startedAt = Date.now();
-  if (settings.mode === 'mock') {
-    const aliases = mockKnowledgeAliases(knowledge.question).slice(0, count);
-    recordAiCall({ taskType: 'KNOWLEDGE_ALIAS_GENERATION', taskId, sourceModule: 'knowledge-alias', mode: 'mock', model: 'mock-alias-generator', status: 'SUCCESS', durationMs: Date.now() - startedAt });
-    return { aliases, model: 'mock-alias-generator', usage: null };
-  }
-  if (!settings.apiKey) throw new Error('AI Key 未配置，无法生成相似问法');
-  const sourceScript = detectChineseScript(`${knowledge.question || ''}${knowledge.answer || ''}`);
-  const scriptInstruction = sourceScript === 'traditional'
-    ? '原知识以繁体中文为主：至少一半问法使用自然繁体中文，同时生成对应的简体中文等价问法，以便两种文字都能命中。'
-    : sourceScript === 'simplified'
-      ? '原知识以简体中文为主：至少一半问法使用自然简体中文，同时生成对应的繁体中文等价问法，以便两种文字都能命中。'
-      : '同时覆盖自然简体中文和繁体中文问法，两种文字必须语义完全一致。';
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 120_000);
-  try {
-    const response = await fetch(`${settings.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.apiKey}` },
-      body: JSON.stringify({
-        model: settings.model,
-        temperature: 0.25,
-        max_tokens: 1800,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: `你是中文知识库相似问法生成器。围绕给定标准问题生成${Math.max(20, Math.min(30, Number(count) || 30))}条语义等价、口语化且覆盖不同表达习惯的问法。必须保持原问题的对象、条件、范围和意图，不得扩大或改变含义，不得生成答案。${scriptInstruction} 不要把简繁转换当成不同含义。输出严格JSON：{"aliases":["问法1","问法2"]}。` },
-          { role: 'user', content: `标准问题：${knowledge.question}\n关键词：${knowledge.keywords || ''}\n知识分类：${knowledge.category || ''}/${knowledge.subcategory || ''}` }
-        ]
-      }),
-      signal: controller.signal
-    });
-    if (!response.ok) throw new Error(`AI API 返回 ${response.status}: ${(await response.text()).slice(0, 500)}`);
-    const data = await response.json();
-    const aliases = parseJsonArray(data?.choices?.[0]?.message?.content)
-      .map(item => String(item || '').trim().normalize('NFC'))
-      .filter(Boolean)
-      .slice(0, Math.max(1, Math.min(30, Number(count) || 30)));
-    const result = { aliases, model: data.model || settings.model, usage: normalizeUsage(data.usage) };
-    recordAiCall({ taskType: 'KNOWLEDGE_ALIAS_GENERATION', taskId, sourceModule: 'knowledge-alias', mode: settings.mode, model: result.model, status: 'SUCCESS', usage: result.usage, durationMs: Date.now() - startedAt });
-    return result;
-  } catch (error) {
-    recordAiCall({ taskType: 'KNOWLEDGE_ALIAS_GENERATION', taskId, sourceModule: 'knowledge-alias', mode: settings.mode, model: settings.model, status: 'FAILED', durationMs: Date.now() - startedAt, errorCode: error.name === 'AbortError' ? 'AI_TIMEOUT' : 'AI_REQUEST_FAILED', errorMessage: redactAiSecrets(error.message) });
-    if (error.name === 'AbortError') throw new Error('千问生成相似问法超过120秒，请稍后重新生成');
-    throw error;
-  } finally { clearTimeout(timer); }
-}
-
-function mockKnowledgeMetadata({ question = '', answer = '', allowedCategories = [], preferredCategory = '', existingSubcategories = [] } = {}) {
-  const text = `${question} ${answer}`;
-  const rules = [
-    { pattern: /收费|费用|价格|多少钱|免费|缴费|退款|发票/, subcategory: '费用缴费', keywords: ['是否收费', '费用是多少', '要不要钱'] },
-    { pattern: /材料|证件|证明|身份证|申请表|办理流程/, subcategory: '证件材料', keywords: ['需要哪些材料', '办理所需证件', '申请材料'] },
-    { pattern: /地址|哪里|在哪|位置|怎么去|地铁|公交|停车/, subcategory: '地址交通', keywords: ['具体地址在哪里', '怎么去服务地点', '交通路线'] },
-    { pattern: /时间|几点|上班|下班|开放|营业|工作日/, subcategory: '开放时间', keywords: ['开放时间是什么时候', '几点上班', '营业时间'] },
-    { pattern: /孩子|小孩|儿童|亲子/, subcategory: '活动报名', keywords: ['是否可以带孩子', '小孩能不能参加', '儿童可以参加吗'] },
-    { pattern: /报名|名额|预约|参加|招募|招聘|入驻|加入/, subcategory: '活动报名', keywords: ['如何报名参加', '报名条件是什么', '是否还可以报名'] },
-    { pattern: /电话|联系|微信|邮箱|热线/, subcategory: '联系方式', keywords: ['怎么联系工作人员', '咨询电话是多少', '联系方式'] }
-  ];
-  const matched = rules.find(item => item.pattern.test(text)) || { subcategory: '未分类', keywords: [] };
-  const category = allowedCategories.includes(preferredCategory) ? preferredCategory : (allowedCategories[0] || '公共知识库');
-  const existing = existingSubcategories.find(item => String(item).includes(matched.subcategory) || matched.subcategory.includes(String(item)));
-  return {
-    keywords: matched.keywords.map((text, index) => ({ text, confidence: Math.max(0.78, 0.94 - index * 0.05), reason: '模拟模式根据标准问题和答案提取完整业务意图' })),
-    category: { name: category, confidence: 0.9, reason: preferredCategory ? '优先保持消息来源平台的知识范围' : '未提供平台来源，采用允许范围内的安全默认大类' },
-    subcategory: { name: existing || matched.subcategory, confidence: matched.subcategory === '未分类' ? 0.55 : 0.88, existing: Boolean(existing), reason: matched.subcategory === '未分类' ? '暂未识别到明确业务小类' : '根据问题和答案中的业务主题推荐' }
-  };
-}
-
-export async function generateKnowledgeMetadataSuggestions({
-  question,
-  answer,
-  originalMessage = '',
-  platformCode = '',
-  allowedCategories = [],
-  preferredCategory = '',
-  existingSubcategories = [],
-  taskId = null
-} = {}) {
-  const normalizedQuestion = String(question || '').trim();
-  const normalizedAnswer = String(answer || '').trim();
-  if (!normalizedQuestion) throw new Error('标准问题不能为空，无法生成 AI 推荐');
-  if (!normalizedAnswer) throw new Error('标准答案不能为空，无法生成 AI 推荐');
-  const categories = [...new Set((allowedCategories || []).map(item => String(item || '').trim()).filter(Boolean))];
-  if (!categories.length) throw new Error('未提供可选知识大类，无法生成 AI 推荐');
-  const settings = getAiSettings();
-  const startedAt = Date.now();
-  if (settings.mode === 'mock') {
-    const suggestion = mockKnowledgeMetadata({ question: normalizedQuestion, answer: normalizedAnswer, allowedCategories: categories, preferredCategory, existingSubcategories });
-    recordAiCall({ taskType: 'KNOWLEDGE_METADATA_RECOMMENDATION', taskId, sourceModule: 'knowledge-metadata-suggestion', mode: 'mock', model: 'mock-knowledge-metadata', status: 'SUCCESS', durationMs: Date.now() - startedAt });
-    return { ...suggestion, model: 'mock-knowledge-metadata', usage: null };
-  }
-  if (!settings.apiKey) {
-    recordAiCall({ taskType: 'KNOWLEDGE_METADATA_RECOMMENDATION', taskId, sourceModule: 'knowledge-metadata-suggestion', mode: settings.mode, model: settings.model, status: 'FAILED', durationMs: Date.now() - startedAt, errorCode: 'AI_KEY_MISSING', errorMessage: 'AI Key 未配置' });
-    throw new Error('AI Key 未配置，无法生成知识关键词和分类推荐');
-  }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30_000);
-  try {
-    const response = await fetch(`${settings.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.apiKey}` },
-      body: JSON.stringify({
-        model: settings.model,
-        temperature: 0.1,
-        max_tokens: 1400,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: `你是中文业务知识库元数据审核助手。根据标准问题和标准答案，推荐3到8个能真正触发该答案的完整意图关键词、一个知识大类和一个小类。关键词必须是用户可能说出的具体意图短语，禁止输出过宽泛的单词，例如“活动、资料、报名、加入、可以、怎么、电话、地址”。答案只用于限定问题边界，不能把答案里的所有名词都当关键词。必须兼容简体和繁体表达，但不要把简繁体重复项同时列出。大类只能从给定列表中选择，不能创造新大类；有平台来源时优先保持该平台大类，只有内容明确五个平台通用时才可推荐公共知识库。小类优先复用已有小类，确需新建时 existing=false。输出严格JSON：{"keywords":[{"text":"完整意图词","confidence":0.9,"reason":"原因"}],"category":{"name":"允许的大类","confidence":0.9,"reason":"原因"},"subcategory":{"name":"小类","confidence":0.9,"existing":true,"reason":"原因"}}。` },
-          { role: 'user', content: `标准问题：${normalizedQuestion}\n标准答案：${normalizedAnswer}\n原用户消息：${String(originalMessage || '').trim()}\n来源平台：${platformCode || '未指定'}\n优先大类：${preferredCategory || '未指定'}\n允许大类：${JSON.stringify(categories)}\n已有小类：${JSON.stringify((existingSubcategories || []).slice(0, 60))}` }
-        ]
-      }),
-      signal: controller.signal
-    });
-    if (!response.ok) throw new Error(`AI API 返回 ${response.status}: ${(await response.text()).slice(0, 500)}`);
-    const data = await response.json();
-    const parsed = parseJsonObject(data?.choices?.[0]?.message?.content);
-    const result = { ...parsed, model: data.model || settings.model, usage: normalizeUsage(data.usage) };
-    recordAiCall({ taskType: 'KNOWLEDGE_METADATA_RECOMMENDATION', taskId, sourceModule: 'knowledge-metadata-suggestion', mode: settings.mode, model: result.model, status: 'SUCCESS', usage: result.usage, durationMs: Date.now() - startedAt });
-    return result;
-  } catch (error) {
-    recordAiCall({ taskType: 'KNOWLEDGE_METADATA_RECOMMENDATION', taskId, sourceModule: 'knowledge-metadata-suggestion', mode: settings.mode, model: settings.model, status: 'FAILED', durationMs: Date.now() - startedAt, errorCode: error.name === 'AbortError' ? 'AI_TIMEOUT' : 'AI_REQUEST_FAILED', errorMessage: redactAiSecrets(error.message) });
-    if (error.name === 'AbortError') throw new Error('千问生成知识关键词和分类推荐超过30秒，请稍后重新生成');
-    throw error;
-  } finally { clearTimeout(timer); }
-}
-
-function mockManualHandoffAliases(phrase = '') {
-  const source = String(phrase || '').trim().replace(/[？?。！!]+$/g, '');
-  const variants = [
-    '请帮我转接人工客服', '麻烦帮我转人工处理', '我想找真人客服', '请给我安排人工回复',
-    '帮我联系一下工作人员', '我需要人工客服处理', '请转接一位客服人员', '麻烦让人工来处理',
-    '帮我找个真人客服', '我想和工作人员沟通', '请安排专员联系我', '我要转到人工服务',
-    '請幫我轉接人工客服', '麻煩幫我轉人工處理', '我想找真人客服', '請安排工作人員回覆我',
-    '帮我接人工', '转一下人工客服', '给我找人工客服', '我要人工来回复'
-  ];
-  if (source) variants.unshift(source);
-  return [...new Set(variants.filter(Boolean))].filter(item => item !== source);
-}
-
-export async function generateManualHandoffAliases({ phrase, taskId = null, count = 20 }) {
-  const source = String(phrase || '').trim();
-  if (!source) throw new Error('转人工标准说法为空，无法生成相似说法');
-  const settings = getAiSettings();
-  const startedAt = Date.now();
-  const maximum = Math.max(10, Math.min(30, Number(count) || 20));
-  if (settings.mode === 'mock') {
-    const aliases = mockManualHandoffAliases(source).slice(0, maximum);
-    recordAiCall({ taskType: 'MANUAL_HANDOFF_ALIAS_GENERATION', taskId, sourceModule: 'manual-handoff-alias', mode: 'mock', model: 'mock-handoff-alias-generator', status: 'SUCCESS', durationMs: Date.now() - startedAt });
-    return { aliases, model: 'mock-handoff-alias-generator', usage: null };
-  }
-  if (!settings.apiKey) throw new Error('AI Key 未配置，无法生成转人工相似说法');
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 120_000);
-  try {
-    const response = await fetch(`${settings.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.apiKey}` },
-      body: JSON.stringify({
-        model: settings.model,
-        temperature: 0.2,
-        max_tokens: 1600,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: `你是中文“明确请求转人工”相似说法生成器。围绕标准说法生成${maximum}条自然、完整、口语化的等价表达，并覆盖简体与繁体。每条都必须明确表示用户现在要求转接真人、人工客服、工作人员或专员处理。禁止生成：疑问句（如“可以转人工吗”）、否定句、引用别人的话、只包含“人工/客服”的短词、投诉或普通咨询、加入或入驻等并不等于明确转人工的内容。不得改变意图。输出严格 JSON：{"aliases":["说法1","说法2"]}。` },
-          { role: 'user', content: `标准转人工说法：${source}` }
-        ]
-      }),
-      signal: controller.signal
-    });
-    if (!response.ok) throw new Error(`AI API 返回 ${response.status}: ${(await response.text()).slice(0, 500)}`);
-    const data = await response.json();
-    const aliases = parseJsonArray(data?.choices?.[0]?.message?.content)
-      .map(item => String(item || '').trim().normalize('NFC'))
-      .filter(Boolean)
-      .slice(0, maximum);
-    const result = { aliases, model: data.model || settings.model, usage: normalizeUsage(data.usage) };
-    recordAiCall({ taskType: 'MANUAL_HANDOFF_ALIAS_GENERATION', taskId, sourceModule: 'manual-handoff-alias', mode: settings.mode, model: result.model, status: 'SUCCESS', usage: result.usage, durationMs: Date.now() - startedAt });
-    return result;
-  } catch (error) {
-    recordAiCall({ taskType: 'MANUAL_HANDOFF_ALIAS_GENERATION', taskId, sourceModule: 'manual-handoff-alias', mode: settings.mode, model: settings.model, status: 'FAILED', durationMs: Date.now() - startedAt, errorCode: error.name === 'AbortError' ? 'AI_TIMEOUT' : 'AI_REQUEST_FAILED', errorMessage: redactAiSecrets(error.message) });
-    if (error.name === 'AbortError') throw new Error('千问生成转人工相似说法超过120秒，请稍后重新生成');
-    throw error;
-  } finally { clearTimeout(timer); }
 }
 
 export async function testAiConnection() {
@@ -686,20 +461,26 @@ export async function testAiConnection() {
     return { mode: 'mock', model: settings.model, message: '模拟模式配置有效，未消耗在线 Token' };
   }
   if (!settings.apiKey) throw new Error('请先配置 AI Key');
+  const testToken = beginAiConnectionTest(settings);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15_000);
   try {
     const response = await fetch(`${settings.baseUrl}/chat/completions`, {
-      method: 'POST',
+      method: 'POST', redirect: 'error',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.apiKey}` },
       body: JSON.stringify({ model: settings.model, temperature: 0, max_tokens: 8, messages: [{ role: 'user', content: '仅回复 OK' }] }),
       signal: controller.signal
     });
-    if (!response.ok) throw new Error(`AI API 返回 ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    if (!response.ok) throw new Error(`AI API 返回 HTTP ${response.status}，请检查 Key、地址和模型权限`);
     const data = await response.json();
-    recordAiCall({ taskType: 'CONNECTION_TEST', sourceModule: 'ai-settings', mode: settings.mode, model: data.model || settings.model, status: 'SUCCESS', usage: data.usage || null, durationMs: Date.now() - startedAt });
-    return { mode: settings.mode, model: data.model || settings.model, message: 'AI 在线连接测试成功' };
+    if (typeof data?.choices?.[0]?.message?.content !== 'string' || !data.choices[0].message.content.trim()) throw new Error('接口未返回有效的对话内容');
+    const returnedModel = String(data.model || settings.model).split(settings.apiKey).join('******');
+    finishAiConnectionTest(testToken, 'PASSED');
+    recordAiCall({ taskType: 'CONNECTION_TEST', sourceModule: 'ai-settings', mode: settings.mode, model: returnedModel, status: 'SUCCESS', usage: data.usage || null, durationMs: Date.now() - startedAt });
+    return { mode: settings.mode, model: returnedModel, message: '对话模型连接测试成功（视觉 / OCR 能力未验证）' };
   } catch (error) {
+    finishAiConnectionTest(testToken, 'FAILED');
+    error.message = String(error.message || 'AI 连接测试失败').split(settings.apiKey).join('******');
     recordAiCall({ taskType: 'CONNECTION_TEST', sourceModule: 'ai-settings', mode: settings.mode, model: settings.model, status: 'FAILED', durationMs: Date.now() - startedAt, errorCode: error.name === 'AbortError' ? 'AI_TIMEOUT' : 'AI_CONNECTION_FAILED', errorMessage: redactAiSecrets(error.message) });
     throw error;
   } finally { clearTimeout(timer); }

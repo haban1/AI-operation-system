@@ -93,6 +93,46 @@ test('小智即时复用正式知识库，但不创建真实消息或Agent任务
     }
   }
 
+  const commentChat = async (contextEnabled = true) => {
+    const created = await request(base, '/api/xiaozhi/sessions', { method: 'POST', body: JSON.stringify({ platformCode: 'douyin', messageType: 'COMMENT', contextEnabled }) });
+    assert.equal(created.response.status, 200);
+    return async (content, settings = {}) => {
+      const result = await request(base, '/api/xiaozhi/chat', { method: 'POST', body: JSON.stringify({ sessionId: created.data.session.id, content, ...settings }) });
+      assert.equal(result.response.status, 200, JSON.stringify(result.data));
+      return result.data;
+    };
+  };
+  const offerThenAccept = await commentChat();
+  const commentOffer = await offerThenAccept('有没有木工雕刻课？');
+  assert.equal(commentOffer.action, 'REPLY');
+  assert.equal(commentOffer.responseMode, 'COMMENT_HANDOFF_OFFER');
+  assert.equal(commentOffer.handoffOffered, true);
+  assert.equal(commentOffer.handoffRequested, false);
+  assert.match(commentOffer.replyText, /回复.*详情/);
+  assert.match(commentOffer.replyText, /站内消息/);
+  assert.doesNotMatch(commentOffer.replyText, /转人工|人工协助|已通知|已发私信/);
+  assert.equal((await offerThenAccept('详情')).action, 'HANDOFF');
+  assert.equal((await offerThenAccept('参加志愿者活动需要携带什么材料？')).action, 'HANDOFF', '确认转人工后保留人工接管');
+
+  const offerThenDecline = await commentChat();
+  await offerThenDecline('有没有木工雕刻课？');
+  const declined = await offerThenDecline('不用了');
+  assert.equal(declined.decision, 'COMMENT_HANDOFF_DECLINED');
+  assert.equal(declined.action, 'REPLY');
+  assert.equal(declined.handoffRequested, false);
+  assert.equal((await offerThenDecline('参加志愿者活动需要携带什么材料？')).decision, 'AUTO_REPLY');
+
+  const mixedConfirmation = await commentChat();
+  await mixedConfirmation('有没有木工雕刻课？');
+  assert.equal((await mixedConfirmation('好，课程几点开始？')).action, 'REPLY', '带业务问题的肯定不能当作转人工确认');
+  const withoutContext = await commentChat(false);
+  await withoutContext('有没有木工雕刻课？');
+  assert.equal((await withoutContext('好的')).decision, 'COMMENT_SOCIAL_REPLY', '无上下文的肯定不确认之前的转人工邀请');
+  assert.equal((await withoutContext('好的', { contextEnabled: true })).handoffRequested, false, '重新启用上下文不恢复旧邀请');
+  assert.equal((await (await commentChat())('好的')).decision, 'COMMENT_SOCIAL_REPLY', '评论路由包含平台信息且普通肯定不转人工');
+  assert.equal((await (await commentChat())('转人工')).action, 'HANDOFF', '明确转人工请求优先');
+  assert.equal((await (await commentChat())('垃圾客服')).action, 'HANDOFF', '风险评论继续直接转人工');
+
   const disabled = await request(base, `/api/xiaozhi/sessions/${session.data.session.id}/answers/${first.data.answerId}/decision`, { method: 'PUT', body: JSON.stringify({ decision: 'DISABLED', reasonCode: 'ANSWER_INACCURATE', reason: '测试停用：答案需要重新核对' }) });
   assert.equal(disabled.response.status, 200, JSON.stringify(disabled.data));
   assert.equal(disabled.data.answer.decision, 'DISABLED');

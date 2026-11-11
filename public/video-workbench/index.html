@@ -9,6 +9,7 @@
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./style.css">
   <link rel="stylesheet" href="./library.css">
+  <link rel="stylesheet" href="./workspace.css?v=20261109">
   <script src="./app.js" defer></script>
   <script src="./library.js" defer></script>
 </head>
@@ -18,7 +19,7 @@
     <a class="brand" href="#overview" aria-label="视频创作工作台首页"><img src="./icon.svg" alt="" width="36" height="36"><span>视频创作<span class="brandSub">VIDEO WORKSPACE</span></span></a>
     <div class="navLabel">工作空间</div>
     <nav aria-label="工作台导航">
-      <a class="navItem selected" href="#overview" data-route="overview" aria-label="工作台总览"><span class="navIcon">▦</span><span>工作台总览</span></a>
+      <a class="navItem selected" href="#overview" data-route="overview" aria-label="创作方式"><span class="navIcon">▦</span><span>工作台总览</span></a>
       <div class="navDivider"></div>
       <a class="navItem routeNav" href="#automatic" data-route="automatic" aria-label="线路一：自动化成片"><span class="routeNumber">01</span><span>自动化成片<small>AI Signal Studio</small></span><i class="navDot" data-dot="automatic" aria-hidden="true"></i></a>
       <a class="navItem routeNav" href="#editing" data-route="editing" aria-label="线路二：素材智剪 OpenChatCut"><span class="routeNumber">02</span><span>素材智剪<small>OpenChatCut</small></span><i class="navDot" data-dot="editing" aria-hidden="true"></i></a>
@@ -35,36 +36,37 @@
     </header>
     <main id="main" tabindex="-1">
       <section id="overview" class="overview view">
-        <div class="welcome"><div><div class="eyebrow">YOUR VIDEO WORKSPACE</div><h1>让创意，各有路径。</h1><p>从自动化成片到 AI 画布，在一个工作台继续创作。</p></div><div class="workspaceTag"><span class="workspaceGlyph">↗</span><div><strong>三条创作线路</strong><span>一个工作入口</span></div></div></div>
+        <div class="welcome"><div><div class="eyebrow">YOUR VIDEO WORKSPACE</div><h1>创作方式</h1><p>选择一种方式开始创作</p></div><div class="workspaceTag"><span class="workspaceGlyph">↗</span><div><strong>三条创作线路</strong><span>一个工作入口</span></div></div></div>
         <div class="sectionHeading"><h2>选择创作方式</h2><span>03 条创作线路</span></div>
         <div class="routeGrid">
           <article class="routeCard automaticCard">
             <div class="cardTop"><span class="numberLabel">ROUTE / 01</span><span class="statusBadge" data-status="automatic">检查中</span></div>
             <div class="routeArt autoArt" aria-hidden="true"><div class="artDocument"><i></i><i></i><i></i></div><span class="artLink"></span><div class="artStack"><span>▶</span><i></i><i></i></div><span class="artSpark">✦</span></div>
-            <h3>自动化成片</h3><p class="cardDescription">从热点或自主选题出发，研究资料，生成配音与动效视频，对比并挑选满意的版本。</p>
+            <h3>自动化成片</h3><p class="cardDescription">选题、配音与视频生成</p>
             <div class="steps"><span>选题研究</span><b>→</b><span>多风格创作</span><b>→</b><span>挑选成片</span></div>
             <div class="cardFoot"><span>AI Signal Studio</span><a class="routeButton" href="#automatic">进入工作区 <span>↗</span></a></div>
           </article>
           <article class="routeCard editingCard">
             <div class="cardTop"><span class="numberLabel">ROUTE / 02</span><span class="statusBadge" data-status="editing">检查中</span></div>
             <div class="routeArt editArt" aria-hidden="true"><div class="timeline"><span></span><span></span><span></span><i></i></div></div>
-            <h3>素材智剪</h3><p class="cardDescription">上传视频、照片与音乐，用自然语言组织镜头、调整节奏并导出成片。</p>
+            <h3>素材智剪</h3><p class="cardDescription">上传素材，用文字描述剪辑目标</p>
             <div class="steps"><span>拍摄素材</span><b>→</b><span>智能剪辑</span><b>→</b><span>成片</span></div>
             <div class="cardFoot"><span>OpenChatCut</span><a class="routeButton" href="#editing">进入工作区 <span>↗</span></a></div>
           </article>
           <article class="routeCard creationCard">
             <div class="cardTop"><span class="numberLabel">ROUTE / 03</span><span class="statusBadge" data-status="creation">检查中</span></div>
             <div class="routeArt creationArt" aria-hidden="true"><div class="artNode nodeOne">✦</div><span class="nodeWire"></span><div class="artNode nodeTwo"><span>◒</span></div><div class="artNode nodeThree">▶</div></div>
-            <h3>AIGC 创作</h3><p class="cardDescription">从想法和参考素材出发，在画布中编排角色、分镜与视频。</p>
+            <h3>AIGC 创作</h3><p class="cardDescription">编排角色、分镜与视频</p>
             <div class="steps"><span>创意与资产</span><b>→</b><span>分镜画布</span><b>→</b><span>视频</span></div>
             <div class="cardFoot"><span>Toonflow</span><a class="routeButton darkButton" href="#creation">进入工作区 <span>↗</span></a></div>
           </article>
         </div>
-        <div class="bottomGrid">
+        <details class="workbench-service-details"><summary>服务与创作配置</summary><div class="bottomGrid">
           <section class="connectionPanel"><div class="sectionHeading"><h2>工作台连接</h2><span id="checkedAt">正在检查</span></div><div class="connectionRow"><div class="productIcon signalIcon">S</div><div class="connectionInfo"><strong>AI Signal Studio</strong><span>线路一 · 自动化视频制作</span></div><span class="connectionState" data-connection="automatic">检查中</span><a aria-disabled="true" tabindex="-1" target="_blank" rel="noopener noreferrer" aria-label="独立打开 AI Signal Studio">↗</a></div><div class="connectionRow"><div class="productIcon editIcon">O</div><div class="connectionInfo"><strong>OpenChatCut</strong><span>线路二 · 实拍素材智能剪辑</span></div><span class="connectionState" data-connection="editing">检查中</span><a aria-disabled="true" tabindex="-1" target="_blank" rel="noopener noreferrer" aria-label="独立打开 OpenChatCut">↗</a></div><div class="connectionRow"><div class="productIcon toonIcon">T</div><div class="connectionInfo"><strong>Toonflow</strong><span>线路三 · AI 创作画布</span></div><span class="connectionState" data-connection="creation">检查中</span><a aria-disabled="true" tabindex="-1" target="_blank" rel="noopener noreferrer" aria-label="独立打开 Toonflow">↗</a></div></section>
           <section class="readinessPanel"><div class="sectionHeading"><h2>开始前看一眼</h2><span class="noteLabel">配置提示</span></div><div class="readinessItem"><span>01</span><p id="automaticReadiness">新一轮生成需要在线模型；可在工作区查看历史成片与配置。</p></div><div class="readinessItem"><span>02</span><p>上传已有素材后，在 OpenChatCut 内描述剪辑目标；导出后接收产物，确认入库再用于发布。</p></div><div class="readinessItem"><span>03</span><p>文字创作沿用天河主模型。图片、视频和语音生成需在工作区配置相应服务。</p></div><div class="noteFoot">服务在线仅表示入口可连接；模型能力与生成结果在各工作区核验。</div></section>
         </div>
         <footer class="overviewFooter"><span>三路产物统一待确认，确认入库后继续发布。</span><span>LOCAL WORKSPACE <i>●</i></span></footer>
+        </details>
       </section>
       <section id="library" class="libraryView view" hidden aria-labelledby="libraryTitle">
         <div class="welcome libraryWelcome"><div><h1 id="libraryTitle">素材库</h1></div><div class="libraryToolbar"><button id="receiveOutput" class="librarySecondaryAction" type="button">接收产物 <span aria-hidden="true">↑</span></button><button id="syncLibrary" class="routeButton" type="button">同步产物 <span aria-hidden="true">↻</span></button></div></div>

@@ -1,6 +1,7 @@
 import { open, readdir, realpath, stat } from 'node:fs/promises';
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { buildHotTopicDocument } from './hot-topic-document.js';
 
 const MAX_ENTRIES = 150;
 const MAX_JSON_BYTES = 4 * 1024 * 1024;
@@ -93,6 +94,11 @@ async function signalEntries(root, deadline) {
     if (!script || typeof script !== 'object') continue;
     const video = await regularFile(root, join(directory, 'video.mp4'));
     if (!video) continue;
+    const [evidence, research] = await Promise.all([
+      jsonFile(root, join(directory, 'evidence.json')),
+      jsonFile(root, join(directory, 'research.json')),
+    ]);
+    const hotTopicDocument = buildHotTopicDocument({ script, evidence, research, sourceId: folder.name });
     entries.push({
       source: 'automatic', sourceId: folder.name,
       title: text(script.title, folder.name),
@@ -101,6 +107,7 @@ async function signalEntries(root, deadline) {
       reviewStatus: selectedRuns.has(folder.name) ? 'selected' : 'unreviewed',
       sourceStatus: text(review.label || script.editorial_status, '待内容复核'),
       artifactType: 'final_video', filePath: video.path, rootPath: root,
+      ...(hotTopicDocument ? { hotTopicDocument } : {}),
     });
   }
   return entries;

@@ -9,7 +9,7 @@
   const $ = (id) => document.getElementById(id);
   const icon = (name, cls = '') => `<i data-lucide="${name}"${cls ? ` class="${cls}"` : ''}></i>`;
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (x) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
-  const state = { videos: [], skills: [], tools: [], collections: [], sessions: [], selectedSkill: null, selectedAssets: [], assetKind: 'content', collectionId: null, folder: '', entries: [], categories: [], categoryCounts: {}, slogans: [], session: null, sessionEpoch: 0, loadingSession: false, running: false, stream: null, poll: null, tab: 'library', method: 'mix', mediaRequest: 0, previewAsset: null, previewVideo: null, online: false, automaticUrl: '/automatic/', seenEvents: new Map(), lastEvents: new Map(), selectedOutputs: savedSelection(), confirmErrors: new Map(), confirmingOutputs: false, outputsLoaded: false, outputRequest: 0, videoMetadata: new Map(), loadedMediaKey: null, outputWarnings: [], outputLoadError: '', outputActionError: '' };
+  const state = { videos: [], skills: [], tools: [], collections: [], sessions: [], selectedSkill: null, selectedAssets: [], assetKind: 'content', collectionId: null, folder: '', entries: [], categories: [], categoryCounts: {}, slogans: [], session: null, sessionEpoch: 0, loadingSession: false, running: false, stream: null, poll: null, tab: 'library', method: 'mix', mediaRequest: 0, previewAsset: null, previewVideo: null, online: false, automaticUrl: '/automatic/', seenEvents: new Map(), lastEvents: new Map(), selectedOutputs: savedSelection(), confirmErrors: new Map(), confirmingOutputs: false, outputsLoaded: false, outputRequest: 0, videoMetadata: new Map(), loadedMediaKey: null, outputWarnings: [], outputLoadError: '', outputActionError: '', presentation: 'overview' };
   const defaultCategories = ['讲师讲解','听众反应','实操教学','交流互动','场地环境','团队合影','颁证仪式','课程信息','品牌资产','虚拟形象','音乐音效','待分类'];
   const styleNames = ['纪录混剪｜证据与现场','预告片｜由静到燃','品牌开场｜分享的价值','社交短片｜三眼看现场','节拍混剪｜现场脉动','对照蒙太奇｜台上与台下'];
   const styleDescriptions = ['现场与事实，组织一条清晰的叙事','铺垫、转折与节奏推进','以主题与价值建立第一印象','短节奏、多视角与局部说明','围绕音乐节拍组织镜头','在讲授与实践之间形成呼应'];
@@ -20,6 +20,7 @@
   function renderOutputErrors() {
     const messages = [state.outputActionError, state.outputLoadError, ...state.outputWarnings].filter(Boolean);
     errorIn('outputsError', [...new Set(messages)].join('；'));
+    errorIn('recentOutputsError', [...new Set(messages)].join('；'));
   }
   function outputError(text) { state.outputActionError = text || ''; renderOutputErrors(); }
   function seconds(value) { const s = Math.floor(Number(value) || 0); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
@@ -187,7 +188,7 @@
       state.online = false;
       $('connectionDot').className = 'connection-dot error';
       $('connectionLabel').textContent = '连接中断';
-      if (!state.videos.length) $('videoGrid').innerHTML = empty('unplug', '工作台暂时无法连接', err.message);
+      if (!state.videos.length) { $('videoGrid').innerHTML = empty('unplug', '工作台暂时无法连接', err.message); $('recentOutputs').innerHTML = empty('unplug', '工作台暂时无法连接', err.message); }
       if (!state.skills.length) $('skillList').innerHTML = '<div class="folder-placeholder">工作流暂不可用</div>';
       renderIcons();
     }
@@ -195,11 +196,32 @@
   function route() {
     let hash = location.hash.replace(/^#\/?/, '');
     if (pickerMode) hash = 'materials';
-    if (!hash || ['overview', 'editing', 'creation'].includes(hash)) hash = 'mix/library';
+    if (!hash) hash = 'overview';
+    const previousPresentation = state.presentation;
+    const presentation = hash === 'overview' ? 'overview' : hash === 'settings' ? 'settings' : hash === 'creation' ? 'creation' : hash === 'editing' ? 'editing' : hash.startsWith('automatic') ? 'automatic' : hash === 'materials' ? 'materials' : 'editing';
+    state.presentation = presentation;
+    const home = presentation === 'overview';
+    $('creationHome').hidden = !home;
+    document.body.dataset.studioView = presentation;
+    if (home) hash = 'materials';
+    if ((presentation === 'editing' && hash === 'editing') || presentation === 'creation') hash = 'mix/create';
+    if (presentation === 'settings') hash = 'automatic/settings';
+    $('creativeAssistantTitle').textContent = presentation === 'creation' ? 'AIGC 创作' : '素材智剪';
+    $('chatInput').placeholder = presentation === 'creation' ? '描述角色、分镜、画面和视频要求…' : '描述素材、剪辑方式和视频要求…';
     state.method = hash.startsWith('automatic') ? 'automatic' : hash === 'materials' ? 'materials' : 'mix';
     if (state.method === 'automatic' && hash !== 'automatic/library') {
       $('mixWorkspace').hidden = true; $('automaticWorkspace').hidden = false;
-      if (state.online && !$('automaticFrame').getAttribute('src')) $('automaticFrame').src = state.automaticUrl;
+      if (state.online) {
+        const frame = $('automaticFrame');
+        const target = presentation === 'settings' ? 'settings' : previousPresentation === 'settings' || frame.dataset.signalView === 'settings' ? 'topics' : null;
+        if (target) frame.dataset.initialView = target;
+        if (!frame.getAttribute('src')) {
+          frame.dataset.initialView = target || 'topics';
+          frame.onload = () => frame.contentWindow?.postMessage({ type: 'content-studio:navigate', view: frame.dataset.initialView }, location.origin);
+          frame.src = state.automaticUrl;
+        } else if (target && presentation !== previousPresentation) frame.contentWindow?.postMessage({ type: 'content-studio:navigate', view: target }, location.origin);
+        else if (!target) frame.contentWindow?.postMessage({ type: 'content-studio:navigate', view: 'current' }, location.origin);
+      }
       document.title = '自动热点 · 内容生成工作台';
     } else {
       $('mixWorkspace').hidden = false; $('automaticWorkspace').hidden = true;
@@ -227,7 +249,9 @@
       if (state.tab === 'library' && state.outputsLoaded && !pickerMode) loadOutputs();
       if (state.tab === 'create') { renderMessages(); renderSelectedAssets(); }
     }
-    document.querySelectorAll('[data-method]').forEach((el) => el.classList.toggle('active', el.dataset.method === state.method));
+    if (home) { $('mixWorkspace').hidden = true; $('automaticWorkspace').hidden = true; }
+    document.querySelectorAll('[data-studio-route]').forEach((el) => el.classList.toggle('active', el.dataset.studioRoute === (['automatic','editing','creation'].includes(presentation) ? 'overview' : presentation)));
+    if (embeddedMode) window.parent.postMessage({ type: 'content-workbench:view-changed', view: presentation, route: location.hash.replace(/^#\/?/, '') || 'overview', title: { overview: '创作方式', automatic: '热点选题', editing: '素材智剪', creation: 'AIGC 创作', materials: '素材库', settings: '创作设置' }[presentation] }, location.origin);
     renderVideos(); renderIcons();
   }
   function renderPreviewActions() {
@@ -252,7 +276,7 @@
     const pendingCount = ownVideos.filter((v) => v.status !== 'approved').length;
     $('videoCount').textContent = state.videos.filter((v) => v.source === (state.method === 'automatic' ? 'automatic' : 'mix')).length;
     $('librarySummary').textContent = state.method === 'materials' || pickerMode ? `${ownVideos.length} 条 · ${pendingCount} 待确认 · ${ownVideos.length - pendingCount} 可发布` : `${ownVideos.length} 条 · 成片自动同步到素材库`;
-    $('videoGrid').innerHTML = videos.length ? videos.map((v, i) => {
+    const videoCards = (items) => items.map((v, i) => {
       const approved = v.status === 'approved';
       const mediaUrl = v.libraryItem ? v.mediaUrl : bundledPath(v.videoPath || v.url);
       const posterUrl = bundledPath(v.posterPath || v.posterUrl);
@@ -261,7 +285,11 @@
       const workflow = hasWorkflow ? `<button class="text-button" data-style-video="${esc(v.id)}">${icon('wand-sparkles')}使用工作流</button>` : `<span class="video-source">${icon(v.source === 'automatic' ? 'radio' : v.source === 'legacy' ? 'folder-open' : 'film')}${v.source === 'automatic' ? '自动热点' : v.source === 'legacy' ? '历史素材' : '混剪'}</span>`;
       const confirm = approved ? (v.materialId ? `<button class="text-button publish-output" data-publish-video="${esc(v.id)}">${icon('send')}去发布</button>` : '<span class="muted">发布确认记录待核对</span>') : `<button class="text-button confirm-output" data-confirm-output="${esc(v.id)}"${state.confirmingOutputs ? ' disabled' : ''}>${icon('check')}确认可发布</button>`;
       return `<article class="video-card${!pickerMode && !approved ? ' has-selection' : ''}${state.selectedOutputs.has(v.id) ? ' selected-output' : ''}">${!pickerMode && !approved ? `<label class="output-select" title="选择${esc(v.title)}"><input type="checkbox" data-select-output="${esc(v.id)}" aria-label="选择${esc(v.title)}"${state.selectedOutputs.has(v.id) ? ' checked' : ''}${state.confirmingOutputs ? ' disabled' : ''}></label>` : ''}<button class="video-cover" data-play-video="${esc(v.id)}" aria-label="预览${esc(v.title)}">${preview}<span class="style-chip">${esc(v.styleLabel || v.style || (v.source === 'automatic' ? '自动热点' : '混剪'))}</span><span class="play-button"><span>${icon(v.mediaType === 'image' ? 'expand' : 'play')}</span></span>${v.durationSeconds || v.duration ? `<span class="duration-chip">${seconds(v.durationSeconds || v.duration)}</span>` : ''}</button><div class="video-info"><div class="video-title-row"><h3>${esc(v.title)}</h3>${pickerMode ? '' : `<span class="output-status ${approved ? 'approved' : 'pending'}">${approved ? '可发布' : '待确认'}</span>`}</div><div class="video-subtitle"><span class="video-meta">${icon('layers-2')}${esc(v.width && v.height ? `${v.width} × ${v.height}` : v.mediaType === 'image' ? '图片素材' : '视频成片')}</span><span>${esc(v.createdLabel || (v.bundled || hasWorkflow ? '工作流样片' : v.source === 'automatic' ? '自动热点' : '制作导出'))}</span></div>${v.syncError ? `<p class="output-card-error" role="alert">${esc(v.syncError)}</p>` : ''}${state.confirmErrors.has(v.id) ? `<p class="output-card-error" role="alert">${esc(state.confirmErrors.get(v.id))}</p>` : ''}</div><div class="video-card-footer">${pickerMode ? `<button class="text-button" data-publish-video="${esc(v.id)}"${state.confirmingOutputs ? ' disabled' : ''}>${icon('check')}${approved ? '选择用于发布' : '确认并用于发布'}</button>` : workflow}<div class="video-footer-actions">${pickerMode ? '' : confirm}<a class="icon-button" href="${esc(mediaUrl)}" download title="下载${esc(v.title)}" aria-label="下载${esc(v.title)}">${icon('download')}</a></div></div></article>`;
-    }).join('') : empty('search', query || $('outputStatusFilter').value || $('outputSourceFilter').value ? '没有找到匹配的成片' : '暂无成片', pickerMode ? '先在内容生成工作台完成导出，再刷新素材库。' : '完成视频导出后会自动同步到素材库。');
+    }).join('');
+    $('videoGrid').innerHTML = videos.length ? videoCards(videos) : empty('search', query || $('outputStatusFilter').value || $('outputSourceFilter').value ? '没有找到匹配的成片' : '暂无成片', pickerMode ? '先在内容生成工作台完成导出，再刷新素材库。' : '完成视频导出后会自动同步到素材库。');
+    $('recentOutputs').innerHTML = state.videos.length ? videoCards(state.videos.slice(0, 3)) : empty('film', '暂无成片', '完成创作后，视频会显示在这里。');
+    $('recentOutputs').querySelectorAll('.output-select').forEach((el) => el.remove());
+    $('recentOutputs').querySelectorAll('.video-card').forEach((el) => el.classList.remove('has-selection', 'selected-output'));
     if (!pickerMode) renderOutputSelection();
     renderPreviewActions(); renderIcons();
   }
@@ -564,8 +592,21 @@
   document.querySelectorAll('dialog').forEach((dialog) => dialog.addEventListener('click', (event) => { if (event.target === dialog) { const rect = dialog.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close(); } }));
   document.querySelector('.workspace-tabs').addEventListener('keydown', (event) => { if (!['ArrowLeft','ArrowRight'].includes(event.key)) return; const tabs = Array.from(document.querySelectorAll('[data-tab]')); const i = tabs.findIndex((t) => t === document.activeElement); if (i < 0) return; event.preventDefault(); const next = tabs[(i + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; next.focus(); next.click(); });
   window.addEventListener('message', async (event) => {
+    if (event.origin === location.origin && event.source === window.parent && event.data?.type === 'content-workbench:navigate' && /^(settings|overview|materials|editing|creation|automatic\/(create|library)|mix\/(create|library|assets))$/.test(event.data.view)) {
+      if(location.hash === '#' + event.data.view)route();else location.hash=event.data.view;
+      return;
+    }
     if (pickerMode || event.origin !== location.origin || event.source !== $('automaticFrame').contentWindow) return;
     if (event.data?.type === 'content-workbench:open-library' && event.data.source === 'automatic') { location.hash = 'automatic/library'; await loadOutputs(); return; }
+    if (event.data?.type === 'content-workbench:view-changed' && event.source === $('automaticFrame').contentWindow) {
+      if ($('automaticWorkspace').hidden) return;
+      const view = event.data.view === 'settings' ? 'settings' : 'automatic';
+      $('automaticFrame').dataset.signalView = view;
+      state.presentation = view; document.body.dataset.studioView = view;
+      history.replaceState(null, '', view === 'settings' ? '#settings' : '#automatic/create');
+      document.querySelectorAll('[data-studio-route]').forEach((el) => el.classList.toggle('active', el.dataset.studioRoute === (view === 'automatic' ? 'overview' : view)));
+      if (embeddedMode) window.parent.postMessage({ type: 'content-workbench:view-changed', view, title: event.data.title }, location.origin);
+    }
     if (event.data?.type === 'content-workbench:outputs-changed') await loadOutputs();
   });
   window.addEventListener('hashchange', route);

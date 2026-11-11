@@ -19,16 +19,16 @@ import { useMemoizedFn, useRequest } from 'ahooks';
 import { Alert, App, Avatar, Button, Col, Drawer, Row, Skeleton, Spin, Tabs, Tag } from 'antd';
 import type { TabsProps } from 'antd';
 import dayjs from 'dayjs';
-import React, { Suspense, useEffect } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import MCPFilled from '@/icons/MCPFilled';
 import MomentsFilled from '@/icons/MomentsFilled';
 import OSSFilled from '@/icons/OSSFilled';
 import SkillsFilled from '@/icons/SkillsFilled';
 import TextKnowledgeFilled from '@/icons/TextKnowledgeFilled';
 import GlobalSettings from '@/settings';
-import RecreateRobotContainer from '../RecreateRobotContainer';
 import Login from '../Login';
 import Logout from '../Logout';
+import RecreateRobotContainer from '../RecreateRobotContainer';
 import Remove from '../Remove';
 import RestartRobotContainer from '../RestartRobotContainer';
 import EmbeddedDetailLayout from './EmbeddedDetailLayout';
@@ -44,6 +44,7 @@ interface IProps {
 	onModuleLoaded?: () => void;
 }
 
+const RobotList = React.lazy(() => import(/* webpackChunkName: "robot-list" */ '@/robot'));
 const Contact = React.lazy(() => import(/* webpackChunkName: "contact" */ '@/contact'));
 const CustomerSupport = React.lazy(() => import(/* webpackChunkName: "customer-support" */ '@/customer-support'));
 const ContainerLog = React.lazy(() => import(/* webpackChunkName: "container-log" */ '@/container-log'));
@@ -70,6 +71,7 @@ const RobotDetail = (props: IProps) => {
 	const { message } = App.useApp();
 
 	const { open, onClose } = props;
+	const [accountDetailsOpen, setAccountDetailsOpen] = useState(false);
 
 	useEffect(() => {
 		props.onModuleLoaded?.();
@@ -101,7 +103,15 @@ const RobotDetail = (props: IProps) => {
 	});
 
 	if (!data) {
-		if (error) return <Alert type="error" title="微信账号信息加载失败" description={error.message} action={<Button onClick={refresh}>重试</Button>} />;
+		if (error)
+			return (
+				<Alert
+					type="error"
+					title="微信账号信息加载失败"
+					description={error.message}
+					action={<Button onClick={refresh}>重试</Button>}
+				/>
+			);
 		return (
 			<Skeleton
 				avatar
@@ -112,8 +122,32 @@ const RobotDetail = (props: IProps) => {
 	}
 
 	const items: TabsProps['items'] = [
-		{ key:'reception', label:'人工接待', icon:<UserOutlined />, children:<Suspense fallback={<Spin />}><CustomerSupport robotId={props.robotId} mode="reception" /></Suspense> },
-		{ key:'broadcast', label:'好友群发', icon:<WechatFilled />, children:<Suspense fallback={<Spin />}><CustomerSupport robotId={props.robotId} mode="broadcast" /></Suspense> },
+		{
+			key: 'reception',
+			label: '人工接待',
+			icon: <UserOutlined />,
+			children: (
+				<Suspense fallback={<Spin />}>
+					<CustomerSupport
+						robotId={props.robotId}
+						mode="reception"
+					/>
+				</Suspense>
+			),
+		},
+		{
+			key: 'broadcast',
+			label: '好友群发',
+			icon: <WechatFilled />,
+			children: (
+				<Suspense fallback={<Spin />}>
+					<CustomerSupport
+						robotId={props.robotId}
+						mode="broadcast"
+					/>
+				</Suspense>
+			),
+		},
 		{
 			key: 'concact',
 			icon: <WechatFilled />,
@@ -141,7 +175,7 @@ const RobotDetail = (props: IProps) => {
 		{
 			key: 'global-settings',
 			icon: <OpenAIFilled />,
-			label: '全局设置',
+			label: '回复设置',
 			children: <GlobalSettings robotId={props.robotId} />,
 		},
 		{
@@ -177,7 +211,7 @@ const RobotDetail = (props: IProps) => {
 		{
 			key: 'mcp-servers',
 			icon: <MCPFilled />,
-			label: 'MCP服务',
+			label: 'MCP 服务',
 			children: (
 				<Suspense fallback={<Spin />}>
 					<MCPServers robotId={props.robotId} />
@@ -187,7 +221,7 @@ const RobotDetail = (props: IProps) => {
 		{
 			key: 'skills',
 			icon: <SkillsFilled />,
-			label: 'Skills',
+			label: '技能管理',
 			children: (
 				<Suspense fallback={<Spin />}>
 					<Skills
@@ -200,7 +234,7 @@ const RobotDetail = (props: IProps) => {
 		{
 			key: 'oss-settings',
 			icon: <OSSFilled />,
-			label: 'OSS设置',
+			label: '文件存储',
 			children: (
 				<Suspense fallback={<Spin />}>
 					<OSSSettings robotId={props.robotId} />
@@ -210,7 +244,7 @@ const RobotDetail = (props: IProps) => {
 		{
 			key: 'logs',
 			icon: <FileTextFilled />,
-			label: '容器日志',
+			label: '运行日志',
 			children: (
 				<Suspense fallback={<Spin />}>
 					<ContainerLog robotId={props.robotId} />
@@ -220,7 +254,7 @@ const RobotDetail = (props: IProps) => {
 		{
 			key: 'system-overview',
 			icon: <FundFilled />,
-			label: '系统概览',
+			label: '服务概况',
 			children: (
 				<Suspense fallback={<Spin />}>
 					<SystemOverview robotId={props.robotId} />
@@ -229,46 +263,93 @@ const RobotDetail = (props: IProps) => {
 		},
 	];
 
+	const mainKeys = ['reception', 'broadcast', 'concact', 'moments', 'system-prompts', 'text-knowledge-base'];
+	const mainItems = mainKeys.map(key => items.find(item => item.key === key)!).filter(Boolean);
+	const settingsItems = [
+		{
+			key: 'wechat-accounts',
+			label: '微信账号',
+			children: (
+				<Suspense fallback={<Spin />}>
+					<RobotList />
+				</Suspense>
+			),
+		},
+		...items.filter(item => !mainKeys.includes(item.key)),
+	];
+	const groupedItems = [
+		...mainItems,
+		{
+			key: 'settings',
+			label: '设置',
+			children: (
+				<Tabs
+					className="wechat-settings-tabs"
+					tabPlacement="start"
+					destroyOnHidden
+					items={settingsItems}
+				/>
+			),
+		},
+	];
 	const DetailLayout = props.embedded ? EmbeddedDetailLayout : Drawer;
 
 	return (
 		<DetailLayout
 			title={
-				<DrawerHeaderTitle>
-					<Avatar
-						className="robot-detail-title-avatar"
-						src={data.avatar}
-					/>
-					<div className="robot-detail-title-copy">
-						<div className="ellipsis robot-detail-title-name">{data.nickname || data.wechat_id}</div>
-						<Tag
-							className={`robot-detail-title-status ${data.status === 'online' ? 'status-online' : 'status-offline'}`}
-						>
-							{data.status === 'online' ? '在线' : '离线'}
-						</Tag>
-					</div>
-				</DrawerHeaderTitle>
+				!props.embedded && (
+					<DrawerHeaderTitle>
+						<Avatar
+							className="robot-detail-title-avatar"
+							src={data.avatar}
+						/>
+						<div className="robot-detail-title-copy">
+							<div className="ellipsis robot-detail-title-name">{data.nickname || data.wechat_id}</div>
+							<Tag
+								className={`robot-detail-title-status ${data.status === 'online' ? 'status-online' : 'status-offline'}`}
+							>
+								{data.status === 'online' ? '在线' : '离线'}
+							</Tag>
+						</div>
+					</DrawerHeaderTitle>
+				)
 			}
 			extra={
-				<DrawerHeaderActions className="hide-on-mobile">
-					{props.embedded && (data.status === 'online'
-						? <Logout robotId={data.id!} onRefresh={onRefresh} />
-						: <Login robotId={data.id!} robot={data} onRefresh={onRefresh} />)}
-					<RestartRobotContainer
-						robotId={data.id!}
-						robot={data}
-						onRefresh={onRefresh}
-					/>
-					<RecreateRobotContainer
-						robotId={data.id!}
-						onRefresh={onRefresh}
-					/>
-					<Remove
-						robotId={data.id!}
-						robot={data}
-						onRefresh={onRemoveRefresh}
-						buttonText="删除机器人"
-					/>
+				<DrawerHeaderActions>
+					<Button onClick={() => setAccountDetailsOpen(true)}>账号详情</Button>
+					<details className="wechat-account-actions">
+						<summary>账号操作</summary>
+						<div className="account-action-list">
+							{props.embedded &&
+								(data.status === 'online' ? (
+									<Logout
+										robotId={data.id!}
+										onRefresh={onRefresh}
+									/>
+								) : (
+									<Login
+										robotId={data.id!}
+										robot={data}
+										onRefresh={onRefresh}
+									/>
+								))}
+							<RestartRobotContainer
+								robotId={data.id!}
+								robot={data}
+								onRefresh={onRefresh}
+							/>
+							<RecreateRobotContainer
+								robotId={data.id!}
+								onRefresh={onRefresh}
+							/>
+							<Remove
+								robotId={data.id!}
+								robot={data}
+								onRefresh={onRemoveRefresh}
+								buttonText="删除机器人"
+							/>
+						</div>
+					</details>
 				</DrawerHeaderActions>
 			}
 			open={open}
@@ -277,10 +358,9 @@ const RobotDetail = (props: IProps) => {
 			styles={{
 				header: {
 					padding: '10px 16px',
-					background:
-						'linear-gradient(135deg, var(--ant-color-bg-container) 0%, var(--ant-color-fill-content) 64%, var(--app-color-surface-tint) 100%)',
+					background: 'var(--ant-color-bg-container)',
 					borderBottom: '1px solid var(--ant-color-border-secondary)',
-					boxShadow: 'var(--ant-box-shadow-tertiary)',
+					boxShadow: 'none',
 				},
 				body: { padding: 0 },
 			}}
@@ -295,30 +375,29 @@ const RobotDetail = (props: IProps) => {
 					style={{
 						position: 'relative',
 						minWidth: 0,
-						borderRight: '1px solid var(--ant-color-border-secondary)',
-						padding: '0 2px 0 24px',
+						padding: '0',
 					}}
 				>
 					<LeftPanel>
 						<Tabs
 							destroyOnHidden
-							items={items}
+							items={groupedItems}
 							classNames={{
 								header: 'tech-tabs-header',
 								item: 'tech-tabs-item',
 								indicator: 'tech-tabs-indicator',
 								content: 'tech-tabs-content',
 							}}
-							styles={{
-								item: { borderRadius: 8 },
-							}}
+							styles={{ item: { borderRadius: 0 } }}
 						/>
 					</LeftPanel>
 				</Col>
-				<Col
-					flex="0 0 350px"
-					className="hide-on-mobile"
-					style={{ width: 350, height: '100%' }}
+				<Drawer
+					title="账号详情"
+					open={accountDetailsOpen}
+					onClose={() => setAccountDetailsOpen(false)}
+					size={380}
+					styles={{ body: { padding: 0 } }}
 				>
 					{loading ? (
 						<Skeleton
@@ -471,7 +550,7 @@ const RobotDetail = (props: IProps) => {
 							</div>
 						</BaseContainer>
 					)}
-				</Col>
+				</Drawer>
 			</Row>
 		</DetailLayout>
 	);

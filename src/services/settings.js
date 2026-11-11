@@ -1,8 +1,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { isIP } from 'node:net';
 import { config, ROOT } from '../config.js';
 import { now, row, run } from '../db.js';
+import { getAiConnectionStatus, clearAiConnectionStatus } from './ai-connection-status.js';
 
 const WECOM_SETTING_KEY = 'wecom.webhook_url';
 const MASTER_SWITCH_KEY = 'operations.master_enabled';
@@ -22,7 +24,7 @@ export const MESSAGE_COLLECTION_INTERVAL_OPTIONS = Object.freeze([
 const SMART_REPLY_PREFIX = 'smart_reply.';
 const SMART_REPLY_SUFFIX = '.enabled';
 const SMART_REPLY_PLATFORMS = new Set(['xiaohongshu', 'douyin', 'wechat_channels', 'bilibili', 'weibo']);
-const KEY_FILE = path.join(ROOT, 'data', '.settings-key');
+const KEY_FILE = config.settingsKeyPath || path.join(ROOT, 'data', '.settings-key');
 
 function encryptionKey() {
   const supplied = String(process.env.SETTINGS_ENCRYPTION_KEY || '').trim();
@@ -189,13 +191,13 @@ export function redactWecomSecrets(value) {
   return String(value || '').replace(/(https:\/\/qyapi\.weixin\.qq\.com\/cgi-bin\/webhook\/send\?key=)[A-Za-z0-9_-]+/gi, '$1******');
 }
 
-function getStoredSetting(settingKey) {
+export function getStoredSetting(settingKey) {
   const setting = row('SELECT encrypted_value,updated_at,updated_by FROM system_settings WHERE setting_key=?', settingKey);
   if (!setting) return null;
   return { value: decrypt(setting.encrypted_value), updatedAt: setting.updated_at || null, updatedBy: setting.updated_by || null };
 }
 
-function saveEncryptedSetting(settingKey, value, updatedBy) {
+export function saveEncryptedSetting(settingKey, value, updatedBy) {
   const stamp = now();
   run(`INSERT INTO system_settings(setting_key,encrypted_value,updated_at,updated_by) VALUES(?,?,?,?)
     ON CONFLICT(setting_key) DO UPDATE SET encrypted_value=excluded.encrypted_value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`,
@@ -205,8 +207,19 @@ function saveEncryptedSetting(settingKey, value, updatedBy) {
 function validateAiBaseUrl(value) {
   let parsed;
   try { parsed = new URL(String(value || '').trim()); } catch { throw Object.assign(new Error('AI Base URL 格式无效'), { code: 'INVALID_AI_SETTINGS' }); }
-  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash) {
-    throw Object.assign(new Error('AI Base URL 必须是不含账号、端口、查询参数和锚点的 HTTPS 地址'), { code: 'INVALID_AI_SETTINGS' });
+  const host = parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  const ipv4 = isIP(host) === 4 ? host.split('.').map(Number) : null;
+  const localHost = host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')
+    || host.endsWith('.lan') || host === 'host.docker.internal' || host === 'gateway.docker.internal'
+    || (isIP(host) === 0 && !host.includes('.'))
+    || (ipv4 && (ipv4[0] === 10 || ipv4[0] === 127 || (ipv4[0] === 172 && ipv4[1] >= 16 && ipv4[1] <= 31)
+      || (ipv4[0] === 192 && ipv4[1] === 168) || (ipv4[0] === 169 && ipv4[1] === 254)))
+    || (isIP(host) === 6 && (host === '::1' || /^(?:fc|fd|fe[89ab])/i.test(host)));
+  // Local providers and the unified gateway can use HTTP and explicit ports.
+  // Discovery keeps its stricter HTTPS policy independently of saved settings.
+  if (!['https:', 'http:'].includes(parsed.protocol) || (parsed.protocol === 'http:' && !localHost)
+      || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw Object.assign(new Error('AI Base URL 须使用 HTTPS 或本机/局域网 HTTP 地址，且不能含账号、查询参数和锚点'), { code: 'INVALID_AI_SETTINGS' });
   }
   parsed.pathname = parsed.pathname.replace(/\/+$/, '');
   return parsed.toString().replace(/\/$/, '');
@@ -263,7 +276,7 @@ export function getAiSettings() {
 
 export function getAiSettingsSummary() {
   const { apiKey, ...summary } = getAiSettings();
-  return summary;
+  return { ...summary, connectionTest: getAiConnectionStatus({ ...summary, apiKey }) };
 }
 
 export function saveAiSettings(input = {}, updatedBy = '运营席位') {
@@ -281,7 +294,11 @@ export function saveAiSettings(input = {}, updatedBy = '运营席位') {
   if (suppliedKey && (suppliedKey.length < 8 || suppliedKey.length > 500 || /\s/.test(suppliedKey))) {
     throw Object.assign(new Error('AI Key 格式无效'), { code: 'INVALID_AI_SETTINGS' });
   }
+  if (current.apiKey && !suppliedKey && new URL(baseUrl).origin !== new URL(current.baseUrl).origin) {
+    throw Object.assign(new Error('接口域名已更换，请重新输入该平台的 Key；不会将已保存的 Key 发送到新平台。'), { code: 'INVALID_AI_SETTINGS' });
+  }
   if (mode === 'online' && !suppliedKey && !current.apiKey) throw Object.assign(new Error('在线模式必须配置 AI Key'), { code: 'INVALID_AI_SETTINGS' });
+  clearAiConnectionStatus();
   saveEncryptedSetting(AI_SETTING_KEYS.mode, mode, updatedBy);
   saveEncryptedSetting(AI_SETTING_KEYS.baseUrl, baseUrl, updatedBy);
   saveEncryptedSetting(AI_SETTING_KEYS.model, model, updatedBy);
@@ -295,6 +312,7 @@ export function saveAiSettings(input = {}, updatedBy = '运营席位') {
 }
 
 export function clearAiApiKey() {
+  clearAiConnectionStatus();
   run('DELETE FROM system_settings WHERE setting_key=?', AI_SETTING_KEYS.apiKey);
   return getAiSettingsSummary();
 }

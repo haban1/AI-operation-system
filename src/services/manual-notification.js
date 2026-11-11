@@ -10,6 +10,9 @@ const PLATFORM_FALLBACK_NAMES = {
 };
 
 const MANUAL_REASON_LABELS = Object.freeze({
+  NO_ANSWER: '知识库暂未提供可靠答案，需要人工处理',
+  NEED_CLARIFICATION: '问题信息不足，需要人工进一步确认',
+  REJECTED: '知识库未能生成可用回复，需要人工处理',
   STABLE_POST_ID_REQUIRED: '未能确认该评论所属的平台作品，暂时无法安全自动回复',
   STABLE_COMMENT_ID_REQUIRED: '未能确认该评论的稳定编号，暂时无法安全自动回复',
   STABLE_MESSAGE_ID_REQUIRED: '未能确认该私信的稳定编号，暂时无法安全自动回复',
@@ -27,7 +30,11 @@ const MANUAL_REASON_LABELS = Object.freeze({
 export function humanizeManualReason(value) {
   const reason = inlineText(value);
   if (isAiReplyTimeout(reason)) return 'AI回复超时';
-  return MANUAL_REASON_LABELS[reason] || reason || '系统判定需人工处理';
+  if (MANUAL_REASON_LABELS[reason]) return MANUAL_REASON_LABELS[reason];
+  // 通知只展示中文原因，原始状态码仍保留在消息处理记录中。
+  const readableReason = reason.replace(/[：:]\s*[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/, '').trim();
+  if (/^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/.test(readableReason)) return '系统判定需人工处理';
+  return readableReason || '系统判定需人工处理';
 }
 
 function inlineText(value) {

@@ -1,5 +1,11 @@
+import { browserStatusModel, browserStatusMarkup, bindBrowserStatus } from './browser-status.js?v=20261110-browser-status';
+import { renderKnowledgeFiles, cleanupKnowledgeFiles } from './knowledge-files.js?v=20261110-files';
+import { renderAnswerProfile, renderRagPlayground, cleanupKnowledgeTools, resetKnowledgeTools } from './knowledge-tools.js?v=20261110-playground-2';
+import { applyWorkspacePresentation } from './workspace-presentation.js?v=20261110-publish-steps';
+import { applyInteractionPresentation } from './workspace-interactions.js';
+import { aiConnectionPresentation, bindAiModelSettings } from './ai-model-settings.js';
 import { renderWechatAdmin, cleanupWechatAdmin } from './wechat-admin.js';
-import { renderHotTopicStudio, hideHotTopicStudio } from './hot-topic-studio.js';
+import { renderHotTopicStudio, hideHotTopicStudio } from './hot-topic-studio.js?v=20261111-creation-nav';
 import { openContentLibraryPicker, closeContentLibraryPicker } from './content-library-picker.js';
 const navItems = [
   ['dashboard','dashboard','运营总览','推广、内容、活动转化与 AI 运营建议'],
@@ -10,16 +16,13 @@ const navItems = [
   ['messages','messages','评论与私信','真实采集、自动回复、转人工和处理状态'],
   ['miniProgram','messages','小程序对话','查看小程序文字咨询、AI 回复、回调与转人工状态'],
   ['handoffs','messages','转人工记录','只展示通知人工的会话与企业微信送达状态'],
-  ['knowledge','knowledge','知识库','资料上传、小智测试和正式发布'],
+  ['knowledge','knowledge','知识库','上传文件与文件增删改查'],
   ['wechat','wecom','微信客服','人工接待、好友群发与机器人管理'],
-  ['aliases','knowledge','相似问法库','AI生成、冲突检查、启用停用和知识联动'],
-  ['xiaozhi','messages','小智','知识库回复效果即时测试，不经过平台轮询和 Local Agent'],
-  ['browser','browser','浏览器控制','Web Access、Playwright、受管会话、诊断命令与执行证据'],
+  ['browser','browser','浏览器状态','查看连接状态与修复方法'],
   ['issues','issues','问题汇总','千问、知识库、RPA、登录、发布和发送异常'],
-  ['wecom','wecom','企微及 AI','企业微信通知、AI 服务配置和调用日志']
+  ['wecom','wecom','模型与通知','企业微信通知、AI 服务配置和调用日志']
 ];
-// Browser Control remains available in code/API for future Web Access rollout, but is hidden from the operator navigation until it is formally enabled.
-const hiddenNavPages=new Set(['browser','aliases','issues']);
+const hiddenNavPages=new Set([]);
 const iconPaths={
   create:'<rect x="3" y="5" width="18" height="15" rx="3"/><path d="m10 9 5 3.5-5 3.5z"/><path d="m16 2 1 2 2 1-2 1-1 2-1-2-2-1 2-1z"/>',
   dashboard:'<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="4" rx="2"/><rect x="14" y="11" width="7" height="10" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/>',
@@ -34,8 +37,6 @@ const iconPaths={
   'workspace-settings':'<path d="m10 3-.6 2.5-2 .9L5.2 5 3 8.8l1.8 1.7-.1 2.4L3 14.5l2.2 3.8 2.3-.7 2 .9L10 21h4l.6-2.5 2-.9 2.2.7 2.2-3.8-1.7-1.6-.1-2.4L21 8.8 18.8 5l-2.2 1.4-2-.9L14 3z"/><circle cx="12" cy="12" r="3"/>'
 };
 const iconSvg=name=>`<svg viewBox="0 0 24 24" aria-hidden="true">${iconPaths[name]||iconPaths.dashboard}</svg>`;
-let knowledgeImportEnrichmentPollTimer=null;
-let knowledgeImportScrollState={top:0,left:0};
 let publishLayoutCleanup=null;
 let publishSchedulePollTimer=null;
 let pageRenderGeneration=0;
@@ -43,11 +44,10 @@ let pageRenderInFlightGeneration=0;
 let bootstrapRequestGeneration=0;
 let publishPrecheckRequestGeneration=0;
 let miniProgramRenderGeneration=0;
-let ragKnowledgePollTimer=null;
-const ragDocumentStatusCache=new Map();
-const ragReleaseStatusCache=new Map();
-const ragReleaseBadgeCache=new Map();
-const state={publishSchedules:[],page:'dashboard',dashboardRange:'7d',dashboardPlatform:'all',operationsDashboard:null,auth:null,appStarted:false,bootstrap:null,precheck:null,compliance:null,trafficPrediction:{status:'IDLE',result:null,error:null,requestToken:null,platformCodes:[]},contentGeneration:{status:'IDLE',stage:null,sourceType:null,materialSha256:null,result:null,error:null,titleDirty:false,bodyDirty:false,requestToken:null,applied:false,needsManualApply:false},knowledgeView:'rag',ragUploadStage:'IDLE',ragCurrentDocumentId:null,ragCurrentDocumentVersion:null,knowledgeCategory:null,knowledgeSubcategory:null,knowledgeImportPreview:null,knowledgeImportStage:'IDLE',knowledgeImportFailedStep:null,knowledgeCategoryData:null,knowledgeImportSelected:[],knowledgeImportExpanded:[],knowledgeImportDirty:[],knowledgeImportFilter:'ALL',knowledgeCreateExpanded:false,publishHistoryPage:1,materialPreviewUrl:null,wecomCategory:'ALL',settingsConfigPanel:null,messageView:'COMMENT',messageAccountId:null,miniProgramFilter:'ALL',miniProgramConversationId:null,miniProgramPendingActions:new Set(),taskPlatform:'ALL',taskStatus:'ALL',retryDraft:null,retrySourceTaskId:null,xiaozhiOptions:null,xiaozhiSession:null,xiaozhiChat:[],xiaozhiSettings:{platformCode:'douyin',messageType:'PRIVATE_MESSAGE',script:'auto',contextEnabled:true,scope:'pre_release',importBatchId:null,selectedDocumentId:null,selectedDocumentVersion:null}};
+const expandedCommentPosts=new Set();
+const commentPostReadPositions=new Map();
+const commentPostReadStoragePrefix='tianhe:comment-post-read:v1:';
+const state={publishSchedules:[],page:'dashboard',workspacePresentation:null,dashboardRange:'7d',dashboardPlatform:'all',operationsDashboard:null,auth:null,appStarted:false,bootstrap:null,precheck:null,compliance:null,trafficPrediction:{status:'IDLE',result:null,error:null,requestToken:null,platformCodes:[]},contentGeneration:{status:'IDLE',stage:null,sourceType:null,materialSha256:null,result:null,error:null,titleDirty:false,bodyDirty:false,requestToken:null,applied:false,needsManualApply:false},knowledgeView:'rag',knowledgeCategory:null,knowledgeSubcategory:null,knowledgeCategoryData:null,knowledgeCreateExpanded:false,publishHistoryPage:1,materialPreviewUrl:null,wecomCategory:'ALL',settingsConfigPanel:null,messageView:'COMMENT',messageAccountId:null,miniProgramFilter:'ALL',miniProgramConversationId:null,miniProgramPendingActions:new Set(),taskPlatform:'ALL',taskStatus:'ALL',retryDraft:null,retrySourceTaskId:null,};
 const $=s=>document.querySelector(s); const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const cleanText=v=>String(v??'').replace(/[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d\/#&.:=?%@~_]+)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g,'').replace(/\s{3,}/g,' ').trim();
 const fmt=v=>{if(!v)return '—';const date=new Date(v);return Number.isNaN(date.getTime())?String(v).replace(/^发布于\s*/,''):date.toLocaleString('zh-CN',{hour12:false})};
@@ -187,100 +187,6 @@ async function api(p,o={}){const r=await fetch(p,{credentials:'same-origin',...o
   const x=new Error(d.message||`HTTP ${r.status}`);x.detail=d.detail;x.code=d.code;x.status=r.status;
   if(r.status===401&&d.code==='AUTH_REQUIRED'&&!p.startsWith('/api/auth/'))queueMicrotask(()=>showLoginScreen('Session expired'));
   throw x}return d}
-function xiaozhiDisableReasonDialog(){
-  return new Promise(resolve=>{
-    const overlay=document.createElement('div');overlay.className='confirm-overlay xiaozhi-review-overlay';
-    overlay.innerHTML=`<div class="confirm-dialog xiaozhi-review-dialog" role="dialog" aria-modal="true" aria-labelledby="xiaozhiReviewTitle"><div class="confirm-icon">!</div><h3 id="xiaozhiReviewTitle">将这条测试答案设为不启用</h3><p>不启用后，这条测试答案不会应用到正式用户端；原因会同步给 RAG，作为后续优化依据。</p><form class="xiaozhi-review-form"><label>原因类型<select name="reasonCode"><option value="ANSWER_INACCURATE">答案内容不准确</option><option value="SOURCE_INCORRECT">引用来源错误</option><option value="SHOULD_HANDOFF">应该转人工</option><option value="OTHER">其他</option></select></label><label>具体说明<textarea name="reason" rows="4" maxlength="500" placeholder="请说明哪里不符合预期" required>答案内容不准确</textarea></label><div class="confirm-actions"><button class="btn secondary xiaozhi-review-cancel" type="button">取消</button><button class="btn danger xiaozhi-review-submit" type="submit">确认不启用</button></div></form></div>`;
-    document.body.appendChild(overlay);
-    const form=overlay.querySelector('form');const reasonInput=form.elements.reason;
-    const finish=value=>{overlay.remove();resolve(value)};
-    overlay.querySelector('.xiaozhi-review-cancel').onclick=()=>finish(null);
-    overlay.onclick=event=>{if(event.target===overlay)finish(null)};
-    form.onsubmit=event=>{event.preventDefault();const reason=String(reasonInput.value||'').trim();if(!reason){reasonInput.focus();return}finish({reasonCode:String(form.elements.reasonCode.value||'ANSWER_INACCURATE'),reason})};
-    setTimeout(()=>{reasonInput.focus();reasonInput.select()},0);
-  });
-}
-function xiaozhiPublishConfirmDialog(){
-  return new Promise(resolve=>{
-    const overlay=document.createElement('div');overlay.className='confirm-overlay xiaozhi-publish-overlay';
-    overlay.innerHTML=`<div class="confirm-dialog xiaozhi-review-dialog" role="dialog" aria-modal="true" aria-labelledby="xiaozhiPublishTitle"><div class="confirm-icon xiaozhi-publish-icon">✓</div><h3 id="xiaozhiPublishTitle">发布为正式版本</h3><p>将发布当前已完成测试的待测文档，并带上本次逐条“启用 / 不启用”结果。提交后 RAG 会异步构建，构建成功并成为当前正式版本后，才会应用到用户端。</p><div class="confirm-actions"><button class="btn secondary xiaozhi-publish-cancel" type="button">取消</button><button class="btn xiaozhi-publish-confirm" type="button">确认提交发布</button></div></div>`;
-    document.body.appendChild(overlay);
-    const finish=value=>{overlay.remove();resolve(value)};
-    overlay.querySelector('.xiaozhi-publish-cancel').onclick=()=>finish(false);
-    overlay.querySelector('.xiaozhi-publish-confirm').onclick=()=>finish(true);
-    overlay.onclick=event=>{if(event.target===overlay)finish(false)};
-    setTimeout(()=>overlay.querySelector('.xiaozhi-publish-confirm')?.focus(),0);
-  });
-}
-function editKnowledgeDialog(item,{availableCategories=[],subcategoryMap={},defaultSubcategory='未分类'}={}){
-  return new Promise(resolve=>{
-    const overlay=document.createElement('div');overlay.className='confirm-overlay knowledge-edit-overlay';
-    const selectedCategory=availableCategories.includes(item.category)?item.category:availableCategories[0];
-    const categoryOptions=availableCategories.map(name=>`<option value="${esc(name)}" ${name===selectedCategory?'selected':''}>${esc(name)}</option>`).join('');
-    overlay.innerHTML=`<div class="confirm-dialog knowledge-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="knowledgeEditTitle"><div class="knowledge-edit-heading"><div><span>编辑知识 #${item.id}</span><h3 id="knowledgeEditTitle">修改知识内容</h3></div><button class="knowledge-edit-close" type="button" aria-label="关闭">×</button></div><p>知识大类固定为六个平台范围；小类可从最近使用记录选择或自定义。保存后版本号自动增加。</p><form class="knowledge-edit-form"><label class="full-field">标准问题<input name="question" maxlength="500" value="${esc(item.question||'')}" required></label><label class="full-field">标准答案<textarea name="answer" rows="6" maxlength="5000" required>${esc(item.answer||'')}</textarea></label><label class="full-field">关键词<input name="keywords" value="${esc(item.keywords||'')}" placeholder="多个关键词用逗号分隔"></label><label>知识大类<select class="knowledge-edit-category" name="category">${categoryOptions}</select></label><label>知识小类<select class="knowledge-edit-subcategory" name="subcategory"></select></label><label class="knowledge-edit-custom-subcategory" hidden>自定义小类<input name="customSubcategory" maxlength="30" placeholder="填写新的小类名称"></label><div class="knowledge-edit-note full-field">${item.status==='PUBLISHED'?'该知识当前已发布，保存后的内容会立即用于知识问答。':'该知识当前尚未发布，保存后仍保持原状态。'}</div><div class="confirm-actions full-field"><button class="btn secondary knowledge-edit-cancel" type="button">取消</button><button class="btn knowledge-edit-submit" type="submit">保存修改</button></div></form></div>`;
-    document.body.appendChild(overlay);
-    const form=overlay.querySelector('.knowledge-edit-form');
-    const categorySelect=overlay.querySelector('.knowledge-edit-category');
-    const subcategorySelect=overlay.querySelector('.knowledge-edit-subcategory');
-    const customSubcategoryField=overlay.querySelector('.knowledge-edit-custom-subcategory');
-    const customSubcategoryInput=customSubcategoryField.querySelector('input');
-    const close=value=>{document.removeEventListener('keydown',onKey);overlay.remove();resolve(value)};
-    const onKey=event=>{if(event.key==='Escape')close(null)};document.addEventListener('keydown',onKey);
-    const toggleCustomSubcategory=()=>{const custom=subcategorySelect.value==='__CUSTOM__';customSubcategoryField.hidden=!custom;customSubcategoryInput.required=custom;if(custom)setTimeout(()=>customSubcategoryInput.focus(),0)};
-    const fillSubcategories=initial=>{const category=categorySelect.value;const current=initial&&category===item.category?(item.subcategory||defaultSubcategory):defaultSubcategory;const names=[...new Set([defaultSubcategory,...(subcategoryMap[category]||[]),...(category===item.category?[item.subcategory]:[])].filter(Boolean))];subcategorySelect.innerHTML=names.map(name=>`<option value="${esc(name)}" ${name===current?'selected':''}>${esc(name)}</option>`).join('')+'<option value="__CUSTOM__">＋ 自定义小类</option>';toggleCustomSubcategory()};
-    categorySelect.onchange=()=>fillSubcategories(false);subcategorySelect.onchange=toggleCustomSubcategory;fillSubcategories(true);
-    overlay.querySelector('.knowledge-edit-close').onclick=()=>close(null);overlay.querySelector('.knowledge-edit-cancel').onclick=()=>close(null);overlay.onclick=event=>{if(event.target===overlay)close(null)};
-    form.onsubmit=event=>{event.preventDefault();const values=Object.fromEntries(new FormData(form));if(values.subcategory==='__CUSTOM__'&&!String(values.customSubcategory||'').trim())return toast('请填写自定义小类名称',true);close(values)};
-  });
-}
-async function knowledgeAliasSelectionDialog(item){
-  const [aliasData,taskData]=await Promise.all([api(`/api/knowledge-aliases?knowledgeId=${item.id}&limit=1000`),api('/api/knowledge-alias-generation-tasks?limit=500')]);
-  const aliases=aliasData.aliases||[];
-  const task=(taskData.tasks||[]).find(entry=>Number(entry.knowledge_id)===Number(item.id));
-  return new Promise(resolve=>{
-    const overlay=document.createElement('div');overlay.className='confirm-overlay knowledge-alias-overlay';
-    const rows=aliases.map(alias=>`<label class="knowledge-alias-choice ${alias.validation_status==='CONFLICT'?'has-conflict':''}"><input type="checkbox" value="${alias.id}" ${alias.status==='ENABLED'?'checked':''} ${alias.validation_status==='CONFLICT'?'disabled':''}><span><b>${esc(alias.alias_text)}</b><small>${alias.validation_status==='CONFLICT'?'与其他知识冲突，不能直接启用':`来源 ${esc(alias.source||'AI')} · 置信度 ${Math.round(Number(alias.confidence||0)*100)}%`}</small></span><em>${alias.status==='ENABLED'?'已启用':'未启用'}</em></label>`).join('');
-    overlay.innerHTML=`<div class="confirm-dialog knowledge-alias-dialog" role="dialog" aria-modal="true" aria-labelledby="knowledgeAliasTitle"><div class="knowledge-edit-heading"><div><span>知识 #${item.id} · 千问生成结果</span><h3 id="knowledgeAliasTitle">选择要启用的相似问法</h3></div><button class="knowledge-edit-close" type="button" aria-label="关闭">×</button></div><div class="knowledge-alias-source"><b>标准问题</b><p>${esc(item.question)}</p><small>当前共 ${aliases.length} 条相似问法${task?` · 最近任务：${esc(task.status)} · 生成 ${task.generated_count||0} 条`:''}</small></div><div class="knowledge-alias-toolbar"><button class="btn secondary alias-select-all" type="button">全选可用问法</button><button class="btn secondary alias-clear-all" type="button">全部取消</button><button class="btn secondary alias-dialog-regenerate" type="button">让千问重新生成</button></div><div class="knowledge-alias-choice-list">${rows||'<div class="empty">尚未生成相似问法，可以点击“让千问重新生成”。</div>'}</div><div class="confirm-actions"><span class="knowledge-alias-selected-count"></span><button class="btn secondary alias-dialog-cancel" type="button">取消</button><button class="btn alias-dialog-save" type="button" ${aliases.length?'':'disabled'}>保存启用选择</button></div></div>`;
-    document.body.appendChild(overlay);
-    const boxes=[...overlay.querySelectorAll('.knowledge-alias-choice input')];
-    const update=()=>{const count=boxes.filter(box=>box.checked&&!box.disabled).length;overlay.querySelector('.knowledge-alias-selected-count').textContent=`已选择 ${count} 条`};
-    const close=value=>{document.removeEventListener('keydown',onKey);overlay.remove();resolve(value)};
-    const onKey=event=>{if(event.key==='Escape')close(null)};document.addEventListener('keydown',onKey);
-    boxes.forEach(box=>box.onchange=update);update();
-    overlay.querySelector('.alias-select-all').onclick=()=>{boxes.forEach(box=>{if(!box.disabled)box.checked=true});update()};
-    overlay.querySelector('.alias-clear-all').onclick=()=>{boxes.forEach(box=>box.checked=false);update()};
-    overlay.querySelector('.knowledge-edit-close').onclick=()=>close(null);overlay.querySelector('.alias-dialog-cancel').onclick=()=>close(null);
-    overlay.querySelector('.alias-dialog-regenerate').onclick=async()=>{const button=overlay.querySelector('.alias-dialog-regenerate');button.disabled=true;try{await api(`/api/knowledge/${item.id}/aliases/regenerate`,{method:'POST',body:'{}'});toast('已交给千问重新生成，完成后再打开查看');close({regenerating:true})}catch(error){toast(error.message,true);button.disabled=false}};
-    overlay.querySelector('.alias-dialog-save').onclick=()=>close({enabledIds:boxes.filter(box=>box.checked&&!box.disabled).map(box=>Number(box.value))});
-    overlay.onclick=event=>{if(event.target===overlay)close(null)};
-  });
-}
-
-async function manualHandoffAliasSelectionDialog(item){
-  const [aliasData,taskData]=await Promise.all([api(`/api/manual-handoff-phrases/${item.id}/aliases`),api('/api/manual-handoff-alias-generation-tasks?limit=500')]);
-  const aliases=aliasData.aliases||[];
-  const task=(taskData.tasks||[]).find(entry=>Number(entry.phrase_id)===Number(item.id));
-  const taskLabels={QUEUED:'等待生成',RUNNING:'千问生成中',COMPLETED:'生成完成',FAILED:'生成失败',CANCELLED:'已被新任务替代',DISCARDED:'旧版本结果已丢弃'};
-  return new Promise(resolve=>{
-    const overlay=document.createElement('div');overlay.className='confirm-overlay knowledge-alias-overlay';
-    const aliasRows=aliases.map(alias=>`<label class="knowledge-alias-choice ${alias.validation_status==='CONFLICT'?'has-conflict':''}"><input type="checkbox" value="${alias.id}" ${alias.status==='ENABLED'?'checked':''} ${alias.validation_status!=='VALID'?'disabled':''}><span><b>${esc(alias.alias_text)}</b><small>${alias.validation_status==='CONFLICT'?esc(alias.validation_message||'与其他转人工说法冲突，不能启用'):`千问生成 · 仅勾选保存后才参与真实私信识别`}</small></span><em>${alias.status==='ENABLED'?'已启用':'未启用'}</em></label>`).join('');
-    const taskText=task?`${taskLabels[task.status]||task.status}${task.generated_count?` · 生成 ${task.generated_count} 条`:''}`:'尚未生成';
-    overlay.innerHTML=`<div class="confirm-dialog knowledge-alias-dialog" role="dialog" aria-modal="true" aria-labelledby="handoffAliasTitle"><div class="knowledge-edit-heading"><div><span>转人工说法 #${item.id} · 千问生成结果</span><h3 id="handoffAliasTitle">选择要启用的相似说法</h3></div><button class="knowledge-edit-close" type="button" aria-label="关闭">×</button></div><div class="knowledge-alias-source"><b>标准转人工说法</b><p>${esc(item.phrase)}</p><small>当前共 ${aliases.length} 条 · ${esc(taskText)}</small></div>${task?.status==='FAILED'?`<div class="handoff-alias-error">生成失败：${esc(task.error_message||'未知错误')}</div>`:''}<div class="handoff-alias-safety-note"><b>安全规则：</b>AI 生成结果默认不启用。只有你勾选并保存的完整说法，才会在私信中触发转人工；评论区仍不会直接转人工。</div><div class="knowledge-alias-toolbar"><button class="btn secondary alias-select-all" type="button">全选可用说法</button><button class="btn secondary alias-clear-all" type="button">全部取消</button><button class="btn secondary alias-dialog-regenerate" type="button">让千问重新生成</button></div><div class="knowledge-alias-choice-list">${aliasRows||'<div class="empty">相似说法尚未生成完成，可以稍后再打开，或点击“让千问重新生成”。</div>'}</div><div class="confirm-actions"><span class="knowledge-alias-selected-count"></span><button class="btn secondary alias-dialog-cancel" type="button">取消</button><button class="btn alias-dialog-save" type="button" ${aliases.length?'':'disabled'}>保存启用选择</button></div></div>`;
-    document.body.appendChild(overlay);
-    const boxes=[...overlay.querySelectorAll('.knowledge-alias-choice input')];
-    const update=()=>{const count=boxes.filter(box=>box.checked&&!box.disabled).length;overlay.querySelector('.knowledge-alias-selected-count').textContent=`已选择 ${count} 条`};
-    const close=value=>{document.removeEventListener('keydown',onKey);overlay.remove();resolve(value)};
-    const onKey=event=>{if(event.key==='Escape')close(null)};document.addEventListener('keydown',onKey);
-    boxes.forEach(box=>box.onchange=update);update();
-    overlay.querySelector('.alias-select-all').onclick=()=>{boxes.forEach(box=>{if(!box.disabled)box.checked=true});update()};
-    overlay.querySelector('.alias-clear-all').onclick=()=>{boxes.forEach(box=>box.checked=false);update()};
-    overlay.querySelector('.knowledge-edit-close').onclick=()=>close(null);overlay.querySelector('.alias-dialog-cancel').onclick=()=>close(null);
-    overlay.querySelector('.alias-dialog-regenerate').onclick=async()=>{const button=overlay.querySelector('.alias-dialog-regenerate');button.disabled=true;button.textContent='正在提交…';try{await api(`/api/manual-handoff-phrases/${item.id}/aliases/regenerate`,{method:'POST',body:JSON.stringify({requestedBy:'运营人员'})});toast('已交给千问重新生成，生成结果默认不启用');close({regenerating:true})}catch(error){toast(error.message,true);button.disabled=false;button.textContent='让千问重新生成'}};
-    overlay.querySelector('.alias-dialog-save').onclick=()=>close({enabledIds:boxes.filter(box=>box.checked&&!box.disabled).map(box=>Number(box.value))});
-    overlay.onclick=event=>{if(event.target===overlay)close(null)};
-  });
-}
-
 function confirmDelete({title,message,details=[],requiredText='',inputLabel='确认文字',confirmLabel='确认删除'}){
   return new Promise(resolve=>{
     const overlay=document.createElement('div');overlay.className='confirm-overlay';
@@ -338,7 +244,7 @@ async function downloadReplyExport(platformCodes,button){
   const original=button?.innerHTML;if(button){button.disabled=true;button.textContent='正在导出…'}
   try{
     const response=await fetch(`/api/messages/export?platforms=${encodeURIComponent(platformCodes.join(','))}`,{credentials:'same-origin'});
-    if(!response.ok){const data=await response.json().catch(()=>({}));if(response.status===401)queueMicrotask(()=>showLoginScreen('Session expired'));const error=new Error(data.message||`导出失败（HTTP ${response.status}）`);error.status=response.status;throw error}
+    if(!response.ok){const data=await response.json().catch(()=>({}));if(response.status===401&&data.code==='AUTH_REQUIRED')queueMicrotask(()=>showLoginScreen('\u8bf7\u5148\u767b\u5f55\u7ba1\u7406\u7aef'));const error=new Error(data.message||`导出失败（HTTP ${response.status}）`);error.status=response.status;throw error}
     const blob=await response.blob();const disposition=response.headers.get('Content-Disposition')||'';const encodedName=disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];const filename=encodedName?decodeURIComponent(encodedName):'平台回复记录.csv';
     const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
     const count=Number(response.headers.get('X-Export-Count')||0);toast(count?`已导出 ${count} 条回复记录`:'回复记录已导出');
@@ -353,10 +259,11 @@ async function downloadReplyExport(platformCodes,button){
 const workspaceGroups=[
   {id:'overview',label:'运营总览',icon:'dashboard',section:'work',description:'推广、内容、活动转化与 AI 运营建议。',items:[
     {key:'overview',label:'运营总览',page:'dashboard'}]},
-  {id:'content',label:'内容生成',icon:'create',section:'work',description:'自动热点与混剪：统一管理成片、视频制作和素材。',items:[
-    {key:'studio',label:'内容生成',page:'create'}]},
+  {id:'content',label:'内容创作',icon:'create',section:'work',description:'自动热点与混剪：统一管理成片、视频制作和素材。',items:[
+    {key:'studio',label:'创作方式',page:'create'}]},
   {id:'publishing',label:'发布管理',icon:'publish',section:'work',description:'素材预检、审核、发布排期与任务状态，继续使用运营系统的发布流程。',items:[
-    {key:'publishing',label:'发布与排期',page:'publish'},
+    {key:'publishing',label:'发布内容',page:'publish',presentation:'content'},
+    {key:'schedule',label:'发布排期',page:'publish',presentation:'schedule'},
     {key:'publish-tasks',label:'发布任务',page:'tasks'}]},
   {id:'inbox',label:'用户互动',icon:'messages',section:'work',description:'统一处理平台评论、私信、小程序会话与需要人工接手的记录。',items:[
     {key:'comments',label:'评论',page:'messages',view:'COMMENT'},
@@ -365,24 +272,31 @@ const workspaceGroups=[
     {key:'human-handoffs',label:'转人工记录',page:'handoffs'}]},
   {id:'wechat',label:'微信客服',icon:'wecom',section:'work',description:'处理微信人工接待、好友群发与机器人管理。',items:[
     {key:'wechat-service',label:'微信客服',page:'wechat'}]},
-  {id:'knowledge',label:'知识与回复',icon:'knowledge',section:'work',description:'维护知识和应答规则，通过回复测试验证效果后再发布。',items:[
-    {key:'documents',label:'知识资料',page:'knowledge',view:'rag'},
-    {key:'aliases',label:'相似问法',page:'aliases'},
-    {key:'answer-style',label:'回答风格',page:'knowledge',view:'persona'},
-    {key:'handoff-rules',label:'转人工说法',page:'knowledge',view:'handoff'},
-    {key:'reply-test',label:'回复测试',page:'xiaozhi',hint:'小智'}]},
-  {id:'channels',label:'平台与账号',icon:'accounts',section:'manage',description:'管理平台启停、账号、登录状态与浏览器执行环境。',items:[
-    {key:'accounts',label:'平台启停与账号',page:'platforms'},
-    {key:'browser-tools',label:'浏览器控制',page:'browser',hint:'高级'}]},
+  {id:'knowledge',label:'知识库',icon:'knowledge',section:'work',description:'管理知识文件，配置回答人设并测试问答效果。',items:[
+    {key:'documents',label:'文件管理',page:'knowledge',view:'rag',presentation:'documents'},
+    {key:'answer-style',label:'回答风格 / 人设',page:'knowledge',view:'persona',presentation:'persona'},
+    {key:'reply-test',label:'RAG 问答测试',page:'knowledge',view:'playground',presentation:'playground'}]},
+  {id:'channels',label:'平台账号',icon:'accounts',section:'manage',description:'管理平台启停、账号、登录状态与浏览器执行环境。',items:[
+    {key:'accounts',label:'平台账号',page:'platforms'}]},
   {id:'settings',label:'系统设置',icon:'workspace-settings',section:'manage',description:'配置通知与 AI 服务，集中查看调用记录与运行问题。',items:[
-    {key:'services',label:'通知与 AI 服务',page:'wecom'},
-    {key:'diagnostics',label:'问题汇总',page:'issues'}]}
+    {key:'services',label:'AI 服务',page:'wecom',presentation:'ai'},
+    {key:'creation-settings',label:'创作设置',page:'creativeSettings'},
+    {key:'notifications',label:'消息通知',page:'wecom',presentation:'notifications'},
+    {key:'usage',label:'调用记录',page:'wecom',presentation:'usage'},
+    {key:'browser-tools',label:'浏览器状态',page:'browser'},
+    {key:'diagnostics',label:'问题记录',page:'issues'}]}
 ];
 const workspaceLastRoute={};
 let workspaceNavigationSequence=0;
+function presentWorkspace(extra={}){
+  applyWorkspacePresentation($('#content'),{page:state.page,view:state.workspacePresentation,onNavigate:openWorkspaceItem,...extra});
+}
+function presentInteractions(extra={}){
+  applyInteractionPresentation($('#content'),{page:state.page,messageView:state.messageView,miniProgramConversationId:state.miniProgramConversationId,messageAccountId:state.messageAccountId,...extra});
+}
 function currentWorkspaceRoute(){
   const view=state.page==='messages'?state.messageView:state.page==='knowledge'?state.knowledgeView:null;
-  for(const group of workspaceGroups){const item=group.items.find(i=>i.page===state.page&&(!i.view||i.view===view));if(item)return {group,item}}
+  for(const group of workspaceGroups){const item=group.items.find(i=>i.page===state.page&&(!i.view||i.view===view)&&(!i.presentation||i.presentation===state.workspacePresentation));if(item)return {group,item}}
   for(const group of workspaceGroups){const item=group.items.find(i=>i.page===state.page);if(item)return {group,item}}
   return {group:workspaceGroups[0],item:workspaceGroups[0].items[0]};
 }
@@ -392,17 +306,19 @@ function openWorkspaceGroup(id){
   const pool=visible.length?visible:group.items;
   const remembered=workspaceLastRoute[id];
   const item=pool.find(i=>i.key===remembered)||pool[0];
-  navigate(item.page,item.view||null);
+  navigate(item.page,item.view||null,item.presentation||null);
 }
 function openWorkspaceItem(key){
-  for(const group of workspaceGroups){const item=group.items.find(i=>i.key===key);if(item){navigate(item.page,item.view||null);return}}
+  for(const group of workspaceGroups){const item=group.items.find(i=>i.key===key);if(item){navigate(item.page,item.view||null,item.presentation||null);return}}
 }
 function syncWorkspaceNavigation(){
   const {group,item}=currentWorkspaceRoute();
   workspaceLastRoute[group.id]=item.key;
   document.body.dataset.workspace=group.id;
   const title=$('#pageTitle'),subtitle=$('#pageSubtitle');
-  if(title)title.textContent=group.label;
+  if(title)title.textContent=state.page==='create'&&state.contentWorkspaceTitle?state.contentWorkspaceTitle:item.label;
+  const context=$('#pageContext');
+  if(context){context.textContent=group.label;context.hidden=group.items.length<2}
   if(subtitle)subtitle.textContent=group.description;
   const eyebrow=$('.page-heading .eyebrow');
   if(eyebrow)eyebrow.textContent=group.section==='manage'?'WORKSPACE / MANAGEMENT':'WORKSPACE / OPERATIONS';
@@ -477,7 +393,7 @@ async function toggleMasterSwitch(){
   }catch(error){syncMasterSwitch();toast(error.message,true)}finally{button.disabled=false;button.classList.remove('is-loading')}
 }
 async function fetchBootstrap(){return api('/api/bootstrap')}
-function commitBootstrap(bootstrap){state.bootstrap=bootstrap;$('#qwenMode').textContent=`\u5343\u95ee\uff1a${state.bootstrap.config.qwenMode==='mock'?'\u6a21\u62df':'\u5728\u7ebf'}`;syncMasterSwitch();const online=isLocalAgentOnline();setStatus('#cloudDot','#cloudStatus',true,'\u6b63\u5e38');setStatus('#agentDot','#agentStatus',online,online?'\u5728\u7ebf':'\u672a\u8fde\u63a5')}
+function commitBootstrap(bootstrap){state.bootstrap=bootstrap;$('#qwenMode').textContent=`AI：${state.bootstrap.config.qwenMode==='mock'?'模拟模式':'在线模式'}`;syncMasterSwitch();const online=isLocalAgentOnline();setStatus('#cloudDot','#cloudStatus',true,'\u6b63\u5e38');setStatus('#agentDot','#agentStatus',online,online?'\u5728\u7ebf':'\u672a\u8fde\u63a5')}
 function capturePageOwner(){return {page:state.page,pageGeneration:pageRenderGeneration}}
 function ownsPageOwner(owner){return Boolean(owner)&&owner.page===state.page&&owner.pageGeneration===pageRenderGeneration}
 function beginBootstrapRequest(pageOwner){
@@ -537,7 +453,15 @@ function setupPublishLayoutSync(expectedGeneration=pageRenderGeneration){
     clearHeight();
   };
 }
-function navigate(p,view=null){
+function navigate(p,view=null,presentation=null){
+  cleanupKnowledgeFiles();
+  cleanupKnowledgeTools();
+  if(p==='knowledge'){view=['persona','playground'].includes(view)?view:'rag';presentation=({persona:'persona',playground:'playground',rag:'documents'})[view]}
+  const nextPresentation=presentation||({publish:'content',knowledge:'documents',wecom:'ai'}[p]||null);
+  const sectionReady=$(({publish:'#publishForm',wecom:'[data-settings-config-frame]',knowledge:'.rag-knowledge-page'}[p])||'#workspace-section-unavailable');
+  const sameSection=Boolean(presentation)&&Boolean(sectionReady)&&state.page===p&&['publish','wecom','knowledge'].includes(p)&&(p!=='knowledge'||state.knowledgeView===(view||'rag'))&&!$('#content').dataset.pageLoading&&$('#content').children.length>0;
+  state.workspacePresentation=nextPresentation;
+  if(sameSection){presentWorkspace();syncWorkspaceNavigation();syncNavigationHash();window.scrollTo({top:0,left:0,behavior:'auto'});return Promise.resolve();}
   clearPublishLayoutSync();
   /* 每次进入页面都重新拉取运营看板数据，保证切换/刷新后看到的是最新口径。 */
   operationsDashboardKey=null;
@@ -553,6 +477,8 @@ function navigate(p,view=null){
   const sequence=++workspaceNavigationSequence;
   syncWorkspaceNavigation();
   $('#content').setAttribute('aria-busy','true');
+  $('#content').dataset.pageLoading=p;
+  $('#content').innerHTML='<div class="empty page-loading" role="status">正在加载…</div>';
   return render().then(()=>{
     if(sequence!==workspaceNavigationSequence)return;
     syncWorkspaceNavigation();
@@ -563,7 +489,7 @@ function navigate(p,view=null){
     toast(e.message,true);
     $('#content').innerHTML=`<div class="empty">页面加载失败：${esc(e.message)}</div>`;
     window.scrollTo({top:0,left:0,behavior:'auto'});
-  }).finally(()=>{if(sequence===workspaceNavigationSequence)$('#content').setAttribute('aria-busy','false')});
+  }).finally(()=>{if(sequence===workspaceNavigationSequence){$('#content').removeAttribute('aria-busy');delete $('#content').dataset.pageLoading}});
 }
 function syncNavigationHash(){
   try{
@@ -580,6 +506,8 @@ function syncNavigationHash(){
 function resolveWorkspaceHash(rawHash){
   const raw=String(rawHash||'').replace(/^#/,'').trim().toLowerCase();
   if(!raw)return null;
+  if(['versions','aliases','handoff-rules'].includes(raw))return workspaceGroups.find(group=>group.id==='knowledge').items[0];
+  if(raw==='xiaozhi')return workspaceGroups.find(group=>group.id==='knowledge').items.find(item=>item.key==='reply-test');
   if(['topics','script','material-editing','library','create','editing'].includes(raw)){
     return workspaceGroups.find(group=>group.id==='content').items[0];
   }
@@ -603,11 +531,22 @@ function applyWorkspaceHash(rawHash){
   if(!target)return false;
   const {item:current}=currentWorkspaceRoute();
   if(current&&current.key===target.key&&state.page===target.page){syncNavigationHash();return false}
-  navigate(target.page,target.view||null);
+  navigate(target.page,target.view||null,target.presentation||null);
   return true;
 }
 window.addEventListener('hashchange',()=>{if(!state.appStarted)return;applyWorkspaceHash(location.hash)});
+// Only read requests are overlapped with bootstrap. Nothing is cached across navigations.
+function settlePageRead(promise){return promise.then(data=>({data}),error=>({error}))}
+function preloadPageData(page){
+  if(page==='tasks'){const selected=state.taskPlatform&&state.taskPlatform!=='ALL'?state.taskPlatform:null;return settlePageRead(api('/api/tasks'+(selected?`?platformCode=${encodeURIComponent(selected)}`:'')))}
+  if(page==='messages')return settlePageRead(api('/api/messages'));
+  if(page==='handoffs')return settlePageRead(api('/api/manual-handoffs?limit=500'));
+  if(page==='wecom')return settlePageRead(Promise.all([api('/api/settings/wecom'),api('/api/settings/ai?limit=100')]));
+  if(page==='knowledge'&&state.knowledgeView==='rag')return settlePageRead(loadRagKnowledgeData());
+  return null;
+}
 async function render(){
+  cleanupKnowledgeTools();
   cleanupWechatAdmin();
   hideHotTopicStudio();
   $('#content').onclick=null;$('#content').oninput=null;$('#content').onchange=null;
@@ -615,29 +554,36 @@ async function render(){
   const generation=++pageRenderGeneration;
   pageRenderInFlightGeneration=generation;
   const ownsRender=()=>generation===pageRenderGeneration&&state.page===page;
+  const pendingData=preloadPageData(page);
   try{
     const bootstrap=await refreshBootstrap({page,pageGeneration:generation});
     if(!bootstrap||!ownsRender())return;
+    const prefetched=pendingData?await pendingData:null;
+    if(!ownsRender())return;
+    if(prefetched?.error)throw prefetched.error;
     if(page==='wechat')return renderWechatAdmin($('#content'));
-    const renderer=({dashboard:renderDashboard,create:renderContentStudio,editing:renderMaterialEditor,publish:renderPublish,tasks:renderTasks,messages:renderMessages,miniProgram:renderMiniProgramConversations,handoffs:renderManualHandoffs,knowledge:renderKnowledge,aliases:renderKnowledgeAliases,xiaozhi:renderXiaozhi,browser:renderBrowserControl,issues:renderIssues,wecom:renderWecom,platforms:renderPlatformRuntimePage}[page]||renderDashboard);
-    return page==='publish'||page==='miniProgram'?await renderer({pageGeneration:generation}):await renderer();
+    const renderer=({dashboard:renderDashboard,create:renderContentStudio,creativeSettings:renderContentStudio,editing:renderMaterialEditor,publish:renderPublish,tasks:renderTasks,messages:renderMessages,miniProgram:renderMiniProgramConversations,handoffs:renderManualHandoffs,knowledge:renderKnowledge,browser:renderBrowserControl,issues:renderIssues,wecom:renderWecom,platforms:renderPlatformRuntimePage}[page]||renderDashboard);
+    const result=page==='publish'||page==='miniProgram'?await renderer({pageGeneration:generation}):await renderer(prefetched?.data);
+    if(ownsRender())presentInteractions();
+    return result;
   }catch(error){
     if(!ownsRender())return;
     throw error;
-  }finally{if(pageRenderInFlightGeneration===generation)pageRenderInFlightGeneration=0}
+  }finally{if(pageRenderInFlightGeneration===generation){pageRenderInFlightGeneration=0;$('#content').removeAttribute('aria-busy');delete $('#content').dataset.pageLoading}}
 }
 function metric(l,v,h,tone,icon,target){return `<button type="button" class="metric metric-action" data-go="${target}" aria-label="查看${l}" style="--metric-tone:${tone}"><div class="metric-top"><span class="metric-icon">${iconSvg(icon)}</span><span class="metric-live">查看 →</span></div><span class="metric-label">${l}</span><div class="metric-value"><strong>${v}</strong><i></i></div><small>${h}</small></button>`}
 function aiUsageMetric(summary={}){const calls=Number(summary.calls||0).toLocaleString('zh-CN');const tokens=Number(summary.total_tokens||0).toLocaleString('zh-CN');return metric('今日 AI 用量',`${calls} 次`,`Token ${tokens} · 估算费用 ${aiCostValue(summary.estimated_cost_cny)}`,'#6455d9','wecom','wecom')}
 /* ==========================================================================
    运营总览看板（智慧驱动）
    数据来源：GET /api/operations-dashboard（服务端按既有业务表聚合）
-   口径约定：未接入数据源的指标由服务端标记 PENDING_SOURCE，前端一律显示
-   「待接入」并注明所需数据源，不编造任何数值。
+   口径约定：未接入数据源的核心指标不展示，不编造任何数值。
    ========================================================================== */
 const operationsRangeLabels={'7d':'近 7 天','30d':'近 30 天'};
 /* 已加载的看板筛选键（range|platform）。为空或与当前筛选不一致时才重新请求，
    避免仪表盘每次重绘、每次定时刷新都打一次接口。 */
 let operationsDashboardKey=null;
+let operationsAnalyticsRefreshTimer=null;
+let operationsDashboardRequest=0;
 function operationsFormat(key,value){
   const rounded=Math.round(Number(value)||0);
   if(key==='exposure'&&rounded>=10000)return `${(rounded/10000).toFixed(1).replace(/\.0$/,'')}万`;
@@ -649,12 +595,14 @@ function operationsKpiValue(item){
   return operationsPending(item.pendingNote);
 }
 async function loadOperationsDashboard(){
+  const request=++operationsDashboardRequest;
+  const key=`${state.dashboardRange}|${state.dashboardPlatform}`;
   const params=new URLSearchParams({range:state.dashboardRange,platform:state.dashboardPlatform});
   try{
     const d=await api(`/api/operations-dashboard?${params.toString()}`);
-    state.operationsDashboard=d.dashboard||null;
+    if(request===operationsDashboardRequest&&key===`${state.dashboardRange}|${state.dashboardPlatform}`)state.operationsDashboard=d.dashboard||null;
   }catch(error){
-    state.operationsDashboard={error:error.message,kpis:[],channels:[],content:[],funnel:[],trend:[],recommendations:[],updatedAt:null};
+    if(request===operationsDashboardRequest&&key===`${state.dashboardRange}|${state.dashboardPlatform}`)state.operationsDashboard={error:error.message,kpis:[],channels:[],content:[],funnel:[],trend:[],recommendations:[],updatedAt:null};
   }
 }
 function operationsDashboardData(){
@@ -665,6 +613,7 @@ function operationsDashboardData(){
     pendingNote:d.pendingNote||'该指标需要接入平台数据源后才能统计',
     kpis:Array.isArray(d.kpis)?d.kpis:[],
     published:d.published&&typeof d.published==='object'?d.published:null,
+    analytics:d.analytics&&typeof d.analytics==='object'?d.analytics:{accounts:[],coverage:{}},
     channels:Array.isArray(d.channels)?d.channels:[],
     content:Array.isArray(d.content)?d.content:[],
     funnel:Array.isArray(d.funnel)?d.funnel:[],
@@ -673,6 +622,23 @@ function operationsDashboardData(){
   };
 }
 function operationsSectionTitle(number,title,description){return `<div class="operations-section-title"><span>${number}</span><div><h2>${esc(title)}</h2><p>${esc(description)}</p></div></div>`}
+function operationsAnalyticsMarkup(analytics={}){
+  const accounts=Array.isArray(analytics.accounts)?analytics.accounts:[];
+  const coverage=analytics.coverage||{};
+  const names={douyin:'抖音',wechat_channels:'视频号',bilibili:'B站',weibo:'微博',xiaohongshu:'小红书'};
+  const cards=accounts.map(account=>{
+    const metrics=(Array.isArray(account.metrics)?account.metrics:[]).filter(metric=>Number.isFinite(metric.value));
+    const identity=account.accountIdentity?.name||account.identity?.name||account.accountName||'';
+    return `<article class="operations-analytics-account"><div class="operations-analytics-account-head"><div><b>${esc(names[account.platformCode]||account.platformCode)}</b><span>${esc(identity)}</span></div><small>${account.status==='STALE'?'历史读数 · ':''}${esc(account.capturedAt?fmt(account.capturedAt):'等待采集')}</small></div><dl>${metrics.map(metric=>{
+      const date=value=>new Date(value).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'});
+      const scope=metric.scope==='PERIOD'&&metric.periodStart&&metric.periodEnd?`${date(metric.periodStart)} 至 ${date(metric.periodEnd)}`:'平台页面最新读数';
+      return `<div><dt>${esc(metric.label)}</dt><dd>${metric.approximate?'约 ':''}${esc(metric.approximate&&metric.rawValue?metric.rawValue:operationsFormat(metric.key,metric.value))}</dd><small>${esc(scope)}</small></div>`;
+    }).join('')}</dl></article>`;
+  }).join('');
+  const pending=Array.isArray(coverage.missing)?coverage.missing:[];
+  const reasons={ACCOUNT_NOT_READY:'账号未登录',PLATFORM_PAUSED:'平台已停止',IDENTITY_CHANGED:'账号身份待核对',ACCOUNT_IDENTITY_CHANGED:'登录账号与绑定账号不一致',NEVER_COLLECTED:'等待首次采集',COLLECTION_QUEUED:'等待业务空闲采集',COLLECTION_RUNNING:'正在采集',DATA_PAGE_TIMEOUT:'数据页加载超时，稍后重试',DATA_PAGE_NOT_READY:'暂未读取到平台指标'};
+  return `<section class="operations-surface operations-analytics-panel"><header><div><h2>平台运营数据</h2><p>平台最新读数，累计值不计入周期新增。</p></div><button type="button" class="btn secondary" id="collectOperationsAnalytics">采集平台数据</button></header>${cards?`<div class="operations-analytics-grid">${cards}</div>`:'<p class="operations-analytics-empty">等待首次采集，可手动采集平台数据。</p>'}${pending.length?`<p class="operations-analytics-coverage">${pending.map(item=>`${esc(names[item.platformCode]||item.platformCode)}：${esc(reasons[item.reason]||'等待有效数据')}`).join('；')}</p>`:''}<p class="operations-analytics-note">每 30 分钟尝试更新，业务任务优先；未接入指标保留空缺。</p></section>`;
+}
 function operationsTrendChart(items){
   if(!items.length)return `<div class="operations-chart-empty">${operationsPending('曝光、关注、引流需要平台数据源')}<p>接入平台曝光与粉丝数据后，这里会显示每日趋势曲线。</p></div>`;
   const left=52,right=686,top=24,bottom=184;
@@ -702,13 +668,13 @@ async function renderDashboard(){
   if(operationsDashboardKey!==key){
     operationsDashboardKey=key;
     await loadOperationsDashboard();
-    if(generation!==pageRenderGeneration||state.page!=='dashboard')return;
+    if(generation!==pageRenderGeneration||state.page!=='dashboard'||key!==`${state.dashboardRange}|${state.dashboardPlatform}`)return;
   }
   const data=operationsDashboardData();
   const running=state.bootstrap.config.masterSwitch?.enabled!==false;
   const publishedKpi=data.published;
   const maxPublished=Math.max(...data.channels.map(item=>Number(item.published)||0),1);
-  const hasPendingKpi=data.kpis.some(item=>item.status!=='READY');
+  const readyKpis=data.kpis.filter(item=>item.status==='READY'&&item.value!==null&&item.value!==undefined);
   const updatedAt=data.updatedAt?new Date(data.updatedAt):null;
   const updatedText=updatedAt&&!Number.isNaN(updatedAt.getTime())?fmt(updatedAt.toISOString()):'刚刚';
   const topPublished=[...data.channels].sort((a,b)=>(Number(b.published)||0)-(Number(a.published)||0))[0];
@@ -720,7 +686,7 @@ async function renderDashboard(){
   const channelOptions=data.channels.length?data.channels:defaultPlatforms;
   $('#content').innerHTML=`<div class="operations-dashboard">
     <div class="operations-overview-head">
-      <div><span>01 · CORE OPERATIONS</span><h2>核心运营指标</h2><p>口径：${esc(operationsRangeLabels[state.dashboardRange]||'近 7 天')} · ${state.dashboardPlatform==='all'?'全部平台':'单平台'} · 数据更新时间：${esc(updatedText)}</p></div>
+      <div><h2>运营指标</h2><p>口径：${esc(operationsRangeLabels[state.dashboardRange]||'近 7 天')} · ${state.dashboardPlatform==='all'?'全部平台':'单平台'} · 数据更新时间：${esc(updatedText)}</p></div>
       <div class="operations-filters">
         <label><span>平台</span><select id="operationsPlatformFilter" aria-label="平台筛选"><option value="all">全部平台</option>${channelOptions.map(item=>`<option value="${esc(item.code)}"${state.dashboardPlatform===item.code?' selected':''}>${esc(item.name)}</option>`).join('')}</select></label>
         <label><span>周期</span><select id="operationsRangeFilter" aria-label="统计周期"><option value="7d"${state.dashboardRange==='7d'?' selected':''}>近 7 天</option><option value="30d"${state.dashboardRange==='30d'?' selected':''}>近 30 天</option></select></label>
@@ -728,8 +694,8 @@ async function renderDashboard(){
     </div>
     ${running?'':`<div class="operations-pause-banner"><span>II</span><div><b>全局运行与 Local Agent 已停止</b><p>运营数据仍可查看，但当前不会领取新任务。</p></div><button type="button" data-master-resume>\u542f\u52a8 Agent \u5e76\u6062\u590d\u8fd0\u884c</button></div>`}
     ${data.error?`<div class="notice warn"><span class="notice-icon">!</span><div><b>运营看板数据读取失败</b><p>${esc(data.error)}</p></div></div>`:''}
-    ${hasPendingKpi?`<div class="notice info operations-source-notice"><span class="notice-icon">i</span><div><b>部分指标待接入数据源</b><p>${esc(data.pendingNote)}。当前已真实统计的指标：发布量、内容清单与 AI 运营建议；曝光、关注、引流、报名、到场、入群在接入平台与活动系统前一律显示「待接入」，系统不会用估算值填充。</p></div></div>`:''}
-    <section class="operations-kpi-grid" aria-label="核心运营指标">${data.kpis.map(item=>`<article class="operations-kpi${item.status==='READY'?'':' is-pending'}"><div class="operations-kpi-head"><span class="operations-kpi-icon">${iconSvg(item.icon)}</span><span class="operations-kpi-label">${esc(item.label)}</span></div><strong>${operationsKpiValue(item)}</strong><p>${item.status==='READY'?`<b>${esc(item.scope||'本周期')}</b><span>${esc(item.note||'按发布时间统计')}</span>`:`<span>${esc(item.pendingNote||'需要接入数据源')}</span>`}</p></article>`).join('')}</section>
+    ${readyKpis.length?`<section class="operations-kpi-grid" aria-label="核心运营指标">${readyKpis.map(item=>`<article class="operations-kpi"><div class="operations-kpi-head"><span class="operations-kpi-icon">${iconSvg(item.icon)}</span><span class="operations-kpi-label">${esc(item.label)}</span></div><strong>${operationsKpiValue(item)}</strong><p><b>${esc(item.scope||'本周期')}</b><span>${esc(item.note||'按发布时间统计')}</span></p></article>`).join('')}</section>`:''}
+    ${operationsAnalyticsMarkup(data.analytics)}
     <div class="operations-analysis-grid">
       <section class="operations-surface operations-trend-panel">
         <header>${operationsSectionTitle('02','推广趋势','曝光、关注与引流的每日变化')}<div class="operations-legend"><span><i class="is-exposure"></i>曝光</span><span><i class="is-followers"></i>关注</span><span><i class="is-leads"></i>引流</span></div></header>
@@ -738,7 +704,7 @@ async function renderDashboard(){
       <section class="operations-surface operations-channel-panel">
         <header>${operationsSectionTitle('03','渠道效果','各平台发布量与曝光、引流贡献')}</header>
         <div class="operations-channel-summary">
-          <div><span>发布量最高</span><strong>${topPublished&&topPublished.published?`${esc(topPublished.name)} ${operationsFormat('published',topPublished.published)} 条`:'待接入'}</strong></div>
+          <div><span>发布量最高</span><strong>${topPublished&&topPublished.published?`${esc(topPublished.name)} ${operationsFormat('published',topPublished.published)} 条`:'暂无发布'}</strong></div>
           <div><span>曝光与引流</span><strong>${operationsPending('需要平台曝光与引流数据源')}</strong></div>
         </div>
         <div class="operations-channel-list">${channelOptions.map(item=>{const published=Number(item.published)||0;return `<div class="operations-channel-row"><b>${esc(item.name)}</b><div class="operations-channel-track" aria-label="${esc(item.name)}发布量 ${published} 条"><i style="width:${(published/maxPublished*100).toFixed(1)}%"></i><em style="width:0%"></em></div><span>${published?`发布 ${published} 条`:'暂无发布'} / ${operationsPending('曝光、引流待接入')}</span></div>`}).join('')}</div>
@@ -757,15 +723,16 @@ async function renderDashboard(){
           <div><span>报名 → 到场</span><strong>${operationsConversion(funnelOf('registrations'),funnelOf('attendance'))}</strong></div>
           <div><span>到场 → 入群</span><strong>${operationsConversion(funnelOf('attendance'),funnelOf('groups'))}</strong></div>
         </div>
-        <p class="operations-funnel-note">活动转化需要对接活动报名与现场签到数据；接入前不展示推算值。</p>
+        <p class="operations-funnel-note">报名、签到及入群数据待接入。</p>
       </section>
     </div>
     <section class="operations-ai-panel">
-      <div class="operations-ai-intro"><span>06 · AI OPERATIONS</span><div class="operations-section-title"><i>AI</i><div><h2>AI 运营建议</h2><p>基于本系统真实任务、互动与知识数据生成的今日优先动作</p></div></div><small>${iconSvg('dashboard')}当前周期发布量 ${publishedKpi&&publishedKpi.status==='READY'?operationsFormat('published',publishedKpi.value):'待接入'} 条</small></div>
+      <div class="operations-ai-intro"><span>06 · AI OPERATIONS</span><div class="operations-section-title"><i>AI</i><div><h2>AI 运营建议</h2><p>今日建议</p></div></div><small>${iconSvg('dashboard')}当前周期发布量 ${publishedKpi&&publishedKpi.status==='READY'?operationsFormat('published',publishedKpi.value):'待接入'} 条</small></div>
       <div class="operations-recommendations">${data.recommendations.length?data.recommendations.map(item=>`<article><div><span>${esc(item.type)}</span><em>${esc(item.priority)}</em></div><strong>${esc(item.title)}</strong><p>${esc(item.description)}</p><button type="button" data-go="${esc(item.target)}">${esc(item.actionLabel)} <span>→</span></button></article>`).join(''):'<article><div><span>数据不足</span><em>提示</em></div><strong>暂无可生成的运营建议</strong><p>当系统产生发布、互动或知识缺口记录后，这里会自动给出优先动作。</p><button type="button" data-go="publish">去创建内容 <span>→</span></button></article>'}</div>
     </section>
   </div>
   ${dashboardRuntimeMarkup()}`;
+  presentWorkspace({data,stats:state.bootstrap.stats});
   bindOperationsDashboard();
   bindDashboardRuntime();
 }
@@ -776,6 +743,17 @@ function bindOperationsDashboard(){
   if(platformFilter)platformFilter.onchange=()=>{state.dashboardPlatform=platformFilter.value;refreshOperationsDashboard()};
   const rangeFilter=$('#operationsRangeFilter');
   if(rangeFilter)rangeFilter.onchange=()=>{state.dashboardRange=rangeFilter.value;refreshOperationsDashboard()};
+  const collectAnalytics=$('#collectOperationsAnalytics');
+  if(collectAnalytics)collectAnalytics.onclick=async()=>{
+    collectAnalytics.disabled=true;
+    try{
+      const result=await api('/api/operations-dashboard/collect',{method:'POST',body:JSON.stringify({platformCode:state.dashboardPlatform})});
+      toast(result.paused?'当前执行模式未启用平台数据采集':result.jobs?.length?`已安排 ${result.jobs.length} 个平台数据采集任务，完成后自动更新`:'平台正在处理业务或刚刚采集，请稍后查看');
+      await refreshOperationsDashboard();
+    }catch(error){toast(error.message,true)}finally{if(collectAnalytics.isConnected)collectAnalytics.disabled=false}
+  };
+  if(operationsAnalyticsRefreshTimer)clearTimeout(operationsAnalyticsRefreshTimer);
+  operationsAnalyticsRefreshTimer=setTimeout(()=>{operationsAnalyticsRefreshTimer=null;if(state.page==='dashboard')void refreshOperationsDashboard()},30000);
 }
 async function refreshOperationsDashboard(){
   if(state.page!=='dashboard')return;
@@ -803,16 +781,16 @@ function dashboardRuntimeMarkup(){
     return `<article class="dashboard-device-card ${online?'is-online':'is-offline'}" id="dashboardDeviceCard-${index}"><div class="dashboard-device-card-head"><span class="dashboard-device-icon">${iconSvg('accounts')}</span><div><small>LOCAL AGENT DEVICE</small><b>${esc(device.name)}</b></div>${badge(device.status)}</div><div class="dashboard-device-meta"><span><small>设备 ID</small><b>${esc(device.id)}</b></span><span><small>Agent 版本</small><b>${esc(device.agent_version||'—')}</b></span></div><div class="dashboard-device-heartbeat"><span><i></i>${online?'连接正常':'连接异常'}</span><b>最近心跳 ${fmt(device.last_heartbeat)}</b></div></article>`;
   }).join(''):'<div class="dashboard-device-empty"><span>'+iconSvg('accounts')+'</span><div><b>暂未发现 RPA 设备</b><small>Local Agent 上线后会自动显示在这里。</small></div></div>';
 
-  return `    <div class="section-title"><div><span>07 · EXECUTION ENVIRONMENT</span><h2>执行环境与实时指标</h2></div><p>RPA 设备、五平台登录状态与任务流转实时数据</p></div>
+  return `    <div class="section-title"><div><span>07 · EXECUTION ENVIRONMENT</span><h2>运行情况</h2></div><p></p></div>
     <div class="grid cols-3 metric-grid">
       ${metric('转人工记录',s.handoffRecords,'已创建的人工接管通知','#ef6a71','issues','handoffs')}
       ${metric('AI 已回复',s.autoReplies,'自动处理完成','#35b68a','messages','messages')}
       ${aiUsageMetric(s.aiUsageToday)}    </div>
     <div class="panel platform-login-overview dashboard-runtime-overview${deviceHealthy?'':' has-device-alert'}">
-      <div class="panel-head dashboard-runtime-head"><div><span class="panel-kicker">EXECUTION ENVIRONMENT</span><h2>执行环境与五平台登录</h2><p>RPA 设备与平台登录状态集中展示，避免在平台启停页面重复维护。<br>${esc(loginAuditText)}</p></div><div class="button-row"><button class="btn secondary" id="dashboardOpenPlatforms">一键打开已开启平台</button><button class="btn" id="dashboardCheckPlatforms">一键检查登录状态</button><button class="btn ghost" type="button" data-go="platforms">平台启停</button></div></div>
+      <div class="panel-head dashboard-runtime-head"><div><span class="panel-kicker">EXECUTION ENVIRONMENT</span><h2>设备与登录状态</h2><p><br>${esc(loginAuditText)}</p></div><div class="button-row"><button class="btn secondary" id="dashboardOpenPlatforms">打开已启用平台</button><button class="btn" id="dashboardCheckPlatforms">检查登录状态</button><button class="btn ghost" type="button" data-go="platforms">平台启停</button></div></div>
       <div class="dashboard-runtime-layout">
         <section class="dashboard-runtime-zone dashboard-device-zone">
-          <div class="dashboard-runtime-zone-head"><div><span>RPA DEVICE</span><h3>RPA 执行设备</h3></div><strong class="dashboard-zone-stat ${deviceHealthy?'is-healthy':'is-alert'}" id="dashboardDeviceSummaryCount">${devices.length?`${onlineDeviceCount}/${devices.length} 在线`:'暂无设备'}</strong></div>
+          <div class="dashboard-runtime-zone-head"><div><span>RPA DEVICE</span><h3>执行设备</h3></div><strong class="dashboard-zone-stat ${deviceHealthy?'is-healthy':'is-alert'}" id="dashboardDeviceSummaryCount">${devices.length?`${onlineDeviceCount}/${devices.length} 在线`:'暂无设备'}</strong></div>
           <div class="dashboard-device-list">${dashboardDeviceCards}</div>
           <div class="dashboard-zone-foot"><span>素材与登录态保留在本机</span><b id="dashboardDeviceLatest">最近心跳 ${fmt(latestDeviceHeartbeat)}</b></div>
         </section>
@@ -834,7 +812,7 @@ function dashboardRuntimeMarkup(){
           <div class="pipeline-step"><span>05</span><i>${iconSvg('knowledge')}</i><div><b>审核复核</b><small>结果确认</small></div></div><div class="pipeline-line"></div>
           <div class="pipeline-step"><span>06</span><i>${iconSvg('messages')}</i><div><b>互动闭环</b><small>回复与沉淀</small></div></div>
         </div>
-        <div class="notice warn operations-notice"><span class="notice-icon">!</span><div><b>发布状态安全口径</b><p>RPA 检测到提交成功仅记为“已提交”；平台管理页可靠确认后才记为“已发布”。结果不明确时立即停止并转人工确认。</p></div></div>
+        <div class="notice warn operations-notice"><span class="notice-icon">!</span><div><b>发布状态安全口径</b><p>“已提交”需经平台确认才记为“已发布”；结果不明时暂停并转人工。</p></div></div>
       </div>
       <aside class="panel safety-panel">
         <div class="panel-head"><div><span class="panel-kicker">SAFETY PRINCIPLES</span><h2>安全执行原则</h2></div></div>
@@ -897,19 +875,19 @@ async function renderPublish({pageGeneration=pageRenderGeneration}={}){
     <div class="grid cols-2 publish-grid">
       <div class="publish-column publish-main-column">
         <div class="panel" style="margin-top:0">
-        <div class="panel-head"><div><h2>1. 选择本地素材与文案</h2><p>从电脑选择图片或视频，上传后自动预览、识别格式，并按所选平台分别预检。</p></div></div>
+        <div class="panel-head"><div><h2>素材与文案</h2><p>选择素材后自动预检。</p></div></div>
         <div class="section-actions library-publish-actions"><button type="button" class="btn secondary" id="pickFromContentLibrary">从素材库选择</button></div>
         <label>本地素材</label>
         <input id="materialFile" type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.mov" aria-label="选择图片或视频" hidden>
-        <label class="field full local-material-path-field"><span>素材路径（上传后自动填写，也可填写运行设备上已有的路径）</span><input id="materialPath" name="materialPath" type="text" placeholder="选择文件后自动填写" autocomplete="off" required></label>
+        <label class="field full local-material-path-field"><span>素材路径</span><input id="materialPath" name="materialPath" type="text" placeholder="选择文件或填写本机路径" autocomplete="off" required></label>
         <div id="materialPreview" class="material-preview material-preview-empty material-picker" role="button" tabindex="0" aria-label="选择本地素材">
-          <div class="material-picker-placeholder"><span class="material-picker-icon" aria-hidden="true">＋</span><b>点击选择本地素材</b><span>支持 JPG、PNG、WEBP、MP4、MOV</span><small>上传到当前系统后自动预览并检测格式，原文件保留在电脑上</small></div>
+          <div class="material-picker-placeholder"><span class="material-picker-icon" aria-hidden="true">＋</span><b>点击选择本地素材</b><span>支持 JPG、PNG、WEBP、MP4、MOV</span><small>上传后自动预检，原文件保留在本机</small></div>
         </div>
         <div id="precheckBox" class="notice material-check"><b>素材状态：等待上传</b><br>上传后仅展示视频格式与所选平台适配状态。</div>
         <div class="section-actions audio-copy-actions"><button type="button" class="btn secondary" id="generateAudioCopy">AI 生成标题和文案</button><button type="button" class="btn secondary" id="applyAudioCopy" hidden>使用 AI 结果</button></div>
-        <div id="audioCopyBox" class="ai-status-card is-idle is-generation" role="status" aria-live="polite">${aiStatusMarkup({variant:'generation',state:'idle',eyebrow:'AI CONTENT ENGINE',title:'AI 文案引擎待命',description:'上传图片时理解画面与可见文字；上传带音轨视频时根据音频生成标题和正文。',stages:['素材理解','主题提炼','文案润色','风险校验']})}</div>
-        <label>标题</label><input id="publishTitle" name="title" maxlength="20" required placeholder="不超过20字（按当前最严格口径）">
-        <label>正文</label><textarea id="publishBody" name="body" rows="7" required placeholder="填写正式运营内容，不要填写测试、RPA、发布后删除等字样"></textarea>
+        <div id="audioCopyBox" data-empty-state="true" class="ai-status-card is-idle is-generation" role="status" aria-live="polite">${aiStatusMarkup({variant:'generation',state:'idle',eyebrow:'AI CONTENT ENGINE',title:'AI 文案',description:'依据图片或视频音频生成文案。',stages:['素材理解','主题提炼','文案润色','风险校验']})}</div>
+        <label>标题</label><input id="publishTitle" name="title" maxlength="20" required placeholder="最多 20 字">
+        <label>正文</label><textarea id="publishBody" name="body" rows="7" required placeholder="填写发布正文"></textarea>
         <div class="publish-origin-card" id="contentOriginCard">
           <div class="publish-origin-head">
             <span class="publish-origin-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 4.5 6.6v5.8c0 4.1 2.8 7.6 7.5 8.6 4.7-1 7.5-4.5 7.5-8.6V6.6L12 3Z"></path><path d="m9.2 12 1.8 1.8 3.9-4"></path></svg></span>
@@ -933,12 +911,12 @@ async function renderPublish({pageGeneration=pageRenderGeneration}={}){
         <div class="section-actions publish-review-actions">
           <button type="button" class="btn secondary publish-action-card publish-precheck-action" id="runPrecheck">
             <span class="publish-action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 5v6h-6"></path><path d="M8.5 12h7M12 8.5v7"></path></svg></span>
-            <span class="publish-action-copy"><b class="publish-action-title">重新检测素材格式</b><small class="publish-action-detail">校验文件参数与平台适配</small></span>
+            <span class="publish-action-copy"><b class="publish-action-title">重新预检</b><small class="publish-action-detail">校验文件参数与平台适配</small></span>
             <span class="publish-action-arrow" aria-hidden="true">›</span>
           </button>
           <button type="button" class="btn secondary publish-action-card publish-compliance-action" id="runCompliance">
             <span class="publish-action-icon publish-action-ai" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3.5 14 8l4.5 2-4.5 2-2 4.5-2-4.5-4.5-2L10 8l2-4.5Z"></path><path d="m18 15 .9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9L18 15Z"></path></svg></span>
-            <span class="publish-action-copy"><b class="publish-action-title">AI 审核内容与图片</b><small class="publish-action-detail">检查文案、来源与代表画面</small></span>
+            <span class="publish-action-copy"><b class="publish-action-title">审核内容</b><small class="publish-action-detail">检查文案、来源与代表画面</small></span>
             <span class="publish-action-live" aria-hidden="true"><i></i>AI</span>
           </button>
         </div>
@@ -946,13 +924,13 @@ async function renderPublish({pageGeneration=pageRenderGeneration}={}){
       </div>
       <div class="publish-column publish-side-column">
         <div class="panel" style="margin-top:0">
-        <div class="panel-head"><div><h2>2. 选择平台账号并授权</h2><p>抖音、视频号、B站和微博分别绑定独立浏览器 Profile；小红书暂缓调试，未验收。</p></div><div class="platform-select-actions"><span id="platformSelectionSummary">已选 0/0</span><button type="button" class="btn secondary platform-select-all" id="selectAllPlatforms" aria-pressed="false">全选平台</button></div></div>
+        <div class="panel-head"><div><h2>发布平台</h2><p>支持抖音、视频号、B站与微博；小红书待验收。</p></div><div class="platform-select-actions"><span id="platformSelectionSummary">已选 0/0</span><button type="button" class="btn secondary platform-select-all" id="selectAllPlatforms" aria-pressed="false">全选平台</button></div></div>
         ${accountAvailability.length?accountAvailability.map(({account:a,availability:v})=>`<label class="check-card publish-platform-card ${v.runnable?'is-runnable':'is-blocked'}"><input type="checkbox" class="platform-check" data-platform="${esc(a.platform_code)}" data-account="${a.id}" ${v.runnable?'':'disabled'}><span><span class="publish-platform-title"><b>${esc(a.platform_name)} · ${esc(a.display_name)}</b><i class="badge ${v.cls}">${esc(v.label)}</i></span><small>${esc(v.detail)}</small></span></label>`).join(''):'<div class="empty"><b>当前没有已配置的五平台账号</b><br>请先到“平台启停”检查账号和登录状态。</div>'}
         ${blockedAccounts.length?`<div class="notice warn publish-platform-blocked-notice"><b>${blockedAccounts.length} 个平台当前不可选择</b><br>请检查账号、登录、Local Agent、平台开关，或处理关联问题。<div class="section-actions"><button type="button" class="btn secondary" data-go="issues">查看问题汇总</button><button type="button" class="btn secondary" data-go="platforms">查看平台启停</button></div></div>`:''}
         <div class="notice info"><b>素材适配：</b>B站当前仅接视频投稿；微博支持图文和视频。系统不自动裁切或转码，请以平台适配状态为准。</div>
-        <div id="complianceBox" class="ai-status-card is-idle is-review" role="status" aria-live="polite">${aiStatusMarkup({variant:'review',state:'idle',eyebrow:'AI SAFETY SCANNER',title:'AI 审核引擎待命',description:'填写文案并选择素材后，可联合检查标题、正文、内容来源及图片或视频代表画面。',stages:['文案校验','来源核对','代表帧抽取','画面识别','结果汇总'],bodyHtml:trafficPredictionMarkup()})}</div>
+        <div id="complianceBox" data-empty-state="true" class="ai-status-card is-idle is-review" role="status" aria-live="polite">${aiStatusMarkup({variant:'review',state:'idle',eyebrow:'AI SAFETY SCANNER',title:'内容审核',description:'检查文案、内容来源与画面风险。',stages:['文案校验','来源核对','代表帧抽取','画面识别','结果汇总'],bodyHtml:trafficPredictionMarkup()})}</div>
         <label class="check-card"><input id="warningConfirmed" type="checkbox"><span><b>我已人工核对 AI 审核警告</b><small>仅在 AI 返回警告时需要；阻断项和审核失败不能放行。</small></span></label>
-        <label class="check-card"><input id="autoPublish" type="checkbox"><span><b>授权RPA点击最终“发布”按钮</b><small>勾选后按平台逐一提交；未勾选仅准备草稿并等待人工确认。</small></span></label>
+        <label class="check-card"><input id="autoPublish" type="checkbox"><span><b>自动提交发布</b><small>勾选后按平台逐一提交；未勾选仅准备草稿并等待人工确认。</small></span></label>
         <button class="btn full" id="publishSubmitButton" type="submit">创建已选平台发布任务</button>
         <button class="btn secondary full scheduled-publish-open" id="scheduledPublishButton" type="button"><span>创建定时发布任务</span><small>选择电脑本地年月日、时分秒</small></button>
         </div>
@@ -973,11 +951,12 @@ async function renderPublish({pageGeneration=pageRenderGeneration}={}){
       </div>
       <div class="publish-records-grid">
         <section id="publishSchedules" class="publish-queue-board publish-schedule-panel"><div class="loading compact-loading">正在加载未来定时发布任务…</div></section>
-        <section id="publishHistory" class="publish-queue-board publish-history-panel"><div class="loading compact-loading">正在加载曾经发布过的记录…</div></section>
+        <section id="publishHistory" class="publish-queue-board publish-history-panel"><div class="loading compact-loading">正在加载发布历史…</div></section>
       </div>
     </section>
   </form>`;
 
+  presentWorkspace();
   resetAudioContentGeneration();
   const materialInput=$('#materialPath');
   const materialPicker=$('#materialPreview');
@@ -1165,7 +1144,7 @@ function renderMaterialPrecheck(precheck,previewUrl,platformCodes=[]){
 function publishHistoryHtml(data){
   const records=data.records||[];
   const page=data.page||1,totalPages=data.totalPages||1;
-  return `<header class="queue-board-head history-board-head"><div class="queue-board-heading"><span class="queue-board-icon history-board-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 7.5h14M7 4.5h10a2 2 0 0 1 2 2v13H5v-13a2 2 0 0 1 2-2Z"></path><path d="m9 13 2 2 4-4"></path></svg></span><div><span class="queue-board-eyebrow">历史结果</span><h3>曾经发布过的记录</h3><p>按最新发布时间排列，展开记录可以查看详细内容。</p></div></div><span class="queue-board-count">${data.total||0}<small>条记录</small></span></header>
+  return `<header class="queue-board-head history-board-head"><div class="queue-board-heading"><span class="queue-board-icon history-board-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 7.5h14M7 4.5h10a2 2 0 0 1 2 2v13H5v-13a2 2 0 0 1 2-2Z"></path><path d="m9 13 2 2 4-4"></path></svg></span><div><span class="queue-board-eyebrow">历史结果</span><h3>发布历史</h3><p>展开查看详情</p></div></div><span class="queue-board-count">${data.total||0}<small>条记录</small></span></header>
     <div class="queue-board-body"><div class="publish-history-list">${records.length?records.map(r=>`<details class="publish-history-item"><summary><span class="history-result-icon ${r.publish_status==='SUCCESS'?'success':'failed'}" aria-hidden="true">${r.publish_status==='SUCCESS'?'✓':'!'}</span><span class="history-title-block"><b class="history-title">${esc(r.title)}</b><small>发布任务 #${r.id}</small></span><span class="history-time">${fmt(r.publish_time)}</span><span class="history-status ${r.publish_status==='SUCCESS'?'success':'failed'}">${r.publish_status==='SUCCESS'?'成功':'失败'}</span><span class="history-chevron">›</span></summary><div class="history-detail"><div><b>正文内容</b><p>${esc(r.body)}</p></div><div class="history-detail-grid"><div><b>发布时间</b><span>${fmt(r.publish_time)}</span></div><div><b>发布结果</b><span>${r.publish_status==='SUCCESS'?'发布成功':'发布失败'}</span></div><div><b>素材</b><span>${esc(r.material_meta?.name||r.material_meta?.meta?.name||r.material_meta?.precheck?.meta?.name||r.material_path||'—')}</span></div><div><b>任务编号</b><span>#${r.id}</span></div></div>${(r.targets||[]).map(t=>`<div class="history-target"><b>${esc(t.platform_name)} · ${esc(t.account_name)}</b><span>执行：${esc(statusName(t.status))}　审核：${esc(statusName(t.review_status))}</span>${t.review_message?`<small>${esc(statusName(t.review_message))}</small>`:''}</div>`).join('')}</div></details>`).join(''):`<div class="queue-empty-state history-empty-state"><span class="queue-empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 4.5h12v15H6z"></path><path d="M9 9h6M9 13h6"></path></svg></span><b>还没有发布记录</b><p>完成发布后，结果会按最新时间显示在这里。</p></div>`}</div>
     ${data.total>5?`<div class="history-pagination"><button type="button" class="btn secondary" data-history-page="${page-1}" ${page<=1?'disabled':''}>上一页</button><span>第 ${page} / ${totalPages} 页</span><button type="button" class="btn secondary" data-history-page="${page+1}" ${page>=totalPages?'disabled':''}>下一页</button></div>`:''}</div>`;
 }
@@ -1191,6 +1170,7 @@ function renderAiStatus(box,options){
   if(!box)return;
   const variant=options.variant||'generation',status=options.state||'idle';
   box.className=`ai-status-card is-${status} is-${variant}`;
+  box.dataset.emptyState=String(status==='idle'&&['AI 文案','内容审核'].includes(options.title));
   box.setAttribute('role','status');box.setAttribute('aria-live','polite');
   box.innerHTML=aiStatusMarkup(options);
 }
@@ -1249,7 +1229,7 @@ function renderAudioCopyStatus(){
     const applied=generation.applied?(generation.needsManualApply?'已填入可安全填写的空白字段；现有内容未覆盖，可点击“使用 AI 结果”主动替换。':'已安全填入标题和正文，并已将内容来源设为“AI生成或包含AI生成内容”。'):'已生成结果，但检测到现有内容或等待期间的人工修改，因此未覆盖。';
     renderAiStatus(box,{variant:'generation',state:'success',eyebrow:'AI CONTENT ENGINE · COMPLETE',title:'已围绕核心主题生成文案',description:(ui.sourceType==='image'?'图片视觉理解':'音频内容理解')+'与文案润色已完成，结果已通过生成侧风险关键词校验。',stages,meta,bodyHtml:'<b>'+esc(applied)+'</b>',footer:'请人工确认标题和正文是否准确突出主题；修改后需重新执行 AI 审核，系统不会自动发布。'});return
   }
-  renderAiStatus(box,{variant:'generation',state:'idle',eyebrow:'AI CONTENT ENGINE',title:'AI 文案引擎待命',description:ui.idleDescription,stages,footer:ui.idleFooter});
+  renderAiStatus(box,{variant:'generation',state:'idle',eyebrow:'AI CONTENT ENGINE',title:'AI 文案',description:ui.idleDescription,stages,footer:ui.idleFooter});
 }
 function applyAudioCopyResult(overwrite=false){
   const generation=state.contentGeneration;
@@ -1452,7 +1432,7 @@ async function runPrecheck(automatic=false,{pageGeneration=pageRenderGeneration}
       button.setAttribute('aria-busy','false');
       const actionTitle=button.querySelector('.publish-action-title');
       const actionDetail=button.querySelector('.publish-action-detail');
-      if(actionTitle)actionTitle.textContent='重新检测素材格式';
+      if(actionTitle)actionTitle.textContent='重新预检';
       if(actionDetail)actionDetail.textContent='校验文件参数与平台适配';
     }
   }
@@ -1483,7 +1463,7 @@ async function runCompliance(){
     renderAiStatus(box,{variant:'review',state:'failed',eyebrow:'AI SAFETY SCANNER · ERROR',title:'AI 审核失败',description:e.message||'审核服务暂时不可用，请稍后重试。',stages:['文案校验','来源核对','代表帧抽取','画面识别','结果汇总'],bodyHtml:trafficPredictionMarkup(),footer:'审核失败不能放行自动发布。'});
     toast(e.message,true);
   }finally{
-    if(button){button.disabled=false;button.classList.remove('is-ai-running');button.setAttribute('aria-busy','false');const actionTitle=button.querySelector('.publish-action-title');const actionDetail=button.querySelector('.publish-action-detail');if(actionTitle)actionTitle.textContent='AI 审核内容与图片';if(actionDetail)actionDetail.textContent='检查文案、来源、代表画面与平台潜力'}
+    if(button){button.disabled=false;button.classList.remove('is-ai-running');button.setAttribute('aria-busy','false');const actionTitle=button.querySelector('.publish-action-title');const actionDetail=button.querySelector('.publish-action-detail');if(actionTitle)actionTitle.textContent='审核内容';if(actionDetail)actionDetail.textContent='检查文案、来源、代表画面与平台潜力'}
   }
 }
 function buildPublishRequestPayload(){
@@ -1500,7 +1480,8 @@ function buildPublishRequestPayload(){
   const title=String(f.get('title')||'').trim(),body=String(f.get('body')||'').trim(),materialPath=String(f.get('materialPath')||'').trim(),contentOrigin=String(f.get('contentOrigin')||'').trim();
   if(!title||!body||!materialPath)throw new Error('标题、正文和本地素材路径不能为空');
   if(targets.some(target=>target.platformCode==='weibo')&&!contentOrigin)throw new Error('发布到微博前必须选择内容来源');
-  return {title,body,materialPath,contentOrigin,targets,precheck:state.precheck,materialMeta:state.precheck?.meta||{},aiReview:state.compliance,complianceConfirmed:$('#warningConfirmed').checked,publishMode:$('#autoPublish').checked?'AUTO':'DRAFT_ONLY',managementConfirmed:$('#autoPublish').checked,retryOfTaskId:state.retrySourceTaskId};
+  const libraryDraft=state.retryDraft?.origin==='content-library'&&state.retryDraft.materialPath===materialPath?state.retryDraft:null;
+  return {title,body,materialPath,contentOrigin,targets,precheck:state.precheck,materialMeta:state.precheck?.meta||{},aiReview:state.compliance,complianceConfirmed:$('#warningConfirmed').checked,publishMode:$('#autoPublish').checked?'AUTO':'DRAFT_ONLY',managementConfirmed:$('#autoPublish').checked,retryOfTaskId:state.retrySourceTaskId,...(libraryDraft?{contentLibraryItemId:libraryDraft.id}:{})};
 }
 async function submitPublish(e){
   e.preventDefault();
@@ -1856,9 +1837,12 @@ async function prepareTaskRetry(taskId,button){
     navigate('publish');
   }catch(error){toast(error.message,true);if(button){button.disabled=false;button.textContent='再次发送'}}
 }
-async function renderTasks(){
+async function renderTasks(prefetchedData=null){
+  const owner=capturePageOwner();
   const selected=state.taskPlatform&&state.taskPlatform!=='ALL'?state.taskPlatform:null;
-  const data=await api('/api/tasks'+(selected?`?platformCode=${encodeURIComponent(selected)}`:''));
+  const data=prefetchedData||await api('/api/tasks'+(selected?`?platformCode=${encodeURIComponent(selected)}`:''));
+  if(!ownsPageOwner(owner)||state.page!=='tasks'||selected!==(state.taskPlatform&&state.taskPlatform!=='ALL'?state.taskPlatform:null))return;
+  taskRefreshSignatureValue=JSON.stringify(data);
   const tasks=(data.tasks||[]).slice().sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
   const platforms=state.bootstrap?.platforms||[];
   const current=selected?platforms.find(item=>item.code===selected):null;
@@ -1867,7 +1851,8 @@ async function renderTasks(){
   const activeFilter=state.taskStatus||'ALL';
   const filtered=activeFilter==='ALL'?tasks:tasks.filter(task=>taskVisualState(task,platformScoped).key===activeFilter);
   const filterLabel=({ALL:'全部任务',ACTIVE:'执行中任务',REVIEW:'待确认任务',FAILED:'异常任务',SUCCESS:'已完成任务'}[activeFilter]||'任务');
-  $('#content').innerHTML=`<div class="panel task-center-panel task-center-redesign" style="margin-top:0"><div class="panel-head task-center-head"><div><span class="panel-kicker">AUTOMATED PUBLISHING MATRIX</span><h2>发布任务中心</h2><p>统一任务流实时呈现发布、核验、异常与补发恢复，不再割裂成功和失败记录。</p></div><button class="btn secondary task-refresh-button" id="refreshTasks"><span>刷新链路</span></button></div>${taskCommandCenter(counts,current?.name||'全部平台')}${taskPlatformTabs(data.platformCounts,data.total)}<div class="task-platform-context"><b>当前查看：${esc(current?.name||"全部平台")}</b><span>执行完成不等于平台审核通过，最终状态以平台核验结果为准。</span></div>${taskStatusFilters(counts)}${taskStream(filtered,{platformScoped,emptyText:`暂无${current?.name||'当前范围'}的${filterLabel}`})}</div>`;
+  $('#content').innerHTML=`<div class="panel task-center-panel task-center-redesign" style="margin-top:0"><div class="panel-head task-center-head"><div><span class="panel-kicker">AUTOMATED PUBLISHING MATRIX</span><h2>发布任务</h2><p>统一任务流实时呈现发布、核验、异常与补发恢复，不再割裂成功和失败记录。</p></div><button class="btn secondary task-refresh-button" id="refreshTasks"><span>刷新</span></button></div>${taskCommandCenter(counts,current?.name||'全部平台')}${taskPlatformTabs(data.platformCounts,data.total)}<div class="task-platform-context"><b>当前查看：${esc(current?.name||"全部平台")}</b><span>执行完成不等于平台审核通过，最终状态以平台核验结果为准。</span></div>${taskStatusFilters(counts)}${taskStream(filtered,{platformScoped,emptyText:`暂无${current?.name||'当前范围'}的${filterLabel}`})}</div>`;
+  presentInteractions({tasks});
   $('#refreshTasks').onclick=()=>renderTasks().catch(e=>toast(e.message,true));
   document.querySelectorAll('[data-task-platform]').forEach(button=>button.onclick=()=>{state.taskPlatform=button.dataset.taskPlatform;state.taskStatus='ALL';renderTasks().then(()=>window.scrollTo({top:0,left:0,behavior:'smooth'})).catch(e=>toast(e.message,true))});
   document.querySelectorAll('[data-task-status]').forEach(button=>button.onclick=()=>{state.taskStatus=button.dataset.taskStatus;renderTasks().catch(e=>toast(e.message,true))});
@@ -1893,12 +1878,90 @@ function aiTimeoutAlert(m){
 function messageDecisionDetail(m){const platformReply=m.reply_status?.platform?.replied;const platformNote='已检测到平台回复，发送方式未确认；为避免重复，未再次发送。';return `${aiTimeoutAlert(m)}<div class="message-decision-detail"><span>处理结果：${esc(platformReply?'平台已有回复':statusName(m.decision||m.status))}</span><span>置信度：${m.confidence??'—'}</span><span>知识：${m.knowledge_id?'#'+m.knowledge_id:'—'}</span>${m.reason?`<span class="wide">原因：${esc(platformReply?platformNote:m.decision==='AI_REPLY_TIMEOUT'?'AI回复超时':statusName(m.reason))}</span>`:''}${m.reply_text?`<span class="wide">${platformReply?'平台回复内容':'AI回复内容'}：${esc(m.reply_text)}</span>`:''}${m.handler_note?`<span class="wide">${platformReply?'同步记录':'人工处理记录'}：${esc(platformReply?platformNote:m.handler_note)}</span>`:''}</div>`}
 function commentMessageCard(m){return `<article class="interaction-card comment-item"><div class="interaction-head"><div><span class="user-avatar">${esc(String(m.user_name||'?').trim().slice(0,1)||'?')}</span><b>${esc(cleanText(m.user_name)||'未知用户')}</b></div><time>${fmt(m.collected_at||m.created_at)}</time></div><div class="message-content"><span class="content-label">评论内容</span><p>${esc(m.content)}</p></div><div class="reply-status-row">${replyStatusChip('ai',m.reply_status?.ai)}${replyStatusChip('manual',m.reply_status?.manual)}${badge(m.status)}${messageSourceBadge(m)}</div>${messageDecisionDetail(m)}${messageActions(m)}</article>`}
 function privateMessageCard(m){return `<article class="interaction-card private-item"><div class="interaction-head"><div><span class="user-avatar private">${esc(String(m.user_name||'?').trim().slice(0,1)||'?')}</span><span><b>${esc(cleanText(m.user_name)||'未知用户')}</b><small>${esc(m.platform_name)} · ${esc(m.account_name)}</small></span></div><time>${fmt(m.collected_at||m.created_at)}</time></div><div class="message-content private-content"><span class="content-label">私信内容</span><p>${esc(m.content)}</p></div><div class="reply-status-row">${messageReplyBadges(m)}${messageSourceBadge(m)}</div>${messageDecisionDetail(m)}${messageActions(m)}</article>`}
-function commentPostGroup(group){const post=group.post||{};const aiCount=group.items.filter(m=>m.reply_status?.ai?.replied).length;const manualCount=group.items.filter(m=>m.reply_status?.manual?.replied).length;const pendingCount=group.items.filter(m=>['MANUAL_REQUIRED','KNOWLEDGE_GAP'].includes(m.status)&&!m.reply_status?.manual?.replied).length;return `<section class="comment-post-group"><header class="comment-post-head"><div class="post-icon">帖</div><div class="post-info"><div class="post-title-row"><h3>${esc(post.title||'未识别关联帖子')}</h3>${post.matched?'<span class="badge success">已匹配发布记录</span>':'<span class="badge warning">待确认帖子</span>'}</div><p>${esc(group.items[0]?.platform_name||'')} · ${esc(group.items[0]?.account_name||'')} ${post.publishedAt?`· 发布于 ${fmt(post.publishedAt)}`:''}</p><div class="post-summary"><span>评论 ${group.items.length}</span><span>AI已回复 ${aiCount}</span><span>人工已回复 ${manualCount}</span>${pendingCount?`<span class="pending">待人工 ${pendingCount}</span>`:''}</div></div>${post.url?`<button class="btn secondary open-message" data-url="${esc(post.url)}">打开帖子</button>`:''}</header><div class="comment-items">${group.items.map(commentMessageCard).join('')}</div></section>`}
-function groupCommentsByPost(comments){const groups=new Map();for(const message of comments){const post=message.post||{};const key=String(post.key||post.id||post.url||post.title||message.parent_external_id||'UNMATCHED_POST');if(!groups.has(key))groups.set(key,{key,post,items:[]});groups.get(key).items.push(message)}return [...groups.values()].sort((a,b)=>new Date(b.items[0]?.collected_at||b.items[0]?.created_at||0)-new Date(a.items[0]?.collected_at||a.items[0]?.created_at||0))}
+function commentPostPublishedTimestamp(value){
+  if(value===null||value===undefined||String(value).trim()==='')return null;
+  const text=String(value).trim().replace(/^(?:发布于|发布时间[：:]?)\s*/,'');
+  if(/^\d{10}$|^\d{13}$/.test(text)){
+    const timestamp=Number(text)*(text.length===10?1000:1);
+    return Number.isFinite(new Date(timestamp).getTime())?timestamp:null;
+  }
+  const local=text.match(/^(\d{4})(?:年|[/.\-])(\d{1,2})(?:月|[/.\-])(\d{1,2})日?(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if(local){
+    const [,year,month,day,hour='0',minute='0',second='0']=local;
+    const date=new Date(Number(year),Number(month)-1,Number(day),Number(hour),Number(minute),Number(second));
+    return date.getFullYear()===Number(year)&&date.getMonth()===Number(month)-1&&date.getDate()===Number(day)&&date.getHours()===Number(hour)&&date.getMinutes()===Number(minute)&&date.getSeconds()===Number(second)?date.getTime():null;
+  }
+  const timestamp=Date.parse(text);
+  return Number.isFinite(timestamp)?timestamp:null;
+}
+function commentPostReadPosition(key){
+  let position=commentPostReadPositions.get(key)||0;
+  try{
+    const saved=Number(localStorage.getItem(commentPostReadStoragePrefix+key));
+    if(Number.isSafeInteger(saved)&&saved>position)position=saved;
+  }catch{}
+  commentPostReadPositions.set(key,position);
+  return position;
+}
+function commentMessageSequence(message){const id=Number(message.id);return Number.isSafeInteger(id)&&id>0?id:0}
+function unreadCommentCount(group){const position=commentPostReadPosition(group.key);return group.items.filter(message=>commentMessageSequence(message)>position).length}
+function markCommentPostRead(group){
+  const position=Math.max(commentPostReadPosition(group.key),...group.items.map(commentMessageSequence));
+  commentPostReadPositions.set(group.key,position);
+  try{localStorage.setItem(commentPostReadStoragePrefix+group.key,String(position))}catch{}
+}
+function commentPostGroup(group){
+  const post=group.post||{};
+  const title=post.title||'未识别关联帖子';
+  const aiCount=group.items.filter(m=>m.reply_status?.ai?.replied).length;
+  const manualCount=group.items.filter(m=>m.reply_status?.manual?.replied).length;
+  const pendingCount=group.items.filter(m=>['MANUAL_REQUIRED','KNOWLEDGE_GAP'].includes(m.status)&&!m.reply_status?.manual?.replied).length;
+  const unread=unreadCommentCount(group);
+  const published=group.publishedAtMs===null?'发布时间暂未获取':('发布于 '+fmt(group.publishedAtMs));
+  return `<details class="comment-post-group" data-comment-post="${esc(group.key)}" ${expandedCommentPosts.has(group.key)?'open':''}>
+    <summary class="comment-post-head comment-post-toggle"><span class="post-icon" aria-hidden="true">帖</span><span class="comment-post-title" title="${esc(title)}">${esc(title)}</span><span class="comment-post-controls">${unread?`<span class="comment-unread-count" aria-live="polite">新增评论 <b>${unread}</b></span>`:''}<span class="comment-post-chevron" aria-hidden="true"></span></span></summary>
+    <div class="comment-post-body"><div class="comment-post-meta"><div class="post-info"><div class="post-title-row">${post.matched?'<span class="badge success">已匹配发布记录</span>':'<span class="badge warning">待确认帖子</span>'}</div><p>${esc(group.items[0]?.platform_name||'')} · ${esc(group.items[0]?.account_name||'')} · ${esc(published)}</p><div class="post-summary"><span>评论 ${group.items.length}</span><span>AI已回复 ${aiCount}</span><span>人工已回复 ${manualCount}</span>${pendingCount?`<span class="pending">待人工 ${pendingCount}</span>`:''}</div></div>${post.url?`<button class="btn secondary open-message" data-url="${esc(post.url)}">打开帖子</button>`:''}</div><div class="comment-items">${group.items.map(commentMessageCard).join('')}</div></div>
+  </details>`;
+}
+function bindCommentPostGroups(groups){
+  const byKey=new Map(groups.map(group=>[group.key,group]));
+  document.querySelectorAll('details[data-comment-post]').forEach(details=>{
+    let wasOpen=details.open;
+    details.addEventListener('toggle',()=>{
+      if(!details.isConnected||details.open===wasOpen)return;
+      wasOpen=details.open;
+      const key=details.dataset.commentPost;
+      if(details.open){
+        expandedCommentPosts.add(key);
+        const group=byKey.get(key);
+        if(group)markCommentPostRead(group);
+        details.querySelector('.comment-unread-count')?.remove();
+      }else expandedCommentPosts.delete(key);
+    });
+  });
+}
+function groupCommentsByPost(comments){
+  const groups=new Map();
+  for(const message of comments){
+    const post=message.post||{};
+    const key=JSON.stringify([String(message.platform_code||message.platform_name||''),String(message.account_id??message.account_name??''),String(post.key||post.id||post.url||post.title||message.parent_external_id||'UNMATCHED_POST')]);
+    const publishedAtMs=commentPostPublishedTimestamp(post.publishedAt);
+    if(!groups.has(key))groups.set(key,{key,post:{...post},publishedAtMs,items:[]});
+    const group=groups.get(key);
+    for(const field of ['id','url','title'])if(!group.post[field]&&post[field])group.post[field]=post[field];
+    if(group.publishedAtMs===null&&publishedAtMs!==null){group.publishedAtMs=publishedAtMs;group.post.publishedAt=post.publishedAt}
+    group.post.matched=group.post.matched||post.matched;
+    group.items.push(message);
+  }
+  return [...groups.values()].sort((a,b)=>((b.publishedAtMs??-Infinity)-(a.publishedAtMs??-Infinity))||a.key.localeCompare(b.key,'zh-CN'));
+}
+
 function messageRefreshSignature(data){
   return JSON.stringify({
     messages:(data?.messages||[]).map(message=>[
       message.id,message.external_id,message.content,message.collected_at,message.updated_at,
+      message.platform_code,message.account_id,message.post?.key,message.post?.id,
+      message.post?.title,message.post?.url,message.post?.publishedAt,message.post?.matched,
       message.status,message.decision,message.reason,message.reply_text,message.handled_at,
       message.handled_by,message.handler_note,message.reply_job_id,
       message.wecom_notification_status,message.wecom_notification_id,
@@ -1966,7 +2029,7 @@ function messageChannelPollCard({label,channelType,runtime,nextCollectionAt}) {
   const pageLabel=channelType==='COMMENT'?'评论页面':'私信页面';
   const activeJob=runtime?.active_job_id?` · Job#${runtime.active_job_id}`:'';
   const nextAttr=nextCollectionAt?` data-next-collection-at="${esc(nextCollectionAt)}"`:'';
-  return `<article class="message-channel-poll-card ${stateClass}"><div class="message-channel-poll-head"><div><span class="message-channel-poll-icon">${channelType==='COMMENT'?'评':'信'}</span><b>${label}采集</b></div><span class="message-channel-poll-state"><i></i>${stateLabel}${activeJob}</span></div><div class="message-channel-poll-meta"><span>页面：<b>${pageLabel}</b></span><span>${resultText}</span></div><div class="message-channel-poll-times"><span>上次：${lastScan?fmt(lastScan):'尚未执行'}</span><span class="message-channel-poll-next"${nextAttr}>${nextText}</span></div><small>独立 Worker · 独立队列 · 页面持续复用</small></article>`;
+  return `<article class="message-channel-poll-card ${stateClass}"><div class="message-channel-poll-head"><div><span class="message-channel-poll-icon">${channelType==='COMMENT'?'评':'信'}</span><b>${label}采集</b></div><span class="message-channel-poll-state"><i></i>${stateLabel}${activeJob}</span></div><div class="message-channel-poll-meta"><span>页面：<b>${pageLabel}</b></span><span>${resultText}</span></div><div class="message-channel-poll-times"><span>上次：${lastScan?fmt(lastScan):'尚未执行'}</span><span class="message-channel-poll-next"${nextAttr}>${nextText}</span></div></article>`;
 }
 function updateMessageChannelCountdowns(){
   document.querySelectorAll('.message-channel-poll-next[data-next-collection-at]').forEach(element=>{
@@ -2023,6 +2086,78 @@ function miniProgramMessageDateValue(item){if(miniProgramValidIsoDate(item?.rece
 function miniProgramActionAttributes(actionKey){const pending=state.miniProgramPendingActions.has(actionKey);return ` data-action-key="${esc(actionKey)}"${pending?' disabled aria-busy="true"':''}`}
 function syncMiniProgramPendingActions(){document.querySelectorAll('.mini-program-action[data-action-key]').forEach(button=>{const pending=state.miniProgramPendingActions.has(button.dataset.actionKey);button.disabled=pending;if(pending)button.setAttribute('aria-busy','true');else button.removeAttribute('aria-busy')})}
 function miniProgramSummaryItem(label,value,detail,tone='neutral'){return `<div class="mini-program-summary-item is-${tone}"><span>${esc(label)}</span><b>${esc(value)}</b><small>${esc(detail)}</small></div>`}
+
+function miniProgramLinkMeta(connection={},transport={}){
+  if(connection.loadError)return ['状态读取失败','warning',connection.loadError];
+  if(!connection.configured)return ['等待配置','warning','保存完整配置后，再检查连接与协议'];
+  if(connection.mode==='push')return ['外部推送模式','neutral','需要可访问本地的入口；不代表公网已联通'];
+  const states={
+    NOT_CONFIGURED:['等待配置','warning','填入小程序服务器的对接地址后开始连接'],
+    PAUSED:['接收已暂停','neutral','不会领取新消息，已接收任务与回复继续处理'],
+    STOPPED:['连接未启动','warning','请确认本地服务正常运行'],
+    CONNECTING:['正在连接','neutral','本地正在向小程序服务器请求消息'],
+    CONNECTED:['最近连接正常','ready','消息领取通道正常；真实回复送达请查看会话记录'],
+    RETRYING:['断线重连中','danger',transport.lastError||'暂时无法连接，将自动重试']
+  };
+  return states[transport.state]||['等待连接','warning','尚未完成连接检查'];
+}
+function miniProgramConnectionPanel(connection={},transport={}){
+  const c=connection;const [label,tone,description]=miniProgramLinkMeta(c,transport);
+  const mode=c.mode==='push'?'push':'pull';
+  return `<section class="mini-link-card" aria-label="小程序连接管理">
+    <div class="mini-link-overview"><div><span class="mini-program-kicker">连接方式</span><h3>本地运行，也能接入小程序</h3><p>${mode==='pull'?'本机主动连接对方服务器，无需为这台电脑购买域名或开放端口。':'当前使用外部推送：对方需要能访问本机接口。若本机不对外开放，请改用本地主动连接。'}</p></div><span class="mini-link-badge is-${tone}" id="miniLinkState"><i></i>${esc(label)}</span></div>
+    <div class="mini-link-flow"><div><span class="mini-link-step">01</span><b>小程序服务器</b><small>保存用户咨询</small></div><span class="mini-link-arrow">${mode==='pull'?'← 主动取消息':'推送消息 →'}</span><div class="is-local"><span class="mini-link-step">02</span><b>这台本地电脑</b><small>知识检索 · AI 处理</small></div><span class="mini-link-arrow">回复发送 →</span><div><span class="mini-link-step">03</span><b>小程序会话</b><small>用户收到回复</small></div></div>
+    <div class="mini-link-runtime"><span id="miniLinkDescription">${esc(description)}</span><span>最近连接：<b id="miniLinkLastConnected">${miniProgramDate(transport.lastConnectedAt)}</b></span><span>待确认收件：<b id="miniLinkPending">${miniProgramCount(transport.pendingReceipts)}</b></span></div>
+    <details class="mini-link-settings" ${!c.configured?'open':''}><summary><span>连接配置</span><small>${c.configured?'已保存 · 展开查看与修改':'首次接入 · 配置小程序服务器地址'}</small></summary>
+      <form id="miniConnectionForm" autocomplete="off"><div class="mini-link-form-grid">
+        <label>连接方式<select name="mode"><option value="pull" ${mode==='pull'?'selected':''}>本地主动连接（推荐）</option><option value="push" ${mode==='push'?'selected':''}>外部推送（兼容原接口）</option></select></label>
+        <label>应用标识<input name="appId" required maxlength="128" value="${esc(c.appId||'')}" placeholder="双方约定的 appId"></label>
+        <label class="mini-link-wide" id="miniGatewayField">小程序服务器对接地址<input name="gatewayUrl" type="url" value="${esc(c.gatewayUrl||'')}" placeholder="https://小程序服务器/mini-program-bridge/v1"><small>这是对方服务器的协议根地址，不是小程序页面地址，也不是本机地址。</small></label>
+        <label class="mini-link-wide" id="miniCallbackField" hidden>回复回调地址<input name="callbackUrl" type="url" value="${esc(c.callbackUrl||'')}" placeholder="https://小程序服务器/接收回复路径"></label>
+        <label>共享密钥<input name="sharedSecret" type="password" autocomplete="new-password" maxlength="4096" placeholder="${c.secretConfigured?'已保存；留空保留原密钥':'首次填写双方约定的随机密钥'}"><small>本地加密保存，不回显已保存的密钥。</small></label>
+        <label>空闲拉取间隔（秒）<input name="pollSeconds" type="number" min="2" max="60" value="${c.pollSeconds||5}" required><small>断网自动重试，不重复处理已接收消息。</small></label>
+      </div><div class="mini-link-form-footer"><label class="mini-link-switch"><input name="enabled" type="checkbox" ${c.enabled?'checked':''}>保存后接收新消息</label><button class="btn primary" type="submit">保存连接配置</button></div></form>
+    </details>
+    <div class="mini-link-actions"><div><b>先配置，再检查，最后联调</b><small>对方服务器需支持约定的消息领取与回复接收协议；填入普通网址不能直接接通。</small></div><div><button type="button" class="btn secondary" id="miniTestConnection" ${!c.configured||c.mode!=='pull'?'disabled':''}>检查连通性</button><button type="button" class="btn secondary" id="miniToggleConnection" ${!c.configured?'disabled':''}>${c.enabled?'暂停接收':'开始接收'}</button></div></div>
+    <p id="miniConnectionFeedback" class="mini-link-feedback" role="status" aria-live="polite"></p>
+  </section>`;
+}
+function bindMiniProgramConnection(connection){
+  const form=$('#miniConnectionForm');if(!form)return;
+  let dirty=false,busy=false;
+  const feedback=$('#miniConnectionFeedback');
+  const show=(text,error=false)=>{feedback.textContent=text;feedback.classList.toggle('is-error',error)};
+  const switchMode=()=>{const pull=form.elements.mode.value==='pull';$('#miniGatewayField').hidden=!pull;$('#miniCallbackField').hidden=pull;form.elements.gatewayUrl.required=pull;form.elements.gatewayUrl.disabled=!pull;form.elements.callbackUrl.required=!pull;form.elements.callbackUrl.disabled=pull};
+  switchMode();form.elements.mode.onchange=switchMode;
+  form.addEventListener('input',()=>{dirty=true});form.addEventListener('change',()=>{dirty=true});
+  const run=async work=>{if(busy)return;busy=true;form.querySelectorAll('button').forEach(b=>b.disabled=true);$('#miniTestConnection').disabled=true;$('#miniToggleConnection').disabled=true;try{await work()}catch(e){show(e.message||'连接操作失败',true)}finally{busy=false;if(form.isConnected){form.querySelectorAll('button').forEach(b=>b.disabled=false);$('#miniTestConnection').disabled=!connection.configured||connection.mode!=='pull';$('#miniToggleConnection').disabled=!connection.configured}}};
+  const save=async value=>{
+    const page=pageRenderGeneration;
+    await api('/api/mini-program/connection',{method:'POST',body:JSON.stringify(value)});
+    if(state.page==='miniProgram'&&page===pageRenderGeneration){await renderMiniProgramConversations({preserveSelection:true,pageGeneration:page});const box=$('#miniConnectionFeedback');if(box)box.textContent='配置已保存。可检查连通性；检查成功不等于已完成真实消息联调。'}
+  };
+  form.onsubmit=event=>{event.preventDefault();run(async()=>{
+    const e=form.elements;await save({mode:e.mode.value,enabled:e.enabled.checked,appId:e.appId.value.trim(),sharedSecret:e.sharedSecret.value,gatewayUrl:e.gatewayUrl.value.trim(),callbackUrl:e.callbackUrl.value.trim(),pollSeconds:Number(e.pollSeconds.value)});
+  })};
+  $('#miniTestConnection').onclick=()=>run(async()=>{
+    if(dirty){show('配置尚未保存，请先保存再检查。',true);return}
+    show('正在检查连接与协议，不会领取用户消息…');
+    const data=await api('/api/mini-program/connection/test',{method:'POST',body:'{}'});
+    show(data.result?.message||'检查完成');
+  });
+  $('#miniToggleConnection').onclick=()=>run(async()=>{
+    if(dirty){show('配置尚未保存，请先保存再切换接收状态。',true);return}
+    await save({mode:connection.mode,enabled:!connection.enabled,appId:connection.appId,sharedSecret:'',gatewayUrl:connection.gatewayUrl||'',callbackUrl:connection.callbackUrl||'',pollSeconds:connection.pollSeconds||5});
+  });
+  // Only refresh connection labels, never replace an in-progress form or conversation selection.
+  const page=pageRenderGeneration;
+  const timer=setInterval(async()=>{
+    if(!form.isConnected||state.page!=='miniProgram'||page!==pageRenderGeneration){clearInterval(timer);return}
+    if(busy||document.hidden)return;
+    try{const data=await api('/api/mini-program/connection');if(!form.isConnected||busy)return;const [label,tone,description]=miniProgramLinkMeta(data.connection,data.transport);const badge=$('#miniLinkState');if(badge){badge.className=`mini-link-badge is-${tone}`;badge.textContent=label;$('#miniLinkDescription').textContent=description;$('#miniLinkLastConnected').textContent=miniProgramDate(data.transport?.lastConnectedAt);$('#miniLinkPending').textContent=miniProgramCount(data.transport?.pendingReceipts)}}catch{if(form.isConnected)show('连接状态刷新失败，请检查本地服务。',true)}
+  },5000);
+}
+
 function miniProgramConversationRows(conversations=[]){
   if(!conversations.length)return '<div class="mini-program-empty"><b>暂无符合条件的会话</b><span>切换筛选或稍后刷新。</span></div>';
   return conversations.map(item=>{const id=miniProgramRecordId(item.id);return `<button type="button" class="mini-program-conversation ${state.miniProgramConversationId===id?'active':''}" data-conversation-id="${id}"><span class="mini-program-conversation-head"><span>${miniProgramStateBadge(item.handlingMode,'conversation')}</span><time>${miniProgramDate(item.lastActivityAt)}</time></span><strong>${esc(miniProgramText(item.userId,'未知用户'))}</strong><small class="mini-program-id">会话 ${esc(miniProgramText(item.conversationId,'—'))}</small><span class="mini-program-preview">${esc(miniProgramText(item.lastTextPreview,'暂无已保存文字'))}</span><span class="mini-program-conversation-foot">${item.historicalUser===true?'<em>历史人工用户</em>':'<em class="is-standard">首次咨询</em>'}${item.processingStatus?miniProgramStateBadge(item.processingStatus,'processing'):''}${item.callbackStatus?miniProgramStateBadge(item.callbackStatus,'callback'):''}${item.notificationStatus?miniProgramStateBadge(item.notificationStatus,'notification'):''}</span></button>`}).join('');
@@ -2061,7 +2196,7 @@ function miniProgramMessageRows(messages=[]){
   }).join('');
 }
 function miniProgramDetail(detail){
-  if(!detail?.conversation||typeof detail.conversation!=='object'||Array.isArray(detail.conversation))return '<section class="mini-program-detail"><div class="mini-program-empty"><b>请选择一个会话</b><span>从左侧会话列表查看终止前保存的文字与送达状态。</span></div></section>';
+  if(!detail?.conversation||typeof detail.conversation!=='object'||Array.isArray(detail.conversation))return `<section class="mini-program-detail"><div class="mini-program-empty"><b>${detail?.notFound?'小程序记录不存在':'请选择一个会话'}</b><span>从左侧会话列表查看终止前保存的文字与送达状态。</span></div></section>`;
   const conversation=detail.conversation;
   const conversationId=miniProgramRecordId(conversation.id);
   const messages=Array.isArray(detail.messages)?detail.messages.filter(item=>item&&typeof item==='object'&&!Array.isArray(item)):[];
@@ -2069,12 +2204,22 @@ function miniProgramDetail(detail){
   return `<section class="mini-program-detail" aria-label="小程序会话详情"><header class="mini-program-detail-head"><div><span class="mini-program-kicker">CONVERSATION DETAIL</span><h3>${esc(miniProgramText(conversation.userId,'未知用户'))}</h3><p class="mini-program-id">${esc(miniProgramText(conversation.conversationId,'—'))}</p></div><div class="mini-program-detail-state">${miniProgramStateBadge(conversation.handlingMode,'conversation')}${conversation.historicalUser===true?'<span class="mini-program-history">历史人工用户</span>':''}</div></header><div class="mini-program-detail-toolbar"><span>已保存文字 ${messages.length} 条</span>${handoffKey?`<button type="button" class="btn mini-program-action mini-program-handoff" data-conversation-id="${conversationId}"${miniProgramActionAttributes(handoffKey)}>${iconSvg('accounts')}<span>转人工</span></button>`:''}</div><div class="mini-program-message-list">${miniProgramMessageRows(messages)}</div></section>`;
 }
 async function loadMiniProgramData({filter,preferredConversationId,preserveSelection}){
-  const [statusData,listData]=await Promise.all([api('/api/mini-program/status'),api(`/api/mini-program/conversations?status=${encodeURIComponent(filter)}&limit=200`)]);
-  const conversations=(Array.isArray(listData?.conversations)?listData.conversations:[]).filter(item=>item&&typeof item==='object'&&!Array.isArray(item)&&miniProgramRecordId(item.id)!==null);
+  const [statusData,listData,linkData]=await Promise.all([api('/api/mini-program/status'),api(`/api/mini-program/conversations?status=${encodeURIComponent(filter)}&limit=200`),api('/api/mini-program/connection').catch(error=>{if(error.status===401)throw error;return {connection:{loadError:'连接配置读取失败，请刷新重试'},transport:{}}})]);
+  let conversations=(Array.isArray(listData?.conversations)?listData.conversations:[]).filter(item=>item&&typeof item==='object'&&!Array.isArray(item)&&miniProgramRecordId(item.id)!==null);
   const listedSelection=conversations.find(item=>item.id===preferredConversationId)||null;
-  const selectedId=listedSelection?listedSelection.id:preserveSelection&&preferredConversationId!==null?preferredConversationId:conversations[0]?.id||null;
-  const detail=selectedId!==null?await api(`/api/mini-program/conversations/${selectedId}/messages`):null;
-  return {status:statusData?.status&&typeof statusData.status==='object'&&!Array.isArray(statusData.status)?statusData.status:{},conversations,detail,selectedId};
+  let selectedId=listedSelection?listedSelection.id:preserveSelection&&preferredConversationId!==null?preferredConversationId:conversations[0]?.id||null;
+  let detail=null;
+  if(selectedId!==null){
+    try{detail=await api(`/api/mini-program/conversations/${selectedId}/messages`)}
+    catch(error){
+      if(error.status!==404||error.code!=='MINI_PROGRAM_ADMIN_NOT_FOUND')throw error;
+      // A missing record is not a filtered-out conversation; never retarget its actions.
+      conversations=conversations.filter(item=>item.id!==selectedId);
+      selectedId=null;
+      detail={notFound:true};
+    }
+  }
+  return {status:statusData?.status&&typeof statusData.status==='object'&&!Array.isArray(statusData.status)?statusData.status:{},conversations,detail,selectedId,connection:linkData.connection||{},transport:linkData.transport||{}};
 }
 async function runMiniProgramAction(button,{actionKey,pathname,body='{}',successMessage}){
   if(!button||!actionKey||state.miniProgramPendingActions.has(actionKey))return;
@@ -2101,18 +2246,22 @@ async function renderMiniProgramConversations({preserveSelection=false,pageGener
   try{data=await loadMiniProgramData({filter,preferredConversationId,preserveSelection})}
   catch(error){if(!ownsRender()||state.miniProgramFilter!==filter)return false;throw error}
   if(!ownsRender()||state.miniProgramFilter!==filter)return false;
-  const {status,conversations,detail,selectedId}=data;
+  const {status,conversations,detail,selectedId,connection,transport}=data;
   state.miniProgramFilter=filter;
   state.miniProgramConversationId=selectedId;
   const counts=status.counts&&typeof status.counts==='object'&&!Array.isArray(status.counts)?status.counts:{};
   const processingFailed=miniProgramCount(counts.processingFailed),callbackFailed=miniProgramCount(counts.callbackFailed),notificationFailed=miniProgramCount(counts.notificationFailed);
-  $('#content').innerHTML=`<section class="mini-program-page"><section class="mini-program-summary" aria-labelledby="miniProgramTitle"><header class="mini-program-summary-head"><div><span class="mini-program-kicker">MINI PROGRAM CHANNEL</span><h2 id="miniProgramTitle">小程序对话</h2><p>查看已采集的文字咨询、AI 回复送达与企微转人工状态。</p></div><button type="button" class="btn secondary mini-program-action mini-program-refresh" aria-label="刷新小程序对话">${iconSvg('tasks')}<span>刷新</span></button></header><div class="mini-program-summary-grid">${miniProgramSummaryItem('开放接口',status.apiEnabled===true?'已开启':'已关闭',status.apiEnabled===true?'正在接收签名文字消息':'当前不接收新消息',status.apiEnabled===true?'ready':'warning')}${miniProgramSummaryItem('应用配置',status.appConfigured===true?'已就绪':'缺少配置',status.appConfigured===true?'应用身份已绑定':'请完成服务端配置',status.appConfigured===true?'ready':'warning')}${miniProgramSummaryItem('回调配置',status.callbackConfigured===true?'已就绪':'未配置',status.callbackConfigured===true?'AI 回复可送达小程序':'回复将保留在待发送队列',status.callbackConfigured===true?'ready':'warning')}${miniProgramSummaryItem('最近接收',status.lastReceivedAt==null?'暂无':miniProgramDate(status.lastReceivedAt),'最后一条已保存文字','neutral')}${miniProgramSummaryItem('待处理',String(miniProgramCount(counts.processing)),processingFailed?`${processingFailed} 条处理异常`:'处理队列正常',processingFailed?'danger':'neutral')}${miniProgramSummaryItem('待回调',String(miniProgramCount(counts.callbackPending)),callbackFailed?`${callbackFailed} 条发送失败`:'回调队列正常',callbackFailed?'danger':'neutral')}${miniProgramSummaryItem('企微失败',String(notificationFailed),notificationFailed?'需要运营重试':'通知队列正常',notificationFailed?'danger':'neutral')}</div></section><div class="mini-program-workbench"><section class="mini-program-list-pane" aria-label="小程序会话列表"><div class="mini-program-list-head"><div><span class="mini-program-kicker">CONVERSATIONS</span><h3>会话列表</h3></div><span>${conversations.length} 条</span></div><nav class="mini-program-filters" aria-label="小程序会话状态筛选">${miniProgramFilters.map(([value,label])=>`<button type="button" class="mini-program-filter ${state.miniProgramFilter===value?'active':''}" data-filter="${value}" aria-pressed="${state.miniProgramFilter===value}">${esc(label)}</button>`).join('')}</nav><div class="mini-program-conversation-list">${miniProgramConversationRows(conversations)}</div></section>${miniProgramDetail(detail)}</div></section>`;
+  $('#content').innerHTML=`<section class="mini-program-page"><section class="mini-program-summary" aria-labelledby="miniProgramTitle"><header class="mini-program-summary-head"><div><span class="mini-program-kicker">小程序 · 智能咨询</span><h2 id="miniProgramTitle">小程序对话</h2><p>连接小程序服务器，在本地处理咨询，将回复送回用户。</p></div><button type="button" class="btn secondary mini-program-action mini-program-refresh" aria-label="刷新小程序对话">${iconSvg('tasks')}<span>刷新</span></button></header><div class="mini-program-summary-grid">${miniProgramSummaryItem('最近接收',status.lastReceivedAt==null?'暂无消息':miniProgramDate(status.lastReceivedAt),'仅统计本地已保存文字','neutral')}${miniProgramSummaryItem('AI 待处理',String(miniProgramCount(counts.processing)),processingFailed?`${processingFailed} 条处理异常`:'已接收消息的处理队列',processingFailed?'danger':'neutral')}${miniProgramSummaryItem('回复待发送',String(miniProgramCount(counts.callbackPending)),callbackFailed?`${callbackFailed} 条发送失败`:'以服务器确认接收为准',callbackFailed?'danger':'neutral')}${miniProgramSummaryItem('企微失败',String(notificationFailed),notificationFailed?'可在会话中重新通知':'人工通知状态正常',notificationFailed?'danger':'neutral')}</div></section>${miniProgramConnectionPanel(connection,transport)}<div class="mini-program-workbench"><section class="mini-program-list-pane" aria-label="小程序会话列表"><div class="mini-program-list-head"><div><span class="mini-program-kicker">咨询记录</span><h3>会话列表</h3></div><span>${conversations.length} 条</span></div><nav class="mini-program-filters" aria-label="小程序会话状态筛选">${miniProgramFilters.map(([value,label])=>`<button type="button" class="mini-program-filter ${state.miniProgramFilter===value?'active':''}" data-filter="${value}" aria-pressed="${state.miniProgramFilter===value}">${esc(label)}</button>`).join('')}</nav><div class="mini-program-conversation-list">${miniProgramConversationRows(conversations)}</div></section>${miniProgramDetail(detail)}</div></section>`;
+  bindMiniProgramConnection(connection);
   bindMiniProgramWorkbench();
   syncMiniProgramPendingActions();
+  presentInteractions();
   return true;
 }
-async function renderManualHandoffs(){
-  const data=await api('/api/manual-handoffs?limit=500');
+async function renderManualHandoffs(prefetchedData=null){
+  const owner=capturePageOwner();
+  const data=prefetchedData||await api('/api/manual-handoffs?limit=500');
+  if(!ownsPageOwner(owner)||state.page!=='handoffs')return;
   const items=data.handoffs||[];
   const totalHandoffs=Number.isFinite(Number(data.totalHandoffs))?Number(data.totalHandoffs):items.length;
   const succeeded=items.filter(item=>item.handoff_succeeded).length;
@@ -2138,7 +2287,9 @@ async function renderManualHandoffs(){
 }
 
 async function renderMessages(prefetchedData=null){
+  const owner=capturePageOwner();
   const data=prefetchedData||await api('/api/messages');
+  if(!ownsPageOwner(owner)||state.page!=='messages')return;
   messageRefreshSignatureValue=messageRefreshSignature(data);
   const allMessages=(data.messages||[]).filter(message=>!(message.status==='SUPERSEDED'&&message.decision==='DUPLICATE_PROCESSED_MESSAGE'));
   const activeCodes=state.bootstrap?.config?.activePlatformCodes||['xiaohongshu','douyin','wechat_channels','bilibili','weibo'];
@@ -2182,8 +2333,8 @@ async function renderMessages(prefetchedData=null){
         <div class="message-command-flow" aria-hidden="true"></div>
         <div class="message-command-copy">
           <span class="message-command-eyebrow"><i></i> INTERACTION INTELLIGENCE</span>
-          <h2>多平台评论与私信</h2>
-          <p>统一采集评论与私信，实时跟踪 AI 决策、人工接管和平台回执。</p>
+          <h2>用户互动</h2>
+          <p>查看采集与回复状态</p>
           <div class="message-command-tags">
             <span><i></i>${selectedAccount?`${esc(selectedAccount.platform_name)} · ${esc(selectedAccount.display_name)}`:'未选择平台账号'}</span>
             <span>${activeChannelLabel}通道</span>
@@ -2205,25 +2356,27 @@ async function renderMessages(prefetchedData=null){
 
       <div class="panel interaction-panel message-workbench" style="margin-top:16px">
         <div class="message-toolbar">
-          <div class="message-toolbar-title"><span>⌁</span><div><b>智能采集控制台</b><small>配置账号和采集频率后启动实时同步</small></div></div>
+          <div class="message-toolbar-title"><span>⌁</span><div><b>采集设置</b><small></small></div></div>
           <div class="message-collection-controls">
             <button class="btn secondary message-export-open" id="exportMessages" type="button"><span aria-hidden="true">⇩</span> 导出</button>
             <label class="message-poll-control"><span>平台账号</span><select id="messageAccount" aria-label="选择采集账号">${accountOptionsHtml}</select></label>
-            <label class="message-poll-control"><span>自动采集随机区间</span><select id="messagePollInterval" aria-label="选择自动采集随机区间">${pollOptionsHtml}</select></label>
+            <label class="message-poll-control"><span>采集间隔</span><select id="messagePollInterval" aria-label="选择采集间隔">${pollOptionsHtml}</select></label>
             <button class="btn message-collect-button" id="collectMessages" ${selectedAccount?'':'disabled'}><i></i><span>立即采集</span></button>
           </div>
         </div>
-        <div class="message-poll-meta"><b>当前策略：每轮在 ${esc(collection.label||pollOptions.find(option=>option.value===selectedPoll)?.label||selectedPoll)} 内重新取随机数</b><span>${esc(nextCollectionText)}</span><small>保存新区间后会取消旧定时器并重新排程，不会中断已在执行的采集。</small></div>
+        <div class="message-poll-meta"><b>采集间隔：${esc(collection.label||pollOptions.find(option=>option.value===selectedPoll)?.label||selectedPoll)}，随机执行</b><span>${esc(nextCollectionText)}</span><small>更改间隔不影响正在执行的采集。</small></div>
         <div class="message-channel-poll-grid">${messageChannelPollCard({label:'评论',channelType:'COMMENT',runtime:messageChannelRuntime(data,selectedAccount,'COMMENT'),nextCollectionAt:collection.nextCollectionAt})}${messageChannelPollCard({label:'私信',channelType:'PRIVATE_MESSAGE',runtime:messageChannelRuntime(data,selectedAccount,'PRIVATE_MESSAGE'),nextCollectionAt:collection.nextCollectionAt})}</div>
         <div class="interaction-tabs" role="tablist">
           <button type="button" class="interaction-tab ${isComment?'active':''}" data-message-view="COMMENT"><span class="interaction-tab-icon">评</span><span><b>评论</b><small>按发布帖子分类查看</small></span><em>${comments.length}</em><i class="interaction-tab-flow" aria-hidden="true"></i></button>
           <button type="button" class="interaction-tab ${!isComment?'active':''}" data-message-view="PRIVATE_MESSAGE"><span class="interaction-tab-icon private">信</span><span><b>私信</b><small>查看内容和回复状态</small></span><em>${privateMessages.length}</em><i class="interaction-tab-flow" aria-hidden="true"></i></button>
         </div>
-        <details class="simulate-box"><summary><span>◇</span> 添加模拟消息 <small>仅用于知识/千问决策测试</small></summary><form id="simulateForm" class="inline-form"><select name="messageType"><option value="COMMENT">评论</option><option value="PRIVATE_MESSAGE">私信</option></select><input name="userName" value="测试用户"><input name="content" placeholder="输入测试问题" required><button class="btn secondary" ${selectedAccount?'':'disabled'}>提交模拟消息</button></form></details>
+        <details class="simulate-box" hidden><summary><span>◇</span> 添加模拟消息 <small>仅用于知识/千问决策测试</small></summary><form id="simulateForm" class="inline-form"><select name="messageType"><option value="COMMENT">评论</option><option value="PRIVATE_MESSAGE">私信</option></select><input name="userName" value="测试用户"><input name="content" placeholder="输入测试问题" required><button class="btn secondary" ${selectedAccount?'':'disabled'}>提交模拟消息</button></form></details>
         <div class="message-list-heading"><div><span class="message-list-live"><i></i> LIVE STREAM</span><b>${activeChannelLabel}消息流</b></div><small>AI 回复 ${aiReplyCount} · 人工回复 ${manualReplyCount}${platformReplyCount?` · 平台已有回复 ${platformReplyCount}`:''} · 待处理 ${manualPendingCount}</small></div>
         <div class="interaction-list">${listHtml}</div>
       </div>
     </div>`;
+  presentInteractions({messages,privateMessages});
+  bindCommentPostGroups(commentGroups);
   $('#messageAccount').onchange=e=>{state.messageAccountId=Number(e.target.value);renderMessages().catch(error=>toast(error.message,true))};
   $('#exportMessages').onclick=async event=>{const selected=await chooseReplyExportPlatforms(selectedAccount?.platform_code);if(!selected?.length)return;try{await downloadReplyExport(selected,event.currentTarget)}catch(error){toast(error.message,true)}};
   $('#messagePollInterval').onchange=async event=>{
@@ -2252,7 +2405,7 @@ async function renderMessages(prefetchedData=null){
       await renderMessages();
       const summary=jobs.map((job,index)=>{
         const resultMessage=cleanText(job.result?.message||'');
-        return `${collectionJobChannelLabel(job,index,jobs.length)}：${statusLabel(job.status)}${resultMessage?`（${resultMessage}）`:''}`;
+        return `${collectionJobChannelLabel(job,index,jobs.length)}：${statusName(job.status)}${resultMessage?`（${resultMessage}）`:''}`;
       }).join('；');
       const allSucceeded=jobs.every(job=>String(job.status||'').toUpperCase()==='SUCCESS');
       toast(`${selectedAccount.platform_name}采集${allSucceeded?'完成':'结束'}：${summary}`,!allSucceeded);
@@ -2325,664 +2478,48 @@ async function renderMessages(prefetchedData=null){
   document.querySelectorAll('.retry-message').forEach(b=>b.onclick=async()=>{try{await api(`/api/messages/${b.dataset.id}/retry`,{method:'POST',body:'{}'});toast('消息已重新进入决策');renderMessages()}catch(e){toast(e.message,true)}});
 }
 
-function renderKnowledgeTabs(){
-  return `<div class="knowledge-section-tabs" role="tablist" aria-label="知识库内容切换"><button class="knowledge-section-tab ${state.knowledgeView==='rag'?'active':''}" type="button" data-knowledge-view="rag" role="tab" aria-selected="${state.knowledgeView==='rag'}"><span class="knowledge-tab-icon">▤</span><span><b>知识库内容</b><small>资料上传、测试与发布</small></span></button><button class="knowledge-section-tab ${state.knowledgeView==='handoff'?'active':''}" type="button" data-knowledge-view="handoff" role="tab" aria-selected="${state.knowledgeView==='handoff'}"><span class="knowledge-tab-icon">↗</span><span><b>转人工说法</b><small>自定义私信触发语句</small></span></button><button class="knowledge-section-tab ${state.knowledgeView==='persona'?'active':''}" type="button" data-knowledge-view="persona" role="tab" aria-selected="${state.knowledgeView==='persona'}"><span class="knowledge-tab-icon">✦</span><span><b>回答风格</b><small>称呼、语气与表达</small></span></button></div>`;
-}function bindKnowledgeTabs(){
-  document.querySelectorAll('[data-knowledge-view]').forEach(button=>button.onclick=()=>{const next=button.dataset.knowledgeView;if(next===state.knowledgeView)return;state.knowledgeView=next;renderKnowledge().then(()=>window.scrollTo({top:0,left:0,behavior:'smooth'})).catch(error=>toast(error.message,true))});
-}
-
-function knowledgeMetadataSourceLabel(source){return ({FILE:'文件填写',AI:'AI推荐',RULE:'规则兜底',DEFAULT:'安全默认',MANUAL:'运营修改',OPERATOR:'运营修改',RULE_FALLBACK:'规则兜底'}[source]||source||'待确认')}
-function knowledgeMetadataStatusLabel(status){return ({QUEUED:'等待千问分析',RUNNING:'千问分析中',COMPLETED:'AI推荐完成',FALLBACK:'AI失败，已规则兜底',FAILED:'AI推荐失败',DISCARDED:'旧推荐已丢弃',NOT_NEEDED:'文件字段完整'}[status]||status||'待分析')}
-function keywordOptionsFromValue(value='',source='OPERATOR'){return [...new Set(String(value||'').split(/[,，;；、|\n]+/).map(item=>item.trim()).filter(Boolean))].map(text=>({text,source,confidence:source==='AI'?0.8:1,selectable:true,conflict:false,selected:true,reason:source==='FILE'?'上传文件填写':'运营人员填写'}))}
-function renderKnowledgeKeywordPicker(options=[],value='',id='knowledge-keywords'){
-  const normalized=Array.isArray(options)&&options.length?options:keywordOptionsFromValue(value);
-  const selected=new Set(String(value||'').split(/[,，;；、|\n]+/).map(item=>item.trim()).filter(Boolean));
-  const items=normalized.map((item,index)=>{const text=String(item.text||'').trim();if(!text)return '';const checked=item.selected===true||selected.has(text);const disabled=item.selectable===false;const warning=item.conflict?'冲突':disabled?'不可启用':'';return `<label class="knowledge-keyword-option${item.conflict?' conflict':''}${disabled?' disabled':''}"><input type="checkbox" data-keyword-option value="${esc(text)}" ${checked&&!disabled?'checked':''} ${disabled?'disabled':''}><span><b>${esc(text)}</b><small>${esc(knowledgeMetadataSourceLabel(item.source))}${Number(item.confidence)>0?` · ${Math.round(Number(item.confidence)*100)}%`:''}${item.reason?` · ${esc(item.reason)}`:''}</small></span>${warning?`<em>${warning}</em>`:''}</label>`}).join('');
-  const selectedValues=normalized.filter(item=>(item.selected===true||selected.has(String(item.text||'').trim()))&&item.selectable!==false).map(item=>String(item.text||'').trim()).filter(Boolean);
-  const finalValues=selectedValues.length?selectedValues:[...selected];
-  return `<div class="knowledge-keyword-picker" data-keyword-picker="${esc(id)}"><input class="knowledge-keyword-value" type="hidden" name="keywords" value="${esc(finalValues.join(','))}"><details><summary><span data-keyword-summary>${finalValues.length?`已选择 ${finalValues.length} 个关键词`:'请选择关键词'}</span><small>点击展开勾选</small><i>⌄</i></summary><div class="knowledge-keyword-options">${items||'<p class="muted">暂无推荐，可在下方手工添加。</p>'}</div></details><div class="knowledge-keyword-manual"><input type="text" autocomplete="off" maxlength="30" placeholder="手工补充完整意图词"><button class="ghost" type="button" data-keyword-add>添加</button></div></div>`
-}
-function bindKnowledgeKeywordPickers(root=document){
-  root.querySelectorAll?.('[data-keyword-picker]').forEach(picker=>{
-    if(picker.dataset.bound==='1')return;picker.dataset.bound='1';
-    const hidden=picker.querySelector('.knowledge-keyword-value');const summary=picker.querySelector('[data-keyword-summary]');const optionsBox=picker.querySelector('.knowledge-keyword-options');
-    const sync=()=>{const values=[...picker.querySelectorAll('[data-keyword-option]:checked')].map(input=>input.value.trim()).filter(Boolean);hidden.value=[...new Set(values)].join(',');summary.textContent=values.length?`已选择 ${values.length} 个关键词`:'请选择关键词';hidden.dispatchEvent(new Event('change',{bubbles:true}))};
-    picker.querySelectorAll('[data-keyword-option]').forEach(input=>input.onchange=sync);
-    const addButton=picker.querySelector('[data-keyword-add]');const manualInput=picker.querySelector('.knowledge-keyword-manual input');
-    if(addButton)addButton.onclick=()=>{const text=manualInput.value.trim();if(!text)return toast('请输入要补充的关键词',true);if([...picker.querySelectorAll('[data-keyword-option]')].some(input=>input.value===text)){manualInput.value='';return toast('这个关键词已经存在')};const label=document.createElement('label');label.className='knowledge-keyword-option operator';label.innerHTML=`<input type="checkbox" data-keyword-option value="${esc(text)}" checked><span><b>${esc(text)}</b><small>运营修改 · 手工补充</small></span>`;const empty=optionsBox.querySelector('p');if(empty)empty.remove();optionsBox.appendChild(label);label.querySelector('input').onchange=sync;manualInput.value='';sync()};
-  })
-}
-function mergeKnowledgeImportPreview(incoming){
-  const current=state.knowledgeImportPreview;const dirty=new Set((state.knowledgeImportDirty||[]).map(Number));if(!current)return incoming;const currentMap=new Map((current.items||[]).map(item=>[Number(item.rowNo),item]));return {...incoming,items:(incoming.items||[]).map(item=>dirty.has(Number(item.rowNo))?(currentMap.get(Number(item.rowNo))||item):item)}
-}
-function scheduleKnowledgeImportEnrichmentPoll(batchId){
-  if(knowledgeImportEnrichmentPollTimer)clearTimeout(knowledgeImportEnrichmentPollTimer);if(!batchId)return;
-  const poll=async()=>{try{const active=document.activeElement;if(active?.closest?.('.knowledge-preview-editor')){knowledgeImportEnrichmentPollTimer=setTimeout(poll,800);return}const incoming=await api(`/api/knowledge/import/${batchId}`);state.knowledgeImportPreview=mergeKnowledgeImportPreview(incoming);setKnowledgeImportStage(knowledgeImportStageForPreview(incoming));renderKnowledgeImportPreview(state.knowledgeImportPreview);const running=['QUEUED','RUNNING'].includes(incoming.enrichment?.status);if(running)knowledgeImportEnrichmentPollTimer=setTimeout(poll,1500);else{knowledgeImportEnrichmentPollTimer=null;if(incoming.enrichment?.status==='COMPLETED')toast('千问已完成关键词和分类推荐，请逐条确认')}}catch(error){knowledgeImportEnrichmentPollTimer=setTimeout(poll,3000)}};knowledgeImportEnrichmentPollTimer=setTimeout(poll,1000)
-}
-
-function fileToBase64(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]||'');reader.onerror=()=>reject(new Error('文件读取失败'));reader.readAsDataURL(file)})}
-const KNOWLEDGE_IMPORT_FLOW_STEPS=[
-  {id:'upload',label:'上传'},
-  {id:'clean',label:'清洗'},
-  {id:'dedupe',label:'去重'},
-  {id:'classify',label:'归类'},
-  {id:'review',label:'审核'}
-];
-function knowledgeImportStageForPreview(preview){
-  if(!preview)return 'IDLE';
-  return ['QUEUED','RUNNING'].includes(preview.enrichment?.status)?'CLASSIFYING':'REVIEWING';
-}
-function knowledgeImportFlowState(stage=state.knowledgeImportStage||'IDLE'){
-  const enrichment=state.knowledgeImportPreview?.enrichment||{};
-  const progressTotal=Number(enrichment.total||0);
-  const progressDone=Number(enrichment.completed||0);
-  const reviewCount=Number(state.knowledgeImportPreview?.summary?.total||state.knowledgeImportPreview?.items?.length||0);
-  const activeByStage={IDLE:[0],READY:[0],UPLOADING:[0],PROCESSING:[1,2],CLASSIFYING:[3],REVIEWING:[4],COMMITTING:[4]};
-  const completedBefore={IDLE:0,READY:0,UPLOADING:0,PROCESSING:1,CLASSIFYING:3,REVIEWING:4,COMMITTING:4};
-  const failedIndex=Math.max(0,KNOWLEDGE_IMPORT_FLOW_STEPS.findIndex(item=>item.id===(state.knowledgeImportFailedStep||'upload')));
-  const active=stage==='FAILED'?[failedIndex]:(activeByStage[stage]||activeByStage.IDLE);
-  const completed=stage==='FAILED'?failedIndex:(completedBefore[stage]||0);
-  const activeText={
-    IDLE:['等待文件'],READY:['文件已选择'],UPLOADING:['正在读取'],PROCESSING:['正在清洗','同步去重'],
-    CLASSIFYING:[progressTotal?`AI 处理中 ${progressDone}/${progressTotal}`:'AI 处理中'],
-    REVIEWING:[reviewCount?`待确认 ${reviewCount} 条`:'等待确认'],COMMITTING:['正在入库'],FAILED:['处理失败']
-  };
-  return KNOWLEDGE_IMPORT_FLOW_STEPS.map((step,index)=>{
-    const isError=stage==='FAILED'&&index===failedIndex;
-    const isActive=active.includes(index);
-    const isComplete=!isError&&index<completed;
-    const activePosition=active.indexOf(index);
-    const detail=isError?'处理失败':isComplete?'已完成':isActive?(activeText[stage]?.[activePosition]||'处理中'):'待处理';
-    const classes=['flow-step',isComplete?'is-complete':'',isActive?'is-active':'',isError?'is-error':'',stage==='IDLE'&&index===0?'is-idle':''].filter(Boolean).join(' ');
-    return {step,index,detail,classes,isComplete,isActive,isError};
-  });
-}
-function renderKnowledgeImportFlow(){
-  const stage=state.knowledgeImportStage||'IDLE';
-  const steps=knowledgeImportFlowState(stage);
-  return `<div id="knowledgeImportFlow" class="flow mini-flow knowledge-mini-flow" data-stage="${esc(stage)}" aria-label="知识文档处理进度" aria-live="polite">${steps.map(({step,index,detail,classes,isComplete,isActive,isError})=>`<div class="${classes}" data-import-step="${step.id}" ${isActive?'aria-current="step"':''}><b>${isComplete?'✓':isError?'!':index+1}</b><span>${step.label}</span><small>${esc(detail)}</small></div>`).join('')}</div>`;
-}
-function setKnowledgeImportStage(stage,{failedStep=null}={}){
-  state.knowledgeImportStage=stage;
-  state.knowledgeImportFailedStep=stage==='FAILED'?(failedStep||state.knowledgeImportFailedStep||'upload'):null;
-  const current=$('#knowledgeImportFlow');
-  if(current)current.outerHTML=renderKnowledgeImportFlow();
-}
-function knowledgeMatchName(value){return ({NEW:'新增知识',SIMILAR_REVIEW:'相似待审核',EXACT_DUPLICATE:'完全重复'}[value]||value)}
-function isKnowledgeImportCategoryError(message){return String(message||'').startsWith('知识大类只能选择：')}
-function summarizeKnowledgeImportRows(rows=[]){return {total:rows.length,importable:rows.filter(item=>item.importable).length,exactDuplicates:rows.filter(item=>item.matchStatus==='EXACT_DUPLICATE').length,similar:rows.filter(item=>item.matchStatus==='SIMILAR_REVIEW').length,invalid:rows.filter(item=>(item.errors||[]).length>0).length}}
-function countKnowledgeImportCharacters(value='',countingMode='CODE_POINTS'){const text=String(value??'').normalize('NFC');return countingMode==='UTF16'?text.length:Array.from(text).length}
-function isKnowledgeImportAnswerLimitError(message){return /^标准答案共 \d+ 个字符，超过可入库上限 \d+ 个字符/.test(String(message||''))}
-function knowledgeImportAnswerPolicy(category,replyLimits={}){
-  const categoryPlatformMap={'小红书知识库':'xiaohongshu','抖音知识库':'douyin','微博知识库':'weibo','视频号知识库':'wechat_channels','B站知识库':'bilibili'};
-  const normalizedCategory=String(category||'').trim()||'公共知识库';
-  const platformCodes=normalizedCategory==='公共知识库'?Object.keys(replyLimits||{}):[categoryPlatformMap[normalizedCategory]].filter(Boolean);
-  const constraints=platformCodes.flatMap(platformCode=>{
-    const platform=replyLimits?.[platformCode];
-    if(!platform)return [];
-    return ['COMMENT','PRIVATE_MESSAGE'].map(messageType=>({platformCode,platformLabel:platform.label||platformCode,messageType,messageLabel:messageType==='PRIVATE_MESSAGE'?'私信':'评论/评论回复',safeMax:Number(platform?.[messageType]?.safeMax),publishedMax:Number(platform?.[messageType]?.publishedMax),countingMode:platform?.[messageType]?.countingMode||'CODE_POINTS',sourceType:platform?.[messageType]?.sourceType||'PROJECT_FALLBACK'})).filter(item=>Number.isFinite(item.safeMax));
-  });
-  if(!constraints.length)return null;
-  const safeMax=Math.min(...constraints.map(item=>item.safeMax));
-  const strictest=constraints.filter(item=>item.safeMax===safeMax);
-  const publishedMax=Math.min(...strictest.map(item=>item.publishedMax).filter(Number.isFinite));
-  const countingMode=strictest.some(item=>item.countingMode==='UTF16')?'UTF16':'CODE_POINTS';
-  const verified=strictest.every(item=>['OFFICIAL_WEB','OFFICIAL_DOC'].includes(item.sourceType));
-  const strictestNames=[...new Set(strictest.map(item=>`${item.platformLabel}${item.messageLabel}`))].join('、');
-  const label=normalizedCategory==='公共知识库'
-    ? `公共知识库需同时适配五个平台，当前最严格为${strictestNames}，安全上限 ${safeMax} 字符`
-    : `${normalizedCategory}需同时适配评论回复和私信，安全上限 ${safeMax} 字符${verified&&Number.isFinite(publishedMax)?`（已核实上限 ${publishedMax}，预留 20 字符）`:'（项目保守值，官方上限待核实）'}`;
-  return {category:normalizedCategory,safeMax,publishedMax,strictest,label,countingMode};
-}
-function refreshKnowledgeImportAnswerState(item,replyLimits={}){
-  item.errors=(item.errors||[]).filter(error=>!isKnowledgeImportAnswerLimitError(error));
-  const policy=knowledgeImportAnswerPolicy(item.category,replyLimits);
-  const count=countKnowledgeImportCharacters(item.answer||'',policy?.countingMode);
-  const limit=policy?.safeMax??(Number.isFinite(Number(item.answerCharacterLimit))?Number(item.answerCharacterLimit):null);
-  const label=policy?.label||item.answerLimitLabel||'';
-  item.answerCharacterCount=count;
-  item.answerCharacterLimit=limit;
-  item.answerLimitLabel=label;
-  if(String(item.answer||'').trim()&&Number.isFinite(limit)&&count>limit)item.errors.push(`标准答案共 ${count} 个字符，超过可入库上限 ${limit} 个字符（${label}），请修改后再入库`);
-  item.importable=(item.errors||[]).length===0&&item.matchStatus!=='EXACT_DUPLICATE';
-  return {count,limit,label,overLimit:Number.isFinite(limit)&&count>limit};
-}
-function applyKnowledgeImportReview(item,field,value,systemCategories=[],replyLimits={}){
-  const previousValue=item[field];item[field]=value;
-  if(field==='category'&&systemCategories.includes(value)){
-    item.errors=(item.errors||[]).filter(error=>!isKnowledgeImportCategoryError(error));
-    item.categorySource='MANUAL';
-    if(previousValue!==value){item.matchStatus='NEW';item.matchScore=0;item.matchedKnowledgeId=null;item.matchedQuestion=null}
-  }
-  if(field==='subcategory')item.subcategorySource='MANUAL';
-  if(field==='keywords')item.keywordsSource='MANUAL';
-  if(field==='question'||field==='answer'){
-    item.aiStatus='DISCARDED';item.aiError='问题或答案已由运营修改，旧推荐已清除，请重新生成';item.aiRecommendation=null;
-    if(item.keywordsSource==='AI'){item.keywords='';item.keywordOptions=[];item.keywordsSource='DEFAULT'}
-    if(item.categorySource==='AI'){item.category=systemCategories[0]||'公共知识库';item.categorySource='DEFAULT'}
-    if(item.subcategorySource==='AI'){item.subcategory='未分类';item.subcategorySource='DEFAULT'}
-  }
-  if(field==='question'){
-    item.errors=(item.errors||[]).filter(error=>error!=='缺少标准问题');
-    if(!String(value||'').trim())item.errors.unshift('缺少标准问题');
-  }
-  if(field==='answer'){
-    item.errors=(item.errors||[]).filter(error=>error!=='缺少标准答案');
-    if(!String(value||'').trim())item.errors.unshift('缺少标准答案');
-  }
-  if(field==='answer'||field==='category')refreshKnowledgeImportAnswerState(item,replyLimits);
-  else item.importable=(item.errors||[]).length===0&&item.matchStatus!=='EXACT_DUPLICATE';
-}
-function captureKnowledgeImportScrollState(box){
-  const list=box?.querySelector?.('.knowledge-preview-list');
-  if(!list)return knowledgeImportScrollState;
-  knowledgeImportScrollState={top:Number(list.scrollTop)||0,left:Number(list.scrollLeft)||0};
-  return knowledgeImportScrollState;
-}
-function restoreKnowledgeImportScrollState(box,snapshot){
-  if(!box||!snapshot)return;
-  const apply=()=>{
-    const list=box.querySelector('.knowledge-preview-list');
-    if(!list)return;
-    const maxTop=Math.max(0,list.scrollHeight-list.clientHeight);
-    list.scrollTop=Math.min(Math.max(0,Number(snapshot.top)||0),maxTop);
-    list.scrollLeft=Math.max(0,Number(snapshot.left)||0);
-    knowledgeImportScrollState={top:list.scrollTop,left:list.scrollLeft};
-  };
-  // 立即恢复，避免 innerHTML 替换后出现一帧回到顶部；下一帧再校正一次，兼容内容高度刚完成布局的情况。
-  apply();
-  requestAnimationFrame(apply);
-}
-function bindKnowledgeImportScrollPersistence(box){
-  const list=box?.querySelector?.('.knowledge-preview-list');
-  if(!list)return;
-  list.addEventListener('scroll',()=>{
-    knowledgeImportScrollState={top:Number(list.scrollTop)||0,left:Number(list.scrollLeft)||0};
-  },{passive:true});
-}
-function renderKnowledgeImportPreview(data){
-  const box=$('#knowledgeImportPreview');
-  if(!box)return;
-  const previousScroll=captureKnowledgeImportScrollState(box);
-  const clearButton=$('#clearKnowledgeImportPreview');
-  if(clearButton)clearButton.disabled=!data;
-  if(!data){
-    if(knowledgeImportEnrichmentPollTimer){clearTimeout(knowledgeImportEnrichmentPollTimer);knowledgeImportEnrichmentPollTimer=null}
-    knowledgeImportScrollState={top:0,left:0};
-    box.innerHTML=`<div class="knowledge-preview-empty"><span class="knowledge-preview-empty-icon">⇩</span><h3>等待上传预处理数据</h3><p>上传 CSV、TSV、TXT、MD 或 DOCX 后，系统会在这里逐条展示清洗、去重和分类结果。</p><div><span>逐条折叠查看</span><span>支持全选</span><span>可人工修改</span></div></div>`;
-    return;
-  }
-  const categoryData=state.knowledgeCategoryData||{};
-  const systemCategories=categoryData.systemCategories||[];
-  const replyLimits=categoryData.replyLimits||{};
-  const publicCategory=systemCategories[0]||'公共知识库';
-  const cacheMap=Object.fromEntries((categoryData.categories||[]).map(item=>[item.name,item.recentSubcategories||[]]));
-  const subcategorySuggestions=category=>[...new Set((cacheMap[category]||[]).filter(Boolean))].slice(0,10);
-  const rows=data.items||[];
-  rows.forEach(item=>{if(!systemCategories.includes(item.category))item.category=publicCategory;refreshKnowledgeImportAnswerState(item,replyLimits)});
-  const selected=new Set((state.knowledgeImportSelected||[]).map(Number));
-  rows.filter(item=>!item.importable).forEach(item=>selected.delete(Number(item.rowNo)));
-  const expanded=new Set((state.knowledgeImportExpanded||[]).map(Number));
-  const dirty=new Set((state.knowledgeImportDirty||[]).map(Number));
-  const filter=state.knowledgeImportFilter||'ALL';
-  const visibleRows=rows.filter(item=>filter==='ALL'||(filter==='READY'&&item.importable&&item.matchStatus==='NEW')||(filter==='SIMILAR'&&item.matchStatus==='SIMILAR_REVIEW')||(filter==='DUPLICATE'&&item.matchStatus==='EXACT_DUPLICATE')||(filter==='INVALID'&&(item.errors||[]).length));
-  const selectableVisibleRows=visibleRows.filter(item=>item.importable);
-  const statusInfo=item=>{
-    if((item.errors||[]).length)return {label:'需修改',tone:'invalid'};
-    if(item.matchStatus==='EXACT_DUPLICATE')return {label:'重复项',tone:'duplicate'};
-    if(item.matchStatus==='SIMILAR_REVIEW')return {label:'相似待核对',tone:'similar'};
-    return {label:'可入库',tone:'ready'};
-  };
-  const selectedVisible=selectableVisibleRows.filter(item=>selected.has(Number(item.rowNo))).length;
-  const allVisibleSelected=selectableVisibleRows.length>0&&selectedVisible===selectableVisibleRows.length;
-  const categoryNeedsReview=item=>(item.errors||[]).some(isKnowledgeImportCategoryError);
-  const categoryOptions=item=>`${categoryNeedsReview(item)?'<option value="" selected disabled>请选择知识大类</option>':''}${systemCategories.map(name=>`<option value="${esc(name)}" ${!categoryNeedsReview(item)&&name===item.category?'selected':''}>${esc(name)}</option>`).join('')}`;
-  const datalistOptions=category=>subcategorySuggestions(category).map(name=>`<option value="${esc(name)}"></option>`).join('');
-  const answerCounter=item=>{
-    const count=Number(item.answerCharacterCount)||0;
-    const limit=Number(item.answerCharacterLimit);
-    const hasLimit=Number.isFinite(limit);
-    const overLimit=hasLimit&&count>limit;
-    return `<small class="knowledge-answer-counter${overLimit?' over-limit':''}" data-import-answer-counter="${Number(item.rowNo)}">当前 ${count}${hasLimit?` / ${limit}`:''} 字符${item.answerLimitLabel?` · ${esc(item.answerLimitLabel)}`:''}${overLimit?' · 超过平台字数，不能入库':''}</small>`;
-  };
-  const summary={...(data.summary||{}),...summarizeKnowledgeImportRows(rows)};
-  data.summary=summary;
-  const enrichment=data.enrichment||{};const enrichmentRunning=['QUEUED','RUNNING'].includes(enrichment.status);if(state.knowledgeImportStage!=='COMMITTING')setKnowledgeImportStage(knowledgeImportStageForPreview(data));const enrichmentText=enrichmentRunning?`千问正在分析 ${Number(enrichment.completed||0)} / ${Number(enrichment.total||0)} 条`:enrichment.status?`${knowledgeMetadataStatusLabel(enrichment.status)} · 已处理 ${Number(enrichment.completed||0)} 条${Number(enrichment.failed||0)?` · 失败 ${Number(enrichment.failed)} 条`:''}`:'等待千问分析';
-  box.innerHTML=`<div class="import-summary compact"><div><b data-import-summary="total">${summary.total||0}</b><span>识别总数</span></div><div><b data-import-summary="importable">${summary.importable||0}</b><span>建议入库</span></div><div><b data-import-summary="similar">${summary.similar||0}</b><span>相似待核对</span></div><div><b data-import-summary="exactDuplicates">${summary.exactDuplicates||0}</b><span>重复项</span></div><div><b data-import-summary="invalid">${summary.invalid||0}</b><span>需修改</span></div></div>
-    <div class="knowledge-preview-file"><span class="knowledge-preview-file-icon">CSV</span><span><b>${esc(data.fileName||'已上传文档')}</b><small>批次 #${esc(data.batchId)} · 大类只能选择固定六类，小类可直接输入</small></span></div><div class="knowledge-ai-progress ${enrichmentRunning?'running':''}"><span class="knowledge-ai-progress-dot"></span><div><b>${esc(enrichmentText)}</b><small>文件原值优先；缺失字段由 AI 推荐，运营确认后才入库。</small></div><button class="ghost" type="button" id="retryKnowledgeImportAi" ${enrichmentRunning?'disabled':''}>重新生成缺失字段</button></div>
-    <div class="knowledge-preview-toolbar"><label class="knowledge-select-all"><input id="knowledgeImportSelectAll" type="checkbox" ${allVisibleSelected?'checked':''} ${selectableVisibleRows.length?'':'disabled'}><span>全选当前可入库 ${selectableVisibleRows.length} 项</span></label><label class="knowledge-preview-filter"><span>显示范围</span><select id="knowledgeImportFilter"><option value="ALL" ${filter==='ALL'?'selected':''}>全部数据</option><option value="READY" ${filter==='READY'?'selected':''}>可入库</option><option value="SIMILAR" ${filter==='SIMILAR'?'selected':''}>相似待核对</option><option value="DUPLICATE" ${filter==='DUPLICATE'?'selected':''}>重复项</option><option value="INVALID" ${filter==='INVALID'?'selected':''}>需修改</option></select></label></div>
-    <div class="knowledge-preview-list">${visibleRows.length?visibleRows.map(item=>{
-      const info=statusInfo(item);const rowNo=Number(item.rowNo);const listId=`knowledge-import-subcategories-${rowNo}`;
-      return `<details class="knowledge-preview-item ${info.tone}${dirty.has(rowNo)?' edited':''}" data-row="${rowNo}" ${expanded.has(rowNo)?'open':''}><summary><span class="import-check-wrap"><input class="knowledge-import-check" type="checkbox" data-row="${rowNo}" ${selected.has(rowNo)?'checked':''} ${item.importable?'':'disabled'} aria-label="选择第 ${item.sourceRow} 行"></span><span class="knowledge-preview-index">${item.sourceRow}</span><span class="knowledge-preview-title"><b data-import-title="${rowNo}">${esc(item.question||'未填写标准问题')}</b><small data-import-meta="${rowNo}">${esc(categoryNeedsReview(item)?'待选择大类':(item.category||publicCategory))} / ${esc(item.subcategory||'未分类')}${dirty.has(rowNo)?' · 已人工修改':''}</small></span><span class="import-review-status ${info.tone}" data-import-status="${rowNo}">${info.label}</span><span class="details-chevron">⌄</span></summary><div class="knowledge-preview-editor"><label class="full"><span>标准问题</span><input class="knowledge-import-edit" data-row="${rowNo}" data-field="question" maxlength="500" value="${esc(item.question||'')}" placeholder="请输入标准问题"></label><label class="full"><span>标准答案</span><textarea class="knowledge-import-edit" data-row="${rowNo}" data-field="answer" rows="3" maxlength="5000" placeholder="请输入标准答案">${esc(item.answer||'')}</textarea>${answerCounter(item)}</label><label class="full"><span>触发关键词 <em class="metadata-source ${String(item.keywordsSource||'').toLowerCase()}">${esc(knowledgeMetadataSourceLabel(item.keywordsSource))}</em></span>${renderKnowledgeKeywordPicker(item.keywordOptions,item.keywords,`import-${rowNo}`)}<small>勾选可准确触发答案的完整意图词；冲突词默认不选，仍可由运营人工确认。</small></label><label><span>知识大类 <em class="metadata-source ${String(item.categorySource||'').toLowerCase()}">${esc(knowledgeMetadataSourceLabel(item.categorySource))}</em></span><select class="knowledge-import-edit knowledge-import-category" data-row="${rowNo}" data-field="category">${categoryOptions(item)}</select><small>${item.aiRecommendation?.category?.reason?esc(item.aiRecommendation.category.reason):'固定六类，不支持自定义。'}</small></label><label><span>知识小类 <em class="metadata-source ${String(item.subcategorySource||'').toLowerCase()}">${esc(knowledgeMetadataSourceLabel(item.subcategorySource))}</em></span><input class="knowledge-import-edit knowledge-import-subcategory" data-row="${rowNo}" data-field="subcategory" maxlength="30" autocomplete="off" list="${listId}" value="${esc(item.subcategory||'未分类')}" placeholder="选择最近使用记录或输入自定义小类"><datalist id="${listId}" data-import-subcategory-list="${rowNo}">${datalistOptions(item.category)}</datalist><small>${item.aiRecommendation?.subcategory?.reason?esc(item.aiRecommendation.subcategory.reason):'候选随大类变化，最多显示最近 10 条。'}</small></label><div class="knowledge-import-diagnostics full"><span><b>匹配结果：</b>${esc(knowledgeMatchName(item.matchStatus))}${item.matchedKnowledgeId?`，匹配知识 #${item.matchedKnowledgeId}（${Math.round((item.matchScore||0)*100)}%）`:''}</span><span><b>AI推荐状态：</b>${esc(knowledgeMetadataStatusLabel(item.aiStatus))}${item.aiError?` · ${esc(item.aiError)}`:''}</span><span><b>预处理说明：</b>${esc((item.cleanNotes||[]).join('；')||'无需处理')}</span><span class="error-text" data-import-errors="${rowNo}" ${item.errors?.length?'':'hidden'}><b>待修正：</b>${esc((item.errors||[]).join('；'))}</span><small>修改后会在一键入库时由服务端重新校验平台字数、去重和字段有效性。</small></div></div></details>`;
-    }).join(''):'<div class="knowledge-preview-no-result">当前筛选条件下没有数据。</div>'}</div>
-    <div class="knowledge-preview-footer"><div><b>已选择 <span id="knowledgeImportSelectedCount">${selected.size}</span> 条</b><small>超平台字数的数据不可勾选，也不能提交入库。</small></div><button class="btn" id="commitKnowledgeImport" ${selected.size?'':'disabled'}>审核所选并一键入库</button></div>`;
-  bindKnowledgeImportScrollPersistence(box);
-  restoreKnowledgeImportScrollState(box,previousScroll);
-  const syncSummary=()=>{const next={...(data.summary||{}),...summarizeKnowledgeImportRows(rows)};data.summary=next;Object.entries(next).forEach(([key,value])=>{const target=document.querySelector(`[data-import-summary="${key}"]`);if(target)target.textContent=value||0})};
-  const syncSelection=()=>{rows.filter(item=>!item.importable).forEach(item=>selected.delete(Number(item.rowNo)));state.knowledgeImportSelected=[...selected];const count=$('#knowledgeImportSelectedCount');if(count)count.textContent=selected.size;const commit=$('#commitKnowledgeImport');if(commit)commit.disabled=!selected.size;const selectAll=$('#knowledgeImportSelectAll');if(selectAll){const selectedCount=selectableVisibleRows.filter(item=>item.importable&&selected.has(Number(item.rowNo))).length;const selectableCount=selectableVisibleRows.filter(item=>item.importable).length;selectAll.disabled=!selectableCount;selectAll.checked=selectableCount>0&&selectedCount===selectableCount;selectAll.indeterminate=selectedCount>0&&selectedCount<selectableCount}};
-  const markDirty=(rowNo,item)=>{const values=new Set((state.knowledgeImportDirty||[]).map(Number));values.add(rowNo);state.knowledgeImportDirty=[...values];document.querySelector(`.knowledge-preview-item[data-row="${rowNo}"]`)?.classList.add('edited');const meta=document.querySelector(`[data-import-meta="${rowNo}"]`);if(meta)meta.textContent=`${item.category||publicCategory} / ${item.subcategory||'未分类'} · 已人工修改`};
-  const updateRowUi=(rowNo,item)=>{
-    const info=statusInfo(item);const details=document.querySelector(`.knowledge-preview-item[data-row="${rowNo}"]`);
-    if(details){details.classList.remove('ready','invalid','duplicate','similar');details.classList.add(info.tone)}
-    const status=document.querySelector(`[data-import-status="${rowNo}"]`);if(status){status.className=`import-review-status ${info.tone}`;status.textContent=info.label}
-    const checkbox=document.querySelector(`.knowledge-import-check[data-row="${rowNo}"]`);if(checkbox){checkbox.disabled=!item.importable;checkbox.checked=item.importable&&selected.has(rowNo)}
-    const errors=document.querySelector(`[data-import-errors="${rowNo}"]`);if(errors){errors.hidden=!(item.errors||[]).length;errors.innerHTML=`<b>待修正：</b>${esc((item.errors||[]).join('；'))}`}
-    const counter=document.querySelector(`[data-import-answer-counter="${rowNo}"]`);if(counter){const count=Number(item.answerCharacterCount)||0;const limit=Number(item.answerCharacterLimit);const hasLimit=Number.isFinite(limit);const overLimit=hasLimit&&count>limit;counter.classList.toggle('over-limit',overLimit);counter.textContent=`当前 ${count}${hasLimit?` / ${limit}`:''} 字符${item.answerLimitLabel?` · ${item.answerLimitLabel}`:''}${overLimit?' · 超过平台字数，不能入库':''}`}
-    syncSummary();syncSelection();
-  };
-  $('#knowledgeImportFilter').onchange=event=>{state.knowledgeImportFilter=event.target.value;renderKnowledgeImportPreview(data)};
-  $('#knowledgeImportSelectAll').onchange=event=>{selectableVisibleRows.forEach(item=>event.target.checked?selected.add(Number(item.rowNo)):selected.delete(Number(item.rowNo)));syncSelection();document.querySelectorAll('.knowledge-import-check').forEach(input=>input.checked=!input.disabled&&selected.has(Number(input.dataset.row)))};
-  document.querySelectorAll('.import-check-wrap').forEach(wrapper=>wrapper.onclick=event=>event.stopPropagation());
-  document.querySelectorAll('.knowledge-import-check').forEach(input=>input.onchange=()=>{const rowNo=Number(input.dataset.row);const item=rows.find(entry=>Number(entry.rowNo)===rowNo);if(!item?.importable){input.checked=false;selected.delete(rowNo)}else input.checked?selected.add(rowNo):selected.delete(rowNo);syncSelection()});
-  document.querySelectorAll('.knowledge-preview-item').forEach(details=>details.ontoggle=()=>{const rowNo=Number(details.dataset.row);const values=new Set((state.knowledgeImportExpanded||[]).map(Number));details.open?values.add(rowNo):values.delete(rowNo);state.knowledgeImportExpanded=[...values]});
-  const handleImportEdit=input=>{const rowNo=Number(input.dataset.row);const item=rows.find(entry=>Number(entry.rowNo)===rowNo);if(!item)return;const field=input.dataset.field;const wasImportable=item.importable;applyKnowledgeImportReview(item,field,input.value,systemCategories,replyLimits);if(!item.importable)selected.delete(rowNo);else if(!wasImportable)selected.add(rowNo);if(field==='category'){const list=document.querySelector(`[data-import-subcategory-list="${rowNo}"]`);if(list)list.innerHTML=datalistOptions(item.category)}markDirty(rowNo,item);if(field==='question'){const title=document.querySelector(`[data-import-title="${rowNo}"]`);if(title)title.textContent=input.value.trim()||'未填写标准问题'}if((field==='question'||field==='answer')&&item.aiStatus==='DISCARDED'){const categoryInput=document.querySelector(`.knowledge-import-category[data-row="${rowNo}"]`);const subcategoryInput=document.querySelector(`.knowledge-import-subcategory[data-row="${rowNo}"]`);if(categoryInput)categoryInput.value=item.category;if(subcategoryInput)subcategoryInput.value=item.subcategory;const picker=document.querySelector(`[data-keyword-picker="import-${rowNo}"]`);if(picker&&item.keywordsSource==='DEFAULT'){picker.querySelector('.knowledge-keyword-value').value='';picker.querySelector('[data-keyword-summary]').textContent='请重新生成关键词';picker.querySelector('.knowledge-keyword-options').innerHTML='<p class="muted">问题或答案已修改，请点击上方“重新生成缺失字段”。</p>'}}if(field==='category')renderKnowledgeImportPreview(data);else updateRowUi(rowNo,item)};
-  document.querySelectorAll('.knowledge-import-edit').forEach(input=>{input.autocomplete='off';if(input.matches('select'))input.onchange=()=>handleImportEdit(input);else input.oninput=()=>handleImportEdit(input)});
-  bindKnowledgeKeywordPickers(box);
-  box.querySelectorAll('.knowledge-keyword-value').forEach(hidden=>hidden.onchange=()=>{const picker=hidden.closest('[data-keyword-picker]');const rowNo=Number(String(picker?.dataset.keywordPicker||'').replace('import-',''));const item=rows.find(entry=>Number(entry.rowNo)===rowNo);if(!item)return;applyKnowledgeImportReview(item,'keywords',hidden.value,systemCategories,replyLimits);const previousOptions=new Map((item.keywordOptions||[]).map(option=>[String(option.text||''),option]));item.keywordOptions=[...picker.querySelectorAll('[data-keyword-option]')].map(input=>{const text=input.value;const previous=previousOptions.get(text)||{};const operator=input.closest('label')?.classList.contains('operator');return {...previous,text,source:operator?'OPERATOR':(previous.source||item.keywordsSource||'AI'),selectable:!input.disabled,conflict:input.closest('label')?.classList.contains('conflict'),selected:input.checked}});markDirty(rowNo,item);updateRowUi(rowNo,item)});
-  const retryAi=$('#retryKnowledgeImportAi');if(retryAi)retryAi.onclick=async()=>{retryAi.disabled=true;retryAi.textContent='正在重新排队…';setKnowledgeImportStage('CLASSIFYING');try{const result=await api(`/api/knowledge/import/${data.batchId}/enrich`,{method:'POST',body:JSON.stringify({force:true})});data.enrichment=result.enrichment;renderKnowledgeImportPreview(data);scheduleKnowledgeImportEnrichmentPoll(data.batchId);toast('缺失字段已重新交给千问分析')}catch(error){setKnowledgeImportStage('REVIEWING');toast(error.message,true);retryAi.disabled=false;retryAi.textContent='重新生成缺失字段'}};
-  const commit=$('#commitKnowledgeImport');
-  if(commit)commit.onclick=async()=>{const selectedRows=rows.filter(item=>item.importable&&selected.has(Number(item.rowNo)));if(!selectedRows.length)return toast('请至少选择一条符合平台字数限制的数据',true);commit.disabled=true;commit.textContent='正在校验并入库…';setKnowledgeImportStage('COMMITTING');try{const result=await api('/api/knowledge/import/commit',{method:'POST',body:JSON.stringify({batchId:data.batchId,importedBy:'业务人员人工审核',selectedRowNos:selectedRows.map(item=>item.rowNo),reviewedItems:selectedRows.map(item=>({rowNo:item.rowNo,question:item.question,answer:item.answer,keywords:item.keywords,category:item.category,subcategory:item.subcategory}))})});const skipped=result.skipped?`，${result.skipped} 条因重复、字段或平台字数问题未入库`:'';toast(`已加入知识库草稿 ${result.imported} 条${skipped}`,Boolean(!result.imported&&result.skipped));if(knowledgeImportEnrichmentPollTimer){clearTimeout(knowledgeImportEnrichmentPollTimer);knowledgeImportEnrichmentPollTimer=null}state.knowledgeImportPreview=null;state.knowledgeImportSelected=[];state.knowledgeImportExpanded=[];state.knowledgeImportDirty=[];state.knowledgeImportFilter='ALL';setKnowledgeImportStage('IDLE');renderKnowledge()}catch(error){setKnowledgeImportStage('REVIEWING');toast(error.message,true);commit.disabled=false;commit.textContent='审核所选并一键入库'}};
-  syncSelection();
-}
-
-async function renderManualHandoffPhrases(){
-  const data=await api('/api/manual-handoff-phrases');
-  const phrases=data.phrases||[];
-  const builtins=data.builtinExamples||[];
-  const enabledCount=phrases.filter(item=>item.status==='ENABLED').length;
-  const taskLabels={QUEUED:'等待千问生成',RUNNING:'千问生成中',COMPLETED:'生成完成',FAILED:'生成失败',CANCELLED:'已重新生成',DISCARDED:'旧结果已丢弃'};
-  const phraseRows=phrases.length?phrases.map(item=>{
-    const enabled=item.status==='ENABLED';
-    const taskStatus=item.alias_task_status||'';
-    const taskLabel=taskLabels[taskStatus]||'尚未生成';
-    const aliasClass=taskStatus==='FAILED'?'has-error':'';
-    const aliasSummary=taskStatus==='QUEUED'||taskStatus==='RUNNING'?taskLabel:`AI相似说法 ${Number(item.alias_count||0)} 条 · 已启用 ${Number(item.enabled_alias_count||0)} 条`;
-    return `<div class="handoff-phrase-row ${enabled?'':'is-disabled'}"><div class="handoff-phrase-main"><div><strong>${esc(item.phrase)}</strong><span class="badge ${enabled?'success':'disabled'}">${enabled?'已启用':'已停用'}</span></div><small>创建于 ${fmt(item.created_at)}${item.updated_at&&item.updated_at!==item.created_at?` · 更新于 ${fmt(item.updated_at)}`:''} · 版本 ${item.version||1}</small></div><button class="knowledge-alias-manage manage-handoff-aliases ${aliasClass}" type="button" data-id="${item.id}"><span>${esc(aliasSummary)}</span><small>${taskStatus==='FAILED'?esc(item.alias_task_error||'点击查看并重新生成'):'点击查看、勾选或重新生成'}</small></button><div class="handoff-phrase-actions"><button class="ghost edit-handoff-phrase" type="button" data-id="${item.id}" data-phrase="${esc(item.phrase)}">修改</button><button class="ghost toggle-handoff-phrase" type="button" data-id="${item.id}" data-next="${enabled?'disable':'enable'}">${enabled?'停用':'启用'}</button><button class="ghost danger delete-handoff-phrase" type="button" data-id="${item.id}" data-phrase="${esc(item.phrase)}" data-alias-count="${Number(item.alias_count||0)}">删除</button></div></div>`;
-  }).join(''):`<div class="handoff-phrase-empty"><b>还没有自定义转人工说法</b><span>添加后千问会自动生成相似说法，再由运营人员勾选启用。</span></div>`;
-  $('#content').innerHTML=`<div class="knowledge-head"><div><h2>知识库</h2><p>维护标准问答、RAG 文档、相似问法和私信转人工识别规则。</p></div><div class="knowledge-stats"><span>自定义转人工说法 <b>${phrases.length}</b></span><span>当前启用 <b>${enabledCount}</b></span></div></div>${renderKnowledgeTabs()}<div class="card handoff-phrase-panel"><div class="handoff-rule-note"><b>适用范围</b><span>本页标准说法、系统内置说法及 AI 相似说法不应用于微信客服。微信客服由自己的 Agent 判断是否需要人工接待。</span></div><div class="handoff-rule-note"><b>怎么触发</b><span>${esc(data.matchRule||'完整句匹配，仅私信生效')}。标准说法添加后，千问会自动生成相似说法；生成结果必须人工勾选保存后才启用。</span></div><form id="handoffPhraseForm" class="handoff-phrase-form"><label>新增标准转人工说法<div><input name="phrase" maxlength="80" placeholder="例如：麻烦让业务专员联系我" autocomplete="off" required><button class="btn" type="submit">添加并让千问生成</button></div><small>标准说法会立即启用；AI 相似说法默认关闭，避免把普通咨询误判成转人工。</small></label></form><section class="handoff-builtins"><div class="handoff-section-title"><div><h3>系统内置说法</h3><p>这些常见明确指令无需重复添加。</p></div><span>${builtins.length} 条示例</span></div><div class="handoff-chip-list">${builtins.map(item=>`<span>${esc(item)}</span>`).join('')}</div></section><section class="handoff-custom-list"><div class="handoff-section-title"><div><h3>自定义说法与 AI 相似说法</h3><p>每条标准说法旁都可以查看千问生成结果，并选择真正要启用的表达。</p></div></div><div class="handoff-phrase-list">${phraseRows}</div></section></div>`;
-  bindKnowledgeTabs();
-  $('#handoffPhraseForm').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget;const button=form.querySelector('button[type="submit"]');const phrase=String(new FormData(form).get('phrase')||'').trim();if(!phrase)return toast('请填写转人工说法',true);button.disabled=true;button.textContent='正在添加…';try{await api('/api/manual-handoff-phrases',{method:'POST',body:JSON.stringify({phrase,createdBy:'运营人员'})});toast('标准说法已添加，千问正在生成相似说法');renderManualHandoffPhrases()}catch(error){toast(error.message,true);button.disabled=false;button.textContent='添加并让千问生成'}};
-  document.querySelectorAll('.manage-handoff-aliases').forEach(button=>button.onclick=async()=>{const item=phrases.find(entry=>Number(entry.id)===Number(button.dataset.id));if(!item)return;button.disabled=true;try{const result=await manualHandoffAliasSelectionDialog(item);if(result?.enabledIds){const saved=await api(`/api/manual-handoff-phrases/${item.id}/aliases/selections`,{method:'POST',body:JSON.stringify({enabledIds:result.enabledIds})});toast(`已启用 ${saved.selection.enabled} 条转人工相似说法${saved.selection.skippedConflicts?`，${saved.selection.skippedConflicts} 条冲突说法未启用`:''}`);renderManualHandoffPhrases()}else if(result?.regenerating)setTimeout(()=>{if(state.page==='knowledge'&&state.knowledgeView==='handoff')renderManualHandoffPhrases()},900)}catch(error){toast(error.message,true);button.disabled=false}});
-  document.querySelectorAll('.toggle-handoff-phrase').forEach(button=>button.onclick=async()=>{button.disabled=true;try{await api(`/api/manual-handoff-phrases/${button.dataset.id}/${button.dataset.next}`,{method:'POST',body:JSON.stringify({updatedBy:'运营人员'})});toast(button.dataset.next==='enable'?'该说法及已勾选的相似说法已启用':'该标准说法及其相似说法已整体停用');renderManualHandoffPhrases()}catch(error){toast(error.message,true);button.disabled=false}});
-  document.querySelectorAll('.edit-handoff-phrase').forEach(button=>button.onclick=async()=>{const phrase=window.prompt('修改转人工说法；保存后千问会按新版本重新生成相似说法',button.dataset.phrase||'');if(phrase===null)return;const next=String(phrase).trim();if(!next)return toast('转人工说法不能为空',true);button.disabled=true;try{await api(`/api/manual-handoff-phrases/${button.dataset.id}`,{method:'PUT',body:JSON.stringify({phrase:next,updatedBy:'运营人员'})});toast('标准说法已修改，旧相似说法已失效，千问正在重新生成');renderManualHandoffPhrases()}catch(error){toast(error.message,true);button.disabled=false}});
-  document.querySelectorAll('.delete-handoff-phrase').forEach(button=>button.onclick=async()=>{const aliasCount=Number(button.dataset.aliasCount||0);const confirmed=await confirmDelete({title:'删除这条转人工说法？',message:`说法：${button.dataset.phrase}`,details:[`删除后将同时永久删除 ${aliasCount} 条 AI 相似说法和相关生成任务。`,'系统内置说法不会受到影响；如误删，可重新添加并让千问再次生成。'],confirmLabel:'删除说法'});if(!confirmed)return;try{await api(`/api/manual-handoff-phrases/${button.dataset.id}`,{method:'DELETE',body:'{}'});toast('标准说法及其 AI 相似说法已删除');renderManualHandoffPhrases()}catch(error){toast(error.message,true)}});
-  if(phrases.some(item=>['QUEUED','RUNNING'].includes(item.alias_task_status)))setTimeout(()=>{if(state.page==='knowledge'&&state.knowledgeView==='handoff')renderManualHandoffPhrases()},2500);
-}
-
-function browserFileBase64(file){
-  return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(new Error('读取上传文件失败'));reader.onload=()=>resolve(String(reader.result||'').split(',').pop()||'');reader.readAsDataURL(file)});
-}
-function ragDocumentStatusText(status){return ({UPLOADED:'已上传',PROCESSING:'处理中',READY_FOR_TEST:'待测试',FAILED:'处理失败',PROCESS_FAILED:'处理失败'}[String(status||'').toUpperCase()]||statusName(status)||status||'未知状态')}
-function unifiedRagDocumentLabel(value='',item={}){
-  const raw=String(value||'').trim();
-  if(/旧知识迁移\s*[-—]\s*(小红书|抖音|微博|视频号|B站|公共)知识库/.test(raw)){
-    const id=String(item.documentId||'').replace(/^document-/,'').slice(-6);
-    return `历史知识文档${id?` · ${id}`:''}`;
-  }
-  return raw.replace(/(小红书|抖音|微博|视频号|B站)知识库/g,'$1来源').replace(/公共知识库/g,'公共来源');
-}
-function isLegacyPlatformMigrationDocument(item={}){
-  const value=`${item.title||''} ${item.filename||''}`;
-  return /旧知识迁移/i.test(value)&&!/(公共来源|公共知识库)/i.test(value);
-}
-function sameRagDocument(left={},right={}){
-  return String(left.documentId||left.document_id||'')===String(right.documentId||right.document_id||'')&&Number(left.documentVersion||left.document_version||1)===Number(right.documentVersion||right.document_version||1);
-}
-function ragDocumentLifecycle(item,releases=[],activeMembers=[]){
-  if(!item)return {step:0,status:'',detail:'点击右侧文档，查看该文件的处理进度。'};
-  const status=String(item.status||'').toUpperCase();
-  if(['UPLOADED','PROCESSING'].includes(status))return {step:1,status,detail:'正在解析文档',busy:true};
-  if(['FAILED','PROCESS_FAILED'].includes(status))return {step:1,status,detail:'文档处理失败',error:true};
-  // Parse readiness remains the service contract; tested state comes from persisted release snapshots.
-  const release=releases.filter(entry=>['BUILDING','PUBLISHED','FAILED','ROLLED_BACK'].includes(String(entry.status||'').toUpperCase())&&(entry.candidateDocuments||[]).some(candidate=>sameRagDocument(candidate,item)))
-    .sort((a,b)=>(Date.parse(b.createdAt||'')||0)-(Date.parse(a.createdAt||'')||0))[0];
-  const releaseStatus=String(release?.status||'').toUpperCase();
-  if(releaseStatus==='BUILDING')return {step:4,status:'TESTED',detail:'已测试 · 正在发布',busy:true};
-  if(releaseStatus==='FAILED')return {step:4,status:'TESTED',detail:'已测试 · 发布失败，请查看发布版本的错误信息',error:true};
-  if(activeMembers.some(member=>sameRagDocument(member,item)))return {step:5,status:'TESTED',detail:'已测试 · 已正式发布，当前用户端生效'};
-  if(['PUBLISHED','ROLLED_BACK'].includes(releaseStatus))return {step:4,status:'TESTED',detail:'已测试 · 当前正式版本未包含此文档'};
-  if(status==='READY_FOR_TEST')return {step:2,status,detail:'待测试 · 请到小智验证回答效果'};
-  return {step:0,status,detail:ragDocumentStatusText(status)};
-}
-function renderRagDocumentProgress(item,releases=[],activeMembers=[]){
-  const lifecycle=ragDocumentLifecycle(item,releases,activeMembers);
-  const filename=item?unifiedRagDocumentLabel(item.filename||item.title||item.documentId,item):'尚未选择文档';
-  const steps=[['上传资料','选择知识文档'],['解析处理','自动读取内容'],['小智测试','验证回答效果'],['运营确认','启用或不启用'],['正式发布','应用到用户端']];
-  return `<div class="rag-progress-document"><span>当前文档</span><b>${esc(filename)}</b>${item?`<small>v${Number(item.documentVersion)||1}</small>`:''}</div><div class="rag-progress-status ${lifecycle.error?'error-text':''}">${esc(lifecycle.detail)}</div><div class="flow mini-flow knowledge-mini-flow" aria-label="知识文档处理流程">${steps.map(([title,description],index)=>`<div class="flow-step ${index<lifecycle.step?'is-complete':index===lifecycle.step?`is-active ${lifecycle.busy?'':'is-idle'} ${lifecycle.error?'is-error':''}`:''}" ${index===lifecycle.step?'aria-current="step"':''}><b>${index<lifecycle.step?'✓':index+1}</b><span>${title}</span><small>${description}</small></div>`).join('')}</div>`;
-}
-function selectRagProgressDocument(item,releases=[],activeMembers=[]){
-  if(!item)return;
-  state.ragCurrentDocumentId=item.documentId;
-  state.ragCurrentDocumentVersion=Number(item.documentVersion)||1;
-  state.ragUploadStage=String(item.status||'').toUpperCase();
-  const progress=$('#ragDocumentProgress');
-  if(progress)progress.innerHTML=renderRagDocumentProgress(item,releases,activeMembers);
-  document.querySelectorAll('.rag-document-selectable').forEach(card=>{
-    const selected=sameRagDocument({documentId:card.dataset.documentId,documentVersion:card.dataset.version},item);
-    card.classList.toggle('is-selected',selected);
-    card.setAttribute('aria-current',String(selected));
-  });
-}
-function ragChunkLocationLabel(chunk={}){
-  const location=chunk.location&&typeof chunk.location==='object'?chunk.location:{};
-  const parts=[];
-  if(location.page!==undefined&&location.page!==null)parts.push(`第 ${location.page} 页`);
-  if(location.sheet)parts.push(`工作表：${location.sheet}`);
-  const rowStart=location.rowStart??location.row;
-  const rowEnd=location.rowEnd;
-  if(rowStart!==undefined&&rowStart!==null)parts.push(rowEnd&&rowEnd!==rowStart?`第 ${rowStart}-${rowEnd} 行`:`第 ${rowStart} 行`);
-  if(location.lineStart!==undefined&&location.lineStart!==null)parts.push(location.lineEnd&&location.lineEnd!==location.lineStart?`第 ${location.lineStart}-${location.lineEnd} 行文本`:`第 ${location.lineStart} 行文本`);
-  if(location.splitPart)parts.push(`分片 ${location.splitPart}`);
-  return parts.join(' · ')||'原文片段';
-}
-async function showRagDocumentContent(item={}){
-  const version=Number(item.documentVersion)||1;
-  try{
-    const data=await api(`/api/rag/documents/${encodeURIComponent(item.documentId)}/chunks?version=${encodeURIComponent(version)}`);
-    const chunks=Array.isArray(data.chunks)?data.chunks:[];
-    const overlay=document.createElement('div');
-    overlay.className='confirm-overlay rag-content-overlay';
-    overlay.innerHTML=`<div class="confirm-dialog rag-content-dialog" role="dialog" aria-modal="true" aria-labelledby="ragContentTitle"><div class="knowledge-edit-heading"><div><span>文件解析内容</span><h3 id="ragContentTitle">${esc(unifiedRagDocumentLabel(item.filename||item.title||'知识文档',item))}</h3></div><button class="knowledge-edit-close rag-content-close" type="button" aria-label="关闭">×</button></div><p>共解析为 ${chunks.length} 个内容片段，以下内容已写入 RAG 待测试区。</p><div class="rag-content-list">${chunks.map((chunk,index)=>`<article class="rag-content-item"><div class="meta"><b>内容片段 ${index+1}</b><span>${esc(ragChunkLocationLabel(chunk))}</span></div>${Array.isArray(chunk.section_path)&&chunk.section_path.length?`<div class="rag-content-section">${esc(chunk.section_path.join(' / '))}</div>`:''}<pre>${esc(chunk.text||chunk.excerpt||'')}</pre></article>`).join('')||'<div class="empty">当前文件还没有可查看的解析内容。</div>'}</div></div>`;
-    const close=()=>{window.removeEventListener('keydown',onKeyDown);overlay.remove()};
-    const onKeyDown=event=>{if(event.key==='Escape')close()};
-    overlay.addEventListener('click',event=>{if(event.target===overlay||event.target.closest('.rag-content-close'))close()});
-    document.body.appendChild(overlay);
-    window.addEventListener('keydown',onKeyDown);
-  }catch(error){toast(error.message||'读取文件内容失败',true)}
-}
-async function showRagReleaseDetails(item={},activeId=null){
-  const releaseId=String(item.releaseId||item.release_id||'').trim();
-  if(!releaseId)return;
-  const data=await api(`/api/rag/releases/${encodeURIComponent(releaseId)}/documents`);
-  const documents=Array.isArray(data.documents)?data.documents:[];
-  const overlay=document.createElement('div');
-  overlay.className='confirm-overlay rag-release-detail-overlay';
-  overlay.dataset.releaseId=releaseId;
-  overlay.innerHTML=`<div class="confirm-dialog rag-release-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="ragReleaseDetailTitle"><div class="knowledge-edit-heading"><div><span>知识库正式版本</span><h3 id="ragReleaseDetailTitle">发布版本详情</h3></div><button class="knowledge-edit-close rag-release-detail-close" type="button" aria-label="关闭">×</button></div><dl class="rag-release-summary"><div><dt>知识版本</dt><dd>${esc(item.knowledgeVersion||'构建中')}</dd></div><div><dt>状态</dt><dd class="rag-release-detail-status">${ragReleaseBadgeCache.get(releaseId)||ragReleaseView(item,activeId).badge}</dd></div><div><dt>发布日期</dt><dd>${fmt(item.publishedAt||item.createdAt)}</dd></div><div><dt>发布人</dt><dd>${esc(item.publishedBy||'—')}</dd></div></dl><div class="rag-release-document-heading"><h4>该版本包含的文档</h4><span>${documents.length} 个文档</span></div><div class="rag-release-document-list" role="list">${documents.map(document=>`<div class="rag-release-document-row" role="listitem"><span class="rag-release-document-icon" aria-hidden="true">▤</span><div class="rag-release-document-copy"><b>${esc(document.filename||'知识文档')}</b><small>文档版本 v${Number(document.documentVersion)||1}</small></div><div class="rag-release-document-date"><span>上传日期</span><b>${fmt(document.uploadedAt)}</b></div></div>`).join('')||'<div class="empty">该发布版本暂未包含文档。</div>'}</div><div class="confirm-actions"><button class="btn secondary rag-release-detail-close" type="button">关闭</button></div></div>`;
-  const close=()=>{window.removeEventListener('keydown',onKeyDown);overlay.remove()};
-  const onKeyDown=event=>{if(event.key==='Escape')close()};
-  overlay.addEventListener('click',event=>{if(event.target===overlay||event.target.closest('.rag-release-detail-close'))close()});
-  document.body.appendChild(overlay);
-  window.addEventListener('keydown',onKeyDown);
-  overlay.querySelector('.rag-release-detail-close')?.focus();
-}
-function materialKnowledgeDraftStatusText(status){return ({PENDING_CONFIRMATION:'待确认',IMPORTING:'正在加入知识库',IMPORTED:'已加入知识库',FAILED:'处理失败',IGNORED:'已忽略'}[String(status||'').toUpperCase()]||statusName(status)||'未知状态')}
-function showMaterialKnowledgeDraft(draft={},editable=false){
-  const overlay=document.createElement('div');
-  overlay.className='confirm-overlay rag-content-overlay';
-  const uncertain=Array.isArray(draft.uncertainFacts)?draft.uncertainFacts:[];
-  overlay.innerHTML=`<div class="confirm-dialog rag-content-dialog material-knowledge-draft-dialog" role="dialog" aria-modal="true" aria-labelledby="materialKnowledgeDraftTitle"><div class="knowledge-edit-heading"><div><span>AI 生成草稿</span><h3 id="materialKnowledgeDraftTitle">${editable?'编辑知识草稿':'查看知识草稿'}</h3></div><button class="knowledge-edit-close material-draft-close" type="button" aria-label="关闭">×</button></div><form class="material-draft-form"><label>知识标题<input name="title" maxlength="100" value="${esc(draft.title||'')}" ${editable?'':'readonly'}></label><label>知识内容<textarea name="contentMarkdown" rows="18" ${editable?'':'readonly'}>${esc(draft.contentMarkdown||'')}</textarea></label>${uncertain.length?`<div class="notice warn"><b>需要人工确认（不会自动加入正文）</b><ul>${uncertain.map(item=>`<li>${esc(item)}</li>`).join('')}</ul></div>`:''}<div class="muted">来源素材：${esc(draft.materialFilename||'—')} · 生成时间：${fmt(draft.createdAt)}</div><div class="confirm-actions"><button class="btn secondary material-draft-close" type="button">关闭</button>${editable?'<button class="btn" type="submit">保存修改</button>':''}</div></form></div>`;
-  const close=()=>{window.removeEventListener('keydown',onKeyDown);overlay.remove()};
-  const onKeyDown=event=>{if(event.key==='Escape')close()};
-  overlay.addEventListener('click',event=>{if(event.target===overlay||event.target.closest('.material-draft-close'))close()});
-  const form=overlay.querySelector('form');
-  if(editable)form.onsubmit=async event=>{event.preventDefault();const submit=form.querySelector('button[type=submit]');submit.disabled=true;submit.textContent='正在保存…';try{const values=new FormData(form);await api(`/api/material-knowledge-drafts/${draft.id}`,{method:'PUT',body:JSON.stringify({title:String(values.get('title')||'').trim(),contentMarkdown:String(values.get('contentMarkdown')||'').trim()})});close();toast('知识草稿已保存');renderRagKnowledge()}catch(error){toast(error.message||'保存知识草稿失败',true);submit.disabled=false;submit.textContent='保存修改'}};
-  document.body.appendChild(overlay);
-  window.addEventListener('keydown',onKeyDown);
-}
-function ragReleaseStatusText(status){return ({BUILDING:'构建中',PUBLISHED:'已发布',FAILED:'发布失败',ROLLED_BACK:'已回滚'}[String(status||'').toUpperCase()]||statusName(status)||status||'未知状态')}
-function ragReleaseView(item={},activeId=null){
-  const releaseId=String(item.releaseId||item.release_id||'').trim();
-  const status=String(item.status||'').toUpperCase();
-  const published=['PUBLISHED','ROLLED_BACK'].includes(status);
-  const active=Boolean(releaseId)&&releaseId===activeId;
-  const label=active?'当前正式版本':published?'历史版本':ragReleaseStatusText(status);
-  const badgeClass=active?'success':published?'disabled':status.toLowerCase();
-  return {releaseId,canRollback:Boolean(releaseId)&&published&&!active,badge:`<span class="badge ${esc(badgeClass)}">${esc(label)}</span>`};
-}
-function clearRagKnowledgePoll(){if(ragKnowledgePollTimer){clearTimeout(ragKnowledgePollTimer);ragKnowledgePollTimer=null}}
-function ragUploadFormHasDraft(){const form=$('#ragDocumentUpload');if(!form)return false;const active=document.activeElement;if(active&&form.contains(active))return true;return Boolean(form.elements.file?.files?.length)}
-function trackRagLifecycleChanges(documents=[],releases=[]){
-  documents.forEach(item=>{const key=`${item.documentId}:${Number(item.documentVersion)||1}`;const status=String(item.status||'').toUpperCase();const previous=ragDocumentStatusCache.get(key);ragDocumentStatusCache.set(key,status);if(String(item.documentId)===String(state.ragCurrentDocumentId)&&Number(item.documentVersion||1)===Number(state.ragCurrentDocumentVersion||1)){if(['UPLOADED','PROCESSING'].includes(status))state.ragUploadStage=status;else if(status==='READY_FOR_TEST')state.ragUploadStage='READY_FOR_TEST';else if(status==='FAILED'||status==='PROCESS_FAILED')state.ragUploadStage='FAILED'}if(previous&&previous!==status){if(status==='READY_FOR_TEST'){state.xiaozhiOptions=null;toast(`文档“${unifiedRagDocumentLabel(item.title||item.filename||item.documentId,item)}”已经处理完成，可以进入小智测试`)}else if(status==='FAILED'||status==='PROCESS_FAILED')toast(`文档“${unifiedRagDocumentLabel(item.title||item.filename||item.documentId,item)}”处理失败，请查看错误信息`,true)}});
-  if(state.ragCurrentDocumentId&&!documents.some(item=>String(item.documentId)===String(state.ragCurrentDocumentId)&&Number(item.documentVersion||1)===Number(state.ragCurrentDocumentVersion||1))){state.ragCurrentDocumentId=null;state.ragCurrentDocumentVersion=null;state.ragUploadStage='IDLE'}
-  releases.forEach(item=>{const releaseId=item.releaseId||item.release_id;if(!releaseId)return;const status=String(item.status||'').toUpperCase();const previous=ragReleaseStatusCache.get(releaseId);ragReleaseStatusCache.set(releaseId,status);if(previous&&previous!==status){if(status==='PUBLISHED'){state.xiaozhiOptions=null;toast(`发布版本 ${releaseId} 已成功启用到正式用户端`)}else if(status==='FAILED')toast(`发布版本 ${releaseId} 构建失败，未启用到正式用户端`,true)}})
-}
-function scheduleRagKnowledgePoll(documents=[],releases=[]){
-  clearRagKnowledgePoll();
-  const pending=documents.some(item=>['UPLOADED','PROCESSING'].includes(String(item.status||'').toUpperCase()))||releases.some(item=>String(item.status||'').toUpperCase()==='BUILDING');
-  if(!pending)return;
-  ragKnowledgePollTimer=setTimeout(async()=>{ragKnowledgePollTimer=null;if(state.page!=='knowledge'||state.knowledgeView!=='rag')return;if(document.hidden||ragUploadFormHasDraft()){scheduleRagKnowledgePoll(documents,releases);return}try{await renderRagKnowledge()}catch{scheduleRagKnowledgePoll(documents,releases)}},2500)
-}
-async function renderRagKnowledge(){
-  clearRagKnowledgePoll();
+async function loadRagKnowledgeData(){
   const statusData=await api('/api/rag/status');
   const rag=statusData.rag||{};
-  if(!rag.enabled||!rag.configured){
-    $('#content').innerHTML=`${renderKnowledgeTabs()}<div class="panel"><div class="panel-head"><div><h2>知识文档与发布</h2><p>知识库服务尚未启用。</p></div></div><div class="notice warn">请先完成本地知识库服务配置，配置完成后运营人员即可在这里上传资料。</div></div>`;
-    bindKnowledgeTabs();return;
-  }
-  const [documentData,releaseData,draftData]=await Promise.all([api('/api/rag/documents'),api('/api/rag/releases'),api('/api/material-knowledge-drafts')]);
-  const allDocuments=documentData.documents||[];
-  const drafts=(draftData.drafts||[]).sort((a,b)=>(Date.parse(b.createdAt||b.updatedAt||'')||0)-(Date.parse(a.createdAt||a.updatedAt||'')||0));
-  const documentSortTime=item=>Date.parse(item.versionCreatedAt||item.version_created_at||item.createdAt||item.created_at||item.updatedAt||item.updated_at||'')||0;
-  const documents=allDocuments.filter(item=>!isLegacyPlatformMigrationDocument(item)).sort((a,b)=>documentSortTime(b)-documentSortTime(a));
-  const releases=releaseData.releases||[];
-  const activeId=releaseData.active?.release_id||releaseData.active?.releaseId||null;
-  const activeMembersData=activeId?await api(`/api/rag/releases/${encodeURIComponent(activeId)}/members`):{members:[]};
-  const activeMembers=Array.isArray(activeMembersData.members)?activeMembersData.members:[];
-  trackRagLifecycleChanges(allDocuments,releases);
-  const documentByKey=new Map(allDocuments.map(item=>[`${item.documentId}:${Number(item.documentVersion)||1}`,item]));
-  const appliedFiles=[...new Map(activeMembers.map(member=>{
-    const documentId=member.documentId||member.document_id;
-    const documentVersion=Number(member.documentVersion||member.document_version||1);
-    const key=`${documentId}:${documentVersion}`;
-    const source=documentByKey.get(key);
-    return [key,{documentId,documentVersion,filename:source?.filename||source?.title||member.filename||member.title||documentId,chunkCount:0}];
-  })).values()];
-  activeMembers.forEach(member=>{
-    const key=`${member.documentId||member.document_id}:${Number(member.documentVersion||member.document_version||1)}`;
-    const file=appliedFiles.find(item=>`${item.documentId}:${item.documentVersion}`===key);
-    if(file)file.chunkCount+=1;
-  });
-  appliedFiles.sort((a,b)=>String(a.filename).localeCompare(String(b.filename),'zh-CN'));
-  const draftCards=drafts.map(item=>{const status=String(item.status||'').toUpperCase();const failed=status==='FAILED';return `<article class="rag-document-card material-knowledge-draft-card ${failed?'is-failed':''}"><div class="meta"><span>${badge(item.status)} <b>${esc(item.title||'视频知识内容')}</b></span><span>AI生成草稿</span></div><p>来源素材：${esc(item.materialFilename||'—')}</p><div class="muted">${Number(item.keyFacts?.length||0)} 个关键知识点 · ${Number(item.faqs?.length||0)} 组常见问题 · ${Number(item.uncertainFacts?.length||0)} 项需要人工确认 · ${materialKnowledgeDraftStatusText(item.status)} · ${fmt(item.createdAt)}</div>${item.errorMessage?`<div class="notice error">${esc(item.errorMessage)}</div>`:''}<div class="button-row compact"><button class="btn secondary material-draft-view" type="button" data-draft-id="${item.id}">查看内容</button><button class="btn secondary material-draft-edit" type="button" data-draft-id="${item.id}">编辑</button><button class="btn secondary material-draft-regenerate" type="button" data-draft-id="${item.id}">重新生成</button><button class="btn material-draft-import" type="button" data-draft-id="${item.id}">加入知识库</button><button class="btn danger material-draft-delete" type="button" data-draft-id="${item.id}">删除</button></div></article>`}).join('');
-  const documentCards=documents.map(item=>{const status=String(item.status||'').toUpperCase();const version=Number(item.documentVersion)||1;const lifecycle=ragDocumentLifecycle(item,releases,activeMembers);return `<article class="rag-document-card rag-document-selectable" tabindex="0" data-document-id="${esc(item.documentId)}" data-version="${version}" aria-label="查看${esc(unifiedRagDocumentLabel(item.filename||item.title||item.documentId,item))}的处理进度"><div class="meta"><span>${badge(lifecycle.status)} <b>${esc(unifiedRagDocumentLabel(item.title||item.filename||item.documentId,item))}</b></span><span>v${version}</span></div><p>${esc(unifiedRagDocumentLabel(item.filename||'—',item))}</p><div class="muted">统一知识库 · 文档 ID：${esc(item.documentId)} · ${esc(lifecycle.status==='TESTED'?'已测试':ragDocumentStatusText(item.status))} · 更新于 ${fmt(item.updatedAt||item.createdAt)}</div>${item.error?`<div class="notice error">${esc(item.error.message||item.error.code||'文档处理失败')}</div>`:''}<div class="button-row compact"><button class="btn secondary rag-document-refresh" type="button" data-document-id="${esc(item.documentId)}" data-version="${version}">刷新状态</button><button class="btn secondary rag-document-content" type="button" data-document-id="${esc(item.documentId)}" data-version="${version}">查看内容</button>${status==='READY_FOR_TEST'?`<button class="btn rag-document-test" type="button" data-document-id="${esc(item.documentId)}" data-version="${version}">到小智测试</button>`:''}<button class="btn danger rag-document-delete" type="button" data-document-id="${esc(item.documentId)}" data-version="${version}" data-filename="${esc(item.filename||item.title||'知识文档')}" ${['UPLOADED','PROCESSING'].includes(status)?'disabled':''}>删除</button></div></article>`}).join('');
-  ragReleaseBadgeCache.clear();
-  const releaseCards=releases.map(item=>{const {releaseId,canRollback,badge:statusBadge}=ragReleaseView(item,activeId);ragReleaseBadgeCache.set(releaseId,statusBadge);return `<article class="rag-release-card"><div class="meta"><span>${statusBadge} <b>${esc(releaseId)}</b></span><span>${fmt(item.publishedAt||item.createdAt)}</span></div><p>知识版本：${esc(item.knowledgeVersion||'构建中')}</p><div class="muted">启用测试 ${Number(item.enabledTestCaseCount||0)} 条 · 不启用 ${Number(item.disabledTestCaseCount||0)} 条 · 发布人 ${esc(item.publishedBy||'—')}</div>${item.error?`<div class="notice error">${esc(item.error.message||item.error.code||'发布失败')}</div>`:''}<div class="button-row compact rag-release-actions"><button class="btn secondary rag-release-details" type="button" data-release-id="${esc(releaseId)}">详情</button>${canRollback?`<button class="btn secondary rag-release-rollback" type="button" data-release-id="${esc(releaseId)}">回滚到此版本</button>`:''}</div></article>`}).join('');
-  document.querySelectorAll('.rag-release-detail-overlay').forEach(overlay=>{const status=overlay.querySelector('.rag-release-detail-status');const statusBadge=ragReleaseBadgeCache.get(overlay.dataset.releaseId);if(status&&statusBadge)status.innerHTML=statusBadge});
-  const appliedFileCards=appliedFiles.map(item=>`<article class="rag-applied-file-card"><div class="rag-applied-file-icon">▤</div><div class="rag-applied-file-copy"><b>${esc(unifiedRagDocumentLabel(item.filename,item))}</b><small>文档 ID：${esc(item.documentId)} · v${item.documentVersion} · 已应用 ${item.chunkCount} 个内容片段</small></div><span class="badge success">用户端生效</span></article>`).join('');
-  const selectedDocument=documents.find(item=>sameRagDocument(item,{documentId:state.ragCurrentDocumentId,documentVersion:state.ragCurrentDocumentVersion}))||documents[0];
-  $('#content').innerHTML=`${renderKnowledgeTabs()}<section class="rag-knowledge-page"><div class="knowledge-import-workspace rag-upload-workspace"><div class="panel knowledge-import-panel"><div class="panel-head knowledge-import-head"><div><h2>文档批量导入</h2><p>选择资料后直接上传，系统会自动解析并放入待测试区。</p></div><span class="badge success">服务正常</span></div><div id="ragDocumentProgress" aria-live="polite">${renderRagDocumentProgress(selectedDocument,releases,activeMembers)}</div><div class="knowledge-template-tip"><span class="knowledge-template-tip-icon">i</span><span><b>所有资料进入同一个知识库</b><small>无需填写额外信息，系统直接使用原文件名识别资料。</small></span></div><form id="ragDocumentUpload" class="knowledge-upload-form"><input id="ragDocumentFile" name="file" class="knowledge-file-input" type="file" accept=".pdf,.docx,.xlsx,.txt,.md,.markdown,.csv,.tsv,.json,.jsonl" required><label id="ragUploadZone" class="knowledge-file-picker" for="ragDocumentFile"><span class="knowledge-upload-icon">⇧</span><span class="knowledge-upload-copy"><b id="ragDocumentFileName">点击选择或拖拽知识文档</b><small>PDF、DOCX、XLSX、TXT、MD、CSV、TSV、JSON · 最大 50MB</small></span><span class="knowledge-choose-file">选择文件</span></label><button class="btn knowledge-upload-submit" type="submit">上传并开始处理</button></form><div class="clean-note">上传后不会直接应用到用户端。文档处理完成后，请先进入“小智”测试，确认满意后再发布。</div></div><div class="panel knowledge-preview-panel"><div class="panel-head"><div><h2>文档处理与测试</h2><p>查看资料处理状态；达到“可测试”后可直接进入小智验证。</p></div><span class="muted">${drafts.length} 个AI草稿 · ${documents.length} 个文档</span></div><div class="rag-card-grid rag-document-list">${draftCards?`<div class="rag-list-section-label"><b>AI生成草稿</b><span>确认后才会加入统一知识库</span></div>${draftCards}`:''}${documentCards?`<div class="rag-list-section-label"><b>已上传文档</b><span>按最新时间排序</span></div>${documentCards}`:''}${!draftCards&&!documentCards?'<div class="empty">还没有知识草稿或上传文档。</div>':''}</div></div></div><div class="panel"><div class="panel-head"><div><h2>知识库发布版本</h2><p>测试并确认后的资料发布后，供所有平台共同使用。</p></div><button class="btn secondary" id="ragReleaseRefresh">刷新版本</button></div><div class="notice">当前正式版本：<b>${esc(activeId||'暂无')}</b></div><div class="rag-card-grid">${releaseCards||'<div class="empty">暂无发布版本。</div>'}</div></div><div class="panel rag-applied-panel"><div class="panel-head"><div><h2>已应用到用户端的文件</h2><p>${activeId?`以下文件属于当前正式版本 ${esc(activeId)}，已供所有平台共同使用。`:'当前还没有正式发布版本，文件发布后会显示在这里。'}</p></div><span class="badge ${activeId?'success':'disabled'}">${activeId?'正式生效':'尚未生效'}</span></div><div class="rag-applied-file-list">${appliedFileCards||'<div class="empty">暂无已应用到用户端的文件。</div>'}</div></div></section>`;
-  bindKnowledgeTabs();
-  if(selectedDocument)selectRagProgressDocument(selectedDocument,releases,activeMembers);
-  document.querySelectorAll('.rag-document-selectable').forEach(card=>{
-    const select=()=>{const item=documents.find(entry=>sameRagDocument(entry,{documentId:card.dataset.documentId,documentVersion:card.dataset.version}));selectRagProgressDocument(item,releases,activeMembers)};
-    card.onclick=event=>{if(!event.target.closest('button,a,input,select,textarea'))select()};
-    card.onkeydown=event=>{if(event.target===card&&['Enter',' '].includes(event.key)){event.preventDefault();select()}};
-  });
-  const uploadForm=$('#ragDocumentUpload');
-  const uploadInput=$('#ragDocumentFile');
-  const uploadZone=$('#ragUploadZone');
-  const updateUploadFile=file=>{const name=$('#ragDocumentFileName');if(name)name.textContent=file?file.name:'点击选择或拖拽知识文档';uploadZone?.classList.toggle('has-file',Boolean(file))};
-  uploadInput.onchange=()=>updateUploadFile(uploadInput.files?.[0]||null);
-  ['dragenter','dragover'].forEach(type=>uploadZone.addEventListener(type,event=>{event.preventDefault();uploadZone.classList.add('is-dragging')}));
-  ['dragleave','drop'].forEach(type=>uploadZone.addEventListener(type,event=>{event.preventDefault();uploadZone.classList.remove('is-dragging')}));
-  uploadZone.addEventListener('drop',event=>{const file=event.dataTransfer?.files?.[0];if(!file)return;const transfer=new DataTransfer();transfer.items.add(file);uploadInput.files=transfer.files;updateUploadFile(file)});
-  uploadForm.onsubmit=async event=>{event.preventDefault();const submit=uploadForm.querySelector('button[type=submit]');const file=uploadInput.files?.[0];if(!(file instanceof File)||!file.size)return toast('请选择要上传的知识文档',true);if(file.size>50*1024*1024)return toast('文件不能超过 50MB',true);submit.disabled=true;submit.textContent='正在上传…';try{const contentBase64=await browserFileBase64(file);const result=await api('/api/rag/documents',{method:'POST',body:JSON.stringify({filename:file.name,mimeType:file.type||'application/octet-stream',contentBase64})});const uploaded=result.document||{};state.ragCurrentDocumentId=uploaded.documentId||null;state.ragCurrentDocumentVersion=Number(uploaded.documentVersion)||1;state.ragUploadStage=String(uploaded.status||'PROCESSING').toUpperCase();state.xiaozhiOptions=null;toast('文档已上传，正在处理；完成后即可进入小智测试');renderRagKnowledge()}catch(error){toast(error.message||'上传失败',true);submit.disabled=false;submit.textContent='上传并开始处理'}};
-  document.querySelectorAll('.material-draft-view').forEach(button=>button.onclick=()=>{const draft=drafts.find(item=>Number(item.id)===Number(button.dataset.draftId));if(draft)showMaterialKnowledgeDraft(draft,false)});
-  document.querySelectorAll('.material-draft-edit').forEach(button=>button.onclick=()=>{const draft=drafts.find(item=>Number(item.id)===Number(button.dataset.draftId));if(draft)showMaterialKnowledgeDraft(draft,true)});
-  document.querySelectorAll('.material-draft-regenerate').forEach(button=>button.onclick=async()=>{button.disabled=true;button.textContent='正在重新生成…';try{await api(`/api/material-knowledge-drafts/${button.dataset.draftId}/regenerate`,{method:'POST',body:'{}'});toast('知识草稿已重新生成');renderRagKnowledge()}catch(error){toast(error.message||'重新生成失败',true);button.disabled=false;button.textContent='重新生成'}});
-  document.querySelectorAll('.material-draft-import').forEach(button=>button.onclick=async()=>{const draft=drafts.find(item=>Number(item.id)===Number(button.dataset.draftId));if(!draft||!window.confirm('确认将这份草稿加入统一知识库？\n加入后仍需经过小智测试和正式发布，才会应用到用户端。'))return;button.disabled=true;button.textContent='正在加入…';try{const result=await api(`/api/material-knowledge-drafts/${draft.id}/import`,{method:'POST',body:'{}'});const document=result.document||{};state.ragCurrentDocumentId=document.documentId||null;state.ragCurrentDocumentVersion=Number(document.documentVersion)||1;state.ragUploadStage=String(document.status||'PROCESSING').toUpperCase();state.xiaozhiOptions=null;toast('草稿已加入知识库，正在解析处理');renderRagKnowledge()}catch(error){toast(error.message||'加入知识库失败',true);renderRagKnowledge()}});
-  document.querySelectorAll('.material-draft-delete').forEach(button=>button.onclick=async()=>{const draft=drafts.find(item=>Number(item.id)===Number(button.dataset.draftId));if(!draft)return;const confirmed=await confirmDelete({title:'删除这份 AI 知识草稿？',message:draft.title||'视频知识内容',details:['只删除尚未加入知识库的本地草稿。','不会删除原视频和发布文案。'],confirmLabel:'删除草稿'});if(!confirmed)return;button.disabled=true;try{await api(`/api/material-knowledge-drafts/${draft.id}`,{method:'DELETE',body:'{}'});toast('知识草稿已删除');renderRagKnowledge()}catch(error){toast(error.message||'删除知识草稿失败',true);button.disabled=false}});
-  document.querySelectorAll('.rag-document-refresh').forEach(button=>button.onclick=async()=>{button.disabled=true;try{const data=await api(`/api/rag/documents/${encodeURIComponent(button.dataset.documentId)}?version=${encodeURIComponent(button.dataset.version)}`);if(data.document){const item=allDocuments.find(entry=>sameRagDocument(entry,data.document));if(item)Object.assign(item,data.document);selectRagProgressDocument(data.document,releases,activeMembers)}toast(`当前状态：${ragDocumentLifecycle(data.document,releases,activeMembers).detail}`);renderRagKnowledge()}catch(error){toast(error.message,true);button.disabled=false}});
-  document.querySelectorAll('.rag-document-content').forEach(button=>button.onclick=async()=>{button.disabled=true;try{const item=allDocuments.find(entry=>String(entry.documentId)===String(button.dataset.documentId)&&Number(entry.documentVersion||1)===Number(button.dataset.version||1));if(item){selectRagProgressDocument(item,releases,activeMembers);await showRagDocumentContent(item)}}finally{button.disabled=false}});
-  document.querySelectorAll('.rag-document-delete').forEach(button=>button.onclick=async()=>{const item=allDocuments.find(entry=>String(entry.documentId)===String(button.dataset.documentId)&&Number(entry.documentVersion||1)===Number(button.dataset.version||1));if(!item)return;const confirmed=await confirmDelete({title:'删除这份知识文件？',message:unifiedRagDocumentLabel(item.filename||item.title||'知识文档',item),details:['将同时删除该文件生成的解析内容和知识片段。','已经进入正式发布版本的文档不能直接删除。'],confirmLabel:'删除文件'});if(!confirmed)return;button.disabled=true;try{await api(`/api/rag/documents/${encodeURIComponent(item.documentId)}`,{method:'DELETE',body:'{}'});ragDocumentStatusCache.delete(`${item.documentId}:${Number(item.documentVersion)||1}`);if(String(state.ragCurrentDocumentId)===String(item.documentId)){state.ragCurrentDocumentId=null;state.ragCurrentDocumentVersion=null;state.ragUploadStage='IDLE'}if(String(state.xiaozhiSettings.selectedDocumentId)===String(item.documentId)){state.xiaozhiSettings={...state.xiaozhiSettings,selectedDocumentId:null,selectedDocumentVersion:null}}state.xiaozhiOptions=null;toast('知识文件已删除');renderRagKnowledge()}catch(error){toast(error.message||'删除文件失败',true);button.disabled=false}});
-  document.querySelectorAll('.rag-document-test').forEach(button=>button.onclick=()=>{const item=documents.find(entry=>sameRagDocument(entry,{documentId:button.dataset.documentId,documentVersion:button.dataset.version}));selectRagProgressDocument(item,releases,activeMembers);state.xiaozhiSettings={...state.xiaozhiSettings,scope:'pre_release',selectedDocumentId:button.dataset.documentId,selectedDocumentVersion:Number(button.dataset.version)||1};state.xiaozhiOptions=null;state.xiaozhiSession=null;state.xiaozhiChat=[];navigate('xiaozhi')});
-  document.querySelectorAll('.rag-release-details').forEach(button=>button.onclick=async()=>{const item=releases.find(entry=>String(entry.releaseId||entry.release_id)===String(button.dataset.releaseId));if(!item)return;button.disabled=true;try{await showRagReleaseDetails(item,activeId)}catch(error){toast(error.message||'读取发布版本详情失败',true)}finally{button.disabled=false}});
-  document.querySelectorAll('.rag-release-rollback').forEach(button=>button.onclick=async()=>{if(!window.confirm(`确认回滚到版本 ${button.dataset.releaseId}？`))return;button.disabled=true;try{await api(`/api/rag/releases/${encodeURIComponent(button.dataset.releaseId)}/rollback`,{method:'POST',body:JSON.stringify({note:'运营人员从 Web 管理端执行回滚'})});state.xiaozhiOptions=null;toast('回滚请求已提交');renderRagKnowledge()}catch(error){toast(error.message,true);button.disabled=false}});
-  $('#ragReleaseRefresh').onclick=()=>renderRagKnowledge();
-  scheduleRagKnowledgePoll(allDocuments,releases);
+  if(!rag.enabled||!rag.configured)return {rag};
+  return {rag,documentData:await api('/api/rag/files')};
+}
+async function renderRagKnowledge(prefetchedData=null){
+  const owner=capturePageOwner();
+
+  const data=prefetchedData||await loadRagKnowledgeData();
+  if(!ownsPageOwner(owner))return;
+  renderKnowledgeFiles($('#content'),{api,esc,fmt,toast,confirmDelete,data,isCurrent:()=>ownsPageOwner(owner),onRefresh:()=>renderRagKnowledge()});
 }
 
-const RAG_DEFAULT_ANSWER_PROFILE = Object.freeze({
-  assistantName: '智慧驱动答疑助手',
-  companyName: '智慧驱动',
-  stylePrompt: '',
-  greeting: '你好，有什么想了解的？直接问就好。',
-});
-
-async function renderRagAnswerProfile(){
-  clearRagKnowledgePoll();
-  $('#content').innerHTML=`${renderKnowledgeTabs()}<section class="panel"><div class="panel-head"><div><h2>回答风格</h2><p>调整助手的称呼和表达。保存后从下一次回答生效。</p></div></div><div class="rag-answer-profile-body" id="ragAnswerProfileBody"><p class="muted" role="status">正在加载已保存的设置…</p></div></section>`;
-  bindKnowledgeTabs();
-  const container=$('#ragAnswerProfileBody');
-  try{
-    const data=await api('/api/rag/answer-profile');
-    if(state.page!=='knowledge'||state.knowledgeView!=='persona'||!document.contains(container))return;
-    let saved=data.profile;
-    if(!saved||['assistantName','companyName','stylePrompt','greeting'].some(key=>typeof saved[key]!=='string'))throw new Error('设置格式不完整，请重新加载。');
-    container.innerHTML=`<form id="ragAnswerProfileForm" class="rag-answer-profile-form"><fieldset><label>助手称呼<input name="assistantName" required maxlength="60" value="${esc(saved.assistantName)}"></label><label>公司称呼<input name="companyName" required maxlength="80" value="${esc(saved.companyName)}"></label><label class="full">回答风格<textarea name="stylePrompt" maxlength="4000" rows="5" placeholder="例如：像耐心的同事一样，先直接回答，再补必要条件；少用套话。">${esc(saved.stylePrompt)}</textarea></label><label class="full">问候语<input name="greeting" required maxlength="240" value="${esc(saved.greeting)}"></label><p class="muted full">这些设置只调整表达，不更改知识依据、资料发布、检索范围或权限。助手仍会如实说明 AI 身份，不编造事实、已完成的动作或服务承诺。智慧驱动是公司称呼，周周有课是课程系列。</p><div class="button-row full"><button class="btn" type="submit">保存设置</button><button class="btn secondary" id="ragAnswerProfileCancel" type="button">取消修改</button><button class="btn secondary" id="ragAnswerProfileDefaults" type="button">填入默认值</button></div></fieldset><p id="ragAnswerProfileStatus" class="muted" role="status" aria-live="polite">已加载保存的设置。</p></form>`;
-    const form=container.querySelector('form');
-    const fields=form.querySelector('fieldset');
-    const status=form.querySelector('#ragAnswerProfileStatus');
-    const fill=profile=>Object.keys(RAG_DEFAULT_ANSWER_PROFILE).forEach(key=>{form.elements[key].value=profile[key]});
-    form.querySelector('#ragAnswerProfileCancel').onclick=()=>{fill(saved);status.textContent='已恢复保存的设置，未提交修改。'};
-    form.querySelector('#ragAnswerProfileDefaults').onclick=()=>{fill(RAG_DEFAULT_ANSWER_PROFILE);status.textContent='已填入默认值，点击“保存设置”后生效。'};
-    form.onsubmit=async event=>{
-      event.preventDefault();
-      if(fields.disabled||!form.reportValidity())return;
-      const profile=Object.fromEntries(Object.keys(RAG_DEFAULT_ANSWER_PROFILE).map(key=>[key,form.elements[key].value.trim()]));
-      fields.disabled=true;status.textContent='正在保存…';
-      try{
-        const response=await api('/api/rag/answer-profile',{method:'PUT',body:JSON.stringify(profile)});
-        if(!response.profile||Object.keys(RAG_DEFAULT_ANSWER_PROFILE).some(key=>typeof response.profile[key]!=='string'))throw new Error('保存结果格式不完整，请重新加载核对。');
-        saved=response.profile;
-        fill(saved);
-        status.textContent='已保存，下次回答生效。知识资料和当前测试记录保持不变。';
-      }catch(error){status.textContent=`保存未确认，当前输入已保留，请重试或重新加载核对：${error.message}`}
-      finally{fields.disabled=false}
-    };
-  }catch(error){
-    if(!document.contains(container))return;
-    container.innerHTML=`<div class="notice warn" role="status">设置加载失败，尚未修改已保存内容。${esc(error.message)}</div><button class="btn secondary" id="ragAnswerProfileRetry" type="button">重新加载</button>`;
-    container.querySelector('#ragAnswerProfileRetry').onclick=()=>renderRagAnswerProfile();
-  }
+async function renderKnowledge(prefetchedData=null){
+  const owner=capturePageOwner(),view=state.knowledgeView;
+  const options={api,esc,isCurrent:()=>ownsPageOwner(owner)&&state.knowledgeView===view};
+  if(view==='persona')return renderAnswerProfile($('#content'),options);
+  if(view==='playground')return renderRagPlayground($('#content'),options);
+  return renderRagKnowledge(prefetchedData);
 }
-
-async function renderKnowledge(){
-  if(state.knowledgeView==='persona')return renderRagAnswerProfile();
-  if(state.knowledgeView==='handoff')return renderManualHandoffPhrases();
-  if(state.knowledgeView!=='rag')state.knowledgeView='rag';
-  return renderRagKnowledge();
-}
-async function renderLegacyKnowledge(){
-  const selectedCategory=state.knowledgeCategory;
-  const selectedSubcategory=state.knowledgeSubcategory;
-  const requests=[api('/api/knowledge/categories'),api('/api/knowledge/imports')];
-  if(selectedCategory){
-    let endpoint=selectedCategory==='__ALL__'?'/api/knowledge':`/api/knowledge?category=${encodeURIComponent(selectedCategory)}`;
-    if(selectedCategory!=='__ALL__'&&selectedSubcategory&&selectedSubcategory!=='__ALL__')endpoint+=`&subcategory=${encodeURIComponent(selectedSubcategory)}`;
-    requests.push(api(endpoint),api('/api/knowledge-aliases?limit=1000'),api('/api/knowledge-alias-generation-tasks?limit=500'));
-  }
-  const [categoryData,importsData,knowledgeData={knowledge:[]},aliasData={aliases:[]},aliasTaskData={tasks:[]}]=await Promise.all(requests);
-  state.knowledgeCategoryData=categoryData;
-  const categories=categoryData.categories||[];
-  const items=knowledgeData.knowledge||[];
-  const aliasesByKnowledge=new Map();for(const alias of aliasData.aliases||[]){const key=Number(alias.knowledge_id);if(!aliasesByKnowledge.has(key))aliasesByKnowledge.set(key,[]);aliasesByKnowledge.get(key).push(alias)}
-  const latestAliasTaskByKnowledge=new Map();for(const task of aliasTaskData.tasks||[]){const key=Number(task.knowledge_id);if(!latestAliasTaskByKnowledge.has(key))latestAliasTaskByKnowledge.set(key,task)}
-  const imports=importsData.imports||[];
-  const defaultSubcategory=categoryData.defaultSubcategory||'未分类';
-  const selectedCategoryInfo=categories.find(item=>item.name===selectedCategory);
-  const availableCategories=categoryData.systemCategories||[];
-  const publicCategory=availableCategories[0]||'公共知识库';
-  const categoryOptions=availableCategories.map(name=>`<option value="${esc(name)}" ${name===publicCategory?'selected':''}>${esc(name)}</option>`).join('');
-  const subcategoryMap=Object.fromEntries(categories.map(item=>[item.name,item.recentSubcategories||[]]));
-  const totalPublished=categories.reduce((sum,item)=>sum+item.published,0);
-  const totalDraft=categories.reduce((sum,item)=>sum+item.draft,0);
-  const totalDisabled=categories.reduce((sum,item)=>sum+item.disabled,0);
-  const knowledgeCards=items.length?items.map(k=>{const knowledgeAliases=aliasesByKnowledge.get(Number(k.id))||[];const enabledAliasCount=knowledgeAliases.filter(alias=>alias.status==='ENABLED').length;const aliasTask=latestAliasTaskByKnowledge.get(Number(k.id));const aliasState=['QUEUED','RUNNING'].includes(aliasTask?.status)?'生成中':aliasTask?.status==='FAILED'?'生成失败':knowledgeAliases.length?'已生成':'未生成';return `<div class="knowledge-card"><div class="meta"><span>知识 #${k.id} ${badge(k.status)} ${badge(k.review_status)} <span class="category-pill">${esc(k.category||publicCategory)}</span><span class="subcategory-pill">${esc(k.subcategory||defaultSubcategory)}</span></span><span>v${k.version}</span></div><div class="knowledge-question-row"><p><b>${esc(k.question)}</b></p><button class="knowledge-alias-manage ${aliasTask?.status==='FAILED'?'has-error':''}" type="button" data-id="${k.id}"><span>相似问法 ${enabledAliasCount}/${knowledgeAliases.length}</span><small>${aliasState}</small></button></div><p class="answer-text">${esc(k.answer)}</p><div class="muted">关键词：${esc(k.keywords||'—')} · 来源：${esc(k.source||'—')}${k.source_file?` · 文件：${esc(k.source_file)}`:''} · 审核人：${esc(k.reviewed_by||'—')}</div>${k.clean_notes?`<div class="clean-note">清洗记录：${esc(k.clean_notes)}</div>`:''}${k.match_status==='SIMILAR_REVIEW'&&k.matched_knowledge_id?`<div class="notice warn">与知识 #${k.matched_knowledge_id} 相似，发布前请核对是否需要合并。</div>`:''}<div class="section-actions"><button class="btn secondary edit-knowledge" type="button" data-id="${k.id}">编辑</button>${k.status==='DRAFT'?`<button class="btn publish-knowledge" data-id="${k.id}">审核发布</button>`:''}${k.status==='PUBLISHED'?`<button class="btn secondary disable-knowledge" data-id="${k.id}">停用</button>`:''}<button class="btn danger delete-knowledge" type="button" data-id="${k.id}" data-question="${esc(k.question)}">删除</button></div></div>`}).join(''):'<div class="empty">当前层级下暂无知识。</div>';
-  let categoryBrowser='';
-  if(!selectedCategory){
-    categoryBrowser=`<div class="panel knowledge-list-panel knowledge-category-overview"><div class="panel-head"><div><h2>知识大类</h2><p>历史分类仅用于运营整理和来源追踪；所有分类内容共享同一检索范围，不按平台隔离。六个大类固定不可新增或删除。</p></div><span class="muted">共 ${categoryData.total||0} 条</span></div><div class="knowledge-category-grid"><div class="knowledge-category-tile all-category-tile"><button class="knowledge-category-card all-category" type="button" data-category="__ALL__"><span class="category-card-icon">全</span><span class="category-card-main"><b>全部知识</b><small>已发布 ${totalPublished} · 草稿 ${totalDraft} · 停用 ${totalDisabled}</small></span><strong>${categoryData.total||0}</strong></button></div>${categories.map(item=>`<div class="knowledge-category-tile"><button class="knowledge-category-card" type="button" data-category="${esc(item.name)}"><span class="category-card-icon">${esc(item.name).slice(0,1)}</span><span class="category-card-main"><b>${esc(item.name)}</b><small>${(item.subcategories||[]).length} 个小类 · 已发布 ${item.published} · 草稿 ${item.draft}</small></span><strong>${item.total}</strong></button></div>`).join('')}</div>${categories.length?'':'<div class="empty">暂无知识分类，请先新增或导入知识。</div>'}</div>`;
-  }else if(selectedCategory==='__ALL__'){
-    categoryBrowser=`<div class="panel knowledge-list-panel"><div class="panel-head"><div><button class="ghost knowledge-back" type="button">← 返回大类列表</button><h2>全部知识</h2><p>当前知识库的全部内容。只有已审核发布的 PUBLISHED 知识可被千问检索使用。</p></div><span class="muted">共 ${items.length} 条</span></div><div class="card-list">${knowledgeCards}</div></div>`;
-  }else if(!selectedSubcategory){
-    const subcategories=selectedCategoryInfo?.subcategories||[];
-    categoryBrowser=`<div class="panel knowledge-list-panel"><div class="panel-head"><div><button class="ghost knowledge-back" type="button">← 返回大类列表</button><h2>${esc(selectedCategory)} · 小类</h2><p>选择小类后查看对应知识；该知识大类为系统固定范围，不可删除。</p></div><span class="muted">共 ${selectedCategoryInfo?.total||0} 条</span></div><div class="knowledge-category-grid subcategory-grid">${subcategories.map(item=>`<div class="knowledge-category-tile"><button class="knowledge-subcategory-card knowledge-category-card" type="button" data-subcategory="${esc(item.name)}"><span class="category-card-icon">${esc(item.name).slice(0,1)}</span><span class="category-card-main"><b>${esc(item.name)}</b><small>已发布 ${item.published} · 草稿 ${item.draft} · 停用 ${item.disabled}</small></span><strong>${item.total}</strong></button><button class="category-delete-button delete-subcategory" type="button" data-category="${esc(selectedCategory)}" data-subcategory="${esc(item.name)}" data-count="${item.total}" aria-label="删除小类 ${esc(item.name)}" title="删除该小类">删除</button></div>`).join('')}</div>${subcategories.length?'':'<div class="empty">该大类下暂无小类。</div>'}</div>`;
-  }else{
-    const displaySubcategory=selectedSubcategory==='__ALL__'?'全部小类':selectedSubcategory;
-    categoryBrowser=`<div class="panel knowledge-list-panel"><div class="panel-head"><div><button class="ghost knowledge-back-subcategory" type="button">← 返回“${esc(selectedCategory)}”小类列表</button><h2>${esc(selectedCategory)} / ${esc(displaySubcategory)}</h2><p>${selectedSubcategory==='__ALL__'?'当前显示该大类下全部知识。':'当前只显示该小类下的知识内容。'}只有已审核发布的 PUBLISHED 知识可被千问检索使用。</p></div><div class="panel-danger-actions"><span class="muted">共 ${items.length} 条</span>${selectedSubcategory==='__ALL__'?'':`<button class="btn danger delete-subcategory" type="button" data-category="${esc(selectedCategory)}" data-subcategory="${esc(selectedSubcategory)}" data-count="${items.length}">删除该小类</button>`}</div></div><div class="card-list">${knowledgeCards}</div></div>`;
-  }
-  $('#content').innerHTML=`${renderKnowledgeTabs()}<div class="knowledge-import-workspace">
-    <div class="panel knowledge-import-panel">
-      <div class="panel-head knowledge-import-head"><div><h2>文档批量导入</h2><p>上传文档后自动完成清洗、匹配去重和固定大类归档。</p></div>${badge('FILE_IMPORT')}</div>
-      ${renderKnowledgeImportFlow()}
-      <div class="knowledge-template-tip"><span class="knowledge-template-tip-icon">i</span><span><b>推荐使用 CSV 模板</b><small>大类仅可选择固定六类；小类可自定义并显示各大类最近 10 条。</small></span><a href="/api/knowledge/import/template">下载模板</a></div>
-      <form id="knowledgeImportForm" class="knowledge-upload-form"><input id="knowledgeImportFile" class="knowledge-file-input" type="file" accept=".csv,.tsv,.txt,.md,.docx,.xlsx" required><label id="knowledgeUploadZone" class="knowledge-file-picker" for="knowledgeImportFile"><span class="knowledge-upload-icon">⇧</span><span class="knowledge-upload-copy"><b id="knowledgeImportFileName">点击选择或拖拽知识文档</b><small>CSV、TSV、TXT、MD、DOCX、XLSX · 最大 8MB</small></span><span class="knowledge-choose-file">选择文件</span></label><button class="btn knowledge-upload-submit" type="submit">上传并智能预处理</button></form>
-      ${imports.length?`<details class="knowledge-import-history"><summary>最近导入记录 <span>${imports.length} 个批次</span></summary><div class="card-list compact">${imports.slice(0,5).map(item=>`<div class="mini-record"><span>${badge(item.status)} ${esc(item.file_name)}</span><small>${fmt(item.created_at)} · 识别${item.total_rows}条 · 导入${item.imported_rows||0}条</small></div>`).join('')}</div></details>`:''}
-      <details id="knowledgeCreateDetails" class="knowledge-create-accordion" ${state.knowledgeCreateExpanded?'open':''}><summary><span class="knowledge-create-plus">＋</span><span><b>单条新增知识</b><small>临时补充一条问答时使用，点击展开填写</small></span><span class="details-chevron">⌄</span></summary><div class="knowledge-create-body"><form id="knowledgeForm" class="knowledge-create-form"><label class="full"><span>标准问题</span><input name="question" maxlength="500" required placeholder="请输入用户可能提出的问题"></label><label class="full"><span>标准答案</span><textarea name="answer" rows="3" maxlength="5000" required placeholder="请输入统一回复内容"></textarea></label><label><span>关键词</span><input name="keywords" placeholder="多个关键词用逗号分隔"></label><label><span>知识大类</span><select id="knowledgeCategorySelect" name="category">${categoryOptions}</select></label><label><span>知识小类</span><select id="knowledgeSubcategorySelect" name="subcategory"></select></label><label id="customSubcategoryField" class="custom-category-field full" hidden><span>自定义小类名称</span><input id="customKnowledgeSubcategory" name="customSubcategory" maxlength="30" placeholder="例如：报名方式"><small>小类只归属于当前所选大类；候选最多显示该大类最近使用的 10 条。</small></label><div class="knowledge-create-actions full"><button class="btn" type="submit">保存草稿</button><button class="btn secondary" id="collapseKnowledgeCreate" type="button">收起</button></div></form></div></details>
-    </div>
-    <div class="panel knowledge-preview-panel"><div class="panel-head"><div><h2>预处理数据审核</h2><p>逐条展开查看，可勾选、修改，并将人工确认后的内容一键加入知识库。</p></div><div class="knowledge-review-actions"><button class="ghost knowledge-clear-preview" id="clearKnowledgeImportPreview" type="button" ${state.knowledgeImportPreview?'':'disabled'}>清空</button><span class="knowledge-review-tag">人工审核</span></div></div><div id="knowledgeImportPreview"></div></div>
-  </div>${categoryBrowser}`;
-  const categorySelect=$('#knowledgeCategorySelect');
-  const subcategorySelect=$('#knowledgeSubcategorySelect');const customSubcategoryField=$('#customSubcategoryField');const customSubcategoryInput=$('#customKnowledgeSubcategory');
-  const toggleCustomSubcategory=()=>{const custom=subcategorySelect.value==='__CUSTOM__';customSubcategoryField.hidden=!custom;customSubcategoryInput.required=custom;if(custom)setTimeout(()=>customSubcategoryInput.focus(),0)};
-  const fillSubcategories=()=>{const values=[...new Set([defaultSubcategory,...(subcategoryMap[categorySelect.value]||[])])];subcategorySelect.innerHTML=values.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join('')+'<option value="__CUSTOM__">＋ 自定义小类</option>';toggleCustomSubcategory()};
-  categorySelect.onchange=fillSubcategories;subcategorySelect.onchange=toggleCustomSubcategory;fillSubcategories();
-  const knowledgeCreateDetails=$('#knowledgeCreateDetails');
-  knowledgeCreateDetails.ontoggle=()=>{state.knowledgeCreateExpanded=knowledgeCreateDetails.open};
-  $('#collapseKnowledgeCreate').onclick=()=>{knowledgeCreateDetails.open=false;state.knowledgeCreateExpanded=false};
-  $('#knowledgeForm').onsubmit=async event=>{event.preventDefault();const values=Object.fromEntries(new FormData(event.target));if(values.subcategory==='__CUSTOM__'&&!String(values.customSubcategory||'').trim())return toast('请填写自定义小类名称',true);const button=event.target.querySelector('button[type="submit"]');button.disabled=true;button.textContent='正在保存…';try{const created=await api('/api/knowledge',{method:'POST',body:JSON.stringify(values)});state.knowledgeCategory=created.knowledge.category;state.knowledgeSubcategory=created.knowledge.subcategory;state.knowledgeCreateExpanded=false;toast(`知识草稿已保存到“${created.knowledge.category} / ${created.knowledge.subcategory}”`);renderKnowledge()}catch(error){toast(error.message,true);button.disabled=false;button.textContent='保存草稿'}};
-  const importInput=$('#knowledgeImportFile');
-  const uploadZone=$('#knowledgeUploadZone');
-  const updateImportFileName=file=>{const name=$('#knowledgeImportFileName');if(name)name.textContent=file?file.name:'点击选择或拖拽知识文档';uploadZone.classList.toggle('has-file',Boolean(file))};
-  const clearImportPreview=$('#clearKnowledgeImportPreview');
-  if(clearImportPreview)clearImportPreview.onclick=async()=>{if(!state.knowledgeImportPreview)return;const confirmed=await confirmDelete({title:'清空当前预处理数据？',message:'当前勾选和人工修改将被清除。',details:['已生成的导入批次记录不会删除。','如需继续审核，请重新上传文件。'],confirmLabel:'确认清空'});if(!confirmed)return;state.knowledgeImportPreview=null;state.knowledgeImportSelected=[];state.knowledgeImportExpanded=[];state.knowledgeImportDirty=[];state.knowledgeImportFilter='ALL';importInput.value='';updateImportFileName(null);setKnowledgeImportStage('IDLE');renderKnowledgeImportPreview(null);clearImportPreview.disabled=true;toast('已清空当前预处理数据')};
-  importInput.onchange=()=>{const file=importInput.files?.[0];updateImportFileName(file);setKnowledgeImportStage(file?'READY':'IDLE')};
-  ['dragenter','dragover'].forEach(type=>uploadZone.addEventListener(type,event=>{event.preventDefault();uploadZone.classList.add('is-dragging')}));
-  ['dragleave','drop'].forEach(type=>uploadZone.addEventListener(type,event=>{event.preventDefault();uploadZone.classList.remove('is-dragging')}));
-  uploadZone.addEventListener('drop',event=>{const file=event.dataTransfer?.files?.[0];if(!file)return;const transfer=new DataTransfer();transfer.items.add(file);importInput.files=transfer.files;updateImportFileName(file);setKnowledgeImportStage('READY')});
-  $('#knowledgeImportForm').onsubmit=async event=>{event.preventDefault();const file=importInput.files?.[0];if(!file)return toast('请选择知识文档',true);if(file.size>8*1024*1024)return toast('文件不能超过8MB',true);const button=event.target.querySelector('button[type=submit]');button.disabled=true;button.textContent='正在上传文件…';let failedStep='upload';setKnowledgeImportStage('UPLOADING');try{const base64=await fileToBase64(file);failedStep='clean';button.textContent='正在清洗和去重…';setKnowledgeImportStage('PROCESSING');const preview=await api('/api/knowledge/import/preview',{method:'POST',body:JSON.stringify({fileName:file.name,base64})});state.knowledgeImportPreview=preview;state.knowledgeImportSelected=(preview.items||[]).filter(item=>item.importable).map(item=>Number(item.rowNo));state.knowledgeImportExpanded=[];state.knowledgeImportDirty=[];state.knowledgeImportFilter='ALL';setKnowledgeImportStage(knowledgeImportStageForPreview(preview));renderKnowledgeImportPreview(preview);if(['QUEUED','RUNNING'].includes(preview.enrichment?.status))scheduleKnowledgeImportEnrichmentPoll(preview.batchId);toast(`已识别 ${preview.summary.total} 条知识${['QUEUED','RUNNING'].includes(preview.enrichment?.status)?'，千问正在补充缺失的关键词和分类':'，请逐条审核确认'}`)}catch(error){setKnowledgeImportStage('FAILED',{failedStep});toast(error.message,true)}finally{button.disabled=false;button.textContent='上传并智能预处理'}};
-  document.querySelectorAll('.knowledge-category-card:not(.knowledge-subcategory-card)').forEach(button=>button.onclick=()=>{state.knowledgeCategory=button.dataset.category;state.knowledgeSubcategory=null;renderKnowledge().then(()=>window.scrollTo({top:document.querySelector('.knowledge-list-panel')?.offsetTop||0,behavior:'smooth'})).catch(error=>toast(error.message,true))});
-  document.querySelectorAll('.knowledge-subcategory-card').forEach(button=>button.onclick=()=>{state.knowledgeSubcategory=button.dataset.subcategory;renderKnowledge().then(()=>window.scrollTo({top:document.querySelector('.knowledge-list-panel')?.offsetTop||0,behavior:'smooth'})).catch(error=>toast(error.message,true))});
-  document.querySelectorAll('.knowledge-back').forEach(button=>button.onclick=()=>{state.knowledgeCategory=null;state.knowledgeSubcategory=null;renderKnowledge()});
-  document.querySelectorAll('.knowledge-back-subcategory').forEach(button=>button.onclick=()=>{state.knowledgeSubcategory=null;renderKnowledge()});
-  document.querySelectorAll('.knowledge-alias-manage').forEach(button=>button.onclick=async()=>{
-    const item=items.find(entry=>entry.id===Number(button.dataset.id));if(!item)return;
-    try{const result=await knowledgeAliasSelectionDialog(item);if(!result)return;if(result.enabledIds){const saved=await api(`/api/knowledge/${item.id}/aliases/selections`,{method:'POST',body:JSON.stringify({enabledIds:result.enabledIds})});toast(`已启用 ${saved.selection.enabled} 条相似问法${saved.selection.skippedConflicts?`，${saved.selection.skippedConflicts} 条冲突问法未启用`:''}`)}renderKnowledge()}catch(error){toast(error.message,true)}
-  });
-  document.querySelectorAll('.edit-knowledge').forEach(button=>button.onclick=async()=>{
-    const item=items.find(entry=>entry.id===Number(button.dataset.id));if(!item)return toast('知识记录不存在，请刷新后重试',true);
-    const values=await editKnowledgeDialog(item,{availableCategories,subcategoryMap,defaultSubcategory});if(!values)return;
-    try{const result=await api(`/api/knowledge/${item.id}`,{method:'PUT',body:JSON.stringify({...values,editedBy:'业务人员编辑'})});if(selectedCategory!=='__ALL__'){state.knowledgeCategory=result.knowledge.category;state.knowledgeSubcategory=result.knowledge.subcategory}toast(`知识 #${item.id} 已更新为 v${result.knowledge.version}`);renderKnowledge()}catch(error){toast(error.message,true)}
-  });  document.querySelectorAll('.publish-knowledge').forEach(button=>button.onclick=async()=>{await api(`/api/knowledge/${button.dataset.id}/publish`,{method:'POST',body:JSON.stringify({reviewedBy:'技术部审核'})});toast('知识已发布');renderKnowledge()});
-  document.querySelectorAll('.disable-knowledge').forEach(button=>button.onclick=async()=>{await api(`/api/knowledge/${button.dataset.id}/disable`,{method:'POST',body:'{}'});toast('知识已停用');renderKnowledge()});
-  document.querySelectorAll('.delete-knowledge').forEach(button=>button.onclick=async()=>{const confirmed=await confirmDelete({title:'删除这条知识？',message:`问题：${button.dataset.question}`,details:['删除后无法恢复。'],confirmLabel:'删除知识'});if(!confirmed)return;try{await api(`/api/knowledge/${button.dataset.id}`,{method:'DELETE',body:'{}'});toast('该条知识已删除');renderKnowledge()}catch(error){toast(error.message,true)}});
-  document.querySelectorAll('.delete-subcategory').forEach(button=>button.onclick=async()=>{const category=button.dataset.category;const subcategory=button.dataset.subcategory;const count=Number(button.dataset.count||0);const confirmed=await confirmDelete({title:`删除小类“${subcategory}”？`,message:`将删除“${category}”大类下的这个小类。`,details:[`共 ${count} 条知识会被永久删除。`,'此操作不可恢复。'],requiredText:'删除',inputLabel:'请输入“删除”确认',confirmLabel:'删除小类'});if(!confirmed)return;try{const result=await api(`/api/knowledge/subcategories?category=${encodeURIComponent(category)}&subcategory=${encodeURIComponent(subcategory)}`,{method:'DELETE',body:JSON.stringify({confirmText:'删除'})});state.knowledgeSubcategory=null;toast(`已删除小类及 ${result.deleted} 条知识`);renderKnowledge()}catch(error){toast(error.message,true)}});
-  bindKnowledgeTabs();
-  renderKnowledgeImportPreview(state.knowledgeImportPreview);
-}
-
 function browserJson(value,fallback={}){if(value&&typeof value==='object')return value;try{return JSON.parse(value||'')||fallback}catch{return fallback}}
 function browserActionName(action){return ({HEALTH_CHECK:'连接自检',OPEN_PAGE:'打开页面',NAVIGATE:'页面导航',READ_PAGE_STATE:'读取页面状态',READ_TEXT:'读取文字',SCROLL:'滚动页面',SCREENSHOT:'保存截图',CLOSE_TAB:'关闭受管标签页',CLICK:'辅助点击',CLICK_AT:'坐标点击',SET_FILES:'准备本地文件'}[action]||action||'—')}
 function browserProviderName(provider){return ({web_access_cdp:'Web Access CDP',playwright:'Playwright'}[provider]||provider||'—')}
-async function renderKnowledgeAliases(){
-  const [aliasData,taskData,knowledgeData]=await Promise.all([api('/api/knowledge-aliases?limit=1000'),api('/api/knowledge-alias-generation-tasks?limit=500'),api('/api/knowledge')]);
-  const aliases=aliasData.aliases||[];const tasks=taskData.tasks||[];const allKnowledge=knowledgeData.knowledge||[];
-  const enabled=aliases.filter(item=>item.status==='ENABLED').length;const conflicts=aliases.filter(item=>item.validation_status==='CONFLICT').length;const running=tasks.filter(item=>['QUEUED','RUNNING'].includes(item.status)).length;
-  const aliasesByKnowledge=new Map();for(const alias of aliases){const key=Number(alias.knowledge_id);if(!aliasesByKnowledge.has(key))aliasesByKnowledge.set(key,[]);aliasesByKnowledge.get(key).push(alias)}
-  const latestTaskByKnowledge=new Map();for(const task of tasks){const key=Number(task.knowledge_id);if(!latestTaskByKnowledge.has(key))latestTaskByKnowledge.set(key,task)}
-  const knowledgeItems=allKnowledge.filter(item=>['DRAFT','PUBLISHED'].includes(item.status)||aliasesByKnowledge.has(Number(item.id))||latestTaskByKnowledge.has(Number(item.id))).sort((a,b)=>{const timeDiff=(new Date(b.created_at).getTime()||0)-(new Date(a.created_at).getTime()||0);return timeDiff||Number(b.id)-Number(a.id)});
-  const pad=value=>String(value).padStart(2,'0');
-  const dateInfo=value=>{const date=new Date(value);if(Number.isNaN(date.getTime()))return {key:'UNKNOWN',label:'日期未知',sort:0};return {key:`${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}`,label:`${date.getFullYear()}年${date.getMonth()+1}月${date.getDate()}日`,sort:new Date(date.getFullYear(),date.getMonth(),date.getDate()).getTime()}};
-  const sourceLabel=item=>item.source_file?`上传文件：${item.source_file}`:item.source==='FILE_IMPORT'?'批量导入':item.source==='MANUAL'?'单条新增':item.source==='SYSTEM_TEST'?'系统初始化/测试':item.source||'来源未记录';
-  const dateGroups=new Map();for(const item of knowledgeItems){const info=dateInfo(item.created_at);if(!dateGroups.has(info.key))dateGroups.set(info.key,{...info,items:[]});dateGroups.get(info.key).items.push(item)}
-  const sortedDateGroups=[...dateGroups.values()].sort((a,b)=>b.sort-a.sort);
-  const renderAliasDetail=alias=>`<div class="alias-detail-row ${alias.validation_status==='CONFLICT'?'has-conflict':''}"><div class="alias-detail-copy"><b>${esc(alias.alias_text)}</b><small>${alias.validation_status==='CONFLICT'?`跨知识冲突${alias.conflict?.question?` · 可能冲突：${esc(alias.conflict.question)}`:''}`:`来源 ${esc(alias.source||'AI')} · 置信度 ${Math.round(Number(alias.confidence||0)*100)}%`}</small></div><div class="alias-detail-actions">${badge(alias.status)}<button class="btn secondary alias-toggle" type="button" data-id="${alias.id}" data-action="${alias.status==='ENABLED'?'disable':'enable'}" ${alias.validation_status==='CONFLICT'?'disabled':''}>${alias.status==='ENABLED'?'停用':'启用'}</button><button class="btn danger alias-delete" type="button" data-id="${alias.id}">删除</button></div></div>`;
-  const renderKnowledgeRow=item=>{const itemAliases=aliasesByKnowledge.get(Number(item.id))||[];const itemEnabled=itemAliases.filter(alias=>alias.status==='ENABLED').length;const itemConflicts=itemAliases.filter(alias=>alias.validation_status==='CONFLICT').length;const task=latestTaskByKnowledge.get(Number(item.id));const taskState=['QUEUED','RUNNING'].includes(task?.status)?'生成中':task?.status==='FAILED'?'生成失败':itemAliases.length?'已生成':'未生成';return `<article class="alias-knowledge-card"><div class="alias-knowledge-row"><button class="alias-knowledge-main alias-manage" type="button" data-id="${item.id}"><span class="alias-knowledge-title"><b>${esc(item.question)}</b><small>知识 #${item.id} · ${esc(item.subcategory||'未分类')} · ${esc(sourceLabel(item))} · ${fmt(item.created_at)}</small></span><span class="alias-knowledge-count"><strong>${itemEnabled}/${itemAliases.length}</strong><small>已启用 / 总问法</small></span></button><div class="alias-knowledge-actions"><span class="alias-generation-state ${task?.status==='FAILED'?'is-error':['QUEUED','RUNNING'].includes(task?.status)?'is-running':''}">${esc(taskState)}${itemConflicts?` · ${itemConflicts} 条冲突`:''}</span><button class="btn secondary alias-manage" type="button" data-id="${item.id}">管理相似问法</button><button class="btn secondary alias-regenerate" type="button" data-id="${item.id}">重新生成</button></div></div>${itemAliases.length?`<details class="alias-detail-list"><summary>展开查看 ${itemAliases.length} 条问法明细</summary><div class="alias-detail-body">${itemAliases.map(renderAliasDetail).join('')}</div></details>`:`<div class="alias-no-detail">当前还没有相似问法，可点击“重新生成”。</div>`}</article>`};
-  const categoryOrder=['公共知识库','抖音知识库','视频号知识库','小红书知识库','微博知识库','B站知识库'];const categoryRank=new Map(categoryOrder.map((name,index)=>[name,index]));
-  const archives=sortedDateGroups.map((group,dateIndex)=>{const categoryGroups=new Map();for(const item of group.items){const category=item.category||'公共知识库';if(!categoryGroups.has(category))categoryGroups.set(category,[]);categoryGroups.get(category).push(item)}const groupAliases=group.items.reduce((sum,item)=>sum+(aliasesByKnowledge.get(Number(item.id))||[]).length,0);const files=[...new Set(group.items.map(item=>item.source_file).filter(Boolean))];const categories=[...categoryGroups.entries()].sort(([a],[b])=>(categoryRank.get(a)??999)-(categoryRank.get(b)??999)||a.localeCompare(b,'zh-CN')).map(([category,items],categoryIndex)=>{const categoryAliases=items.reduce((sum,item)=>sum+(aliasesByKnowledge.get(Number(item.id))||[]).length,0);const categoryFiles=[...new Set(items.map(item=>item.source_file).filter(Boolean))];return `<details class="alias-category-group" ${dateIndex===0&&categoryIndex===0?'open':''}><summary class="alias-category-summary"><span><b>${esc(category)}</b><small>${items.length} 条知识${categoryFiles.length?` · 上传 ${categoryFiles.length} 个文件`:''}</small></span><em>${categoryAliases} 条相似问法</em></summary><div class="alias-category-body">${items.map(renderKnowledgeRow).join('')}</div></details>`}).join('');return `<details class="alias-date-group" ${dateIndex===0?'open':''}><summary class="alias-date-summary"><span class="alias-date-mark">${group.key==='UNKNOWN'?'—':group.key.slice(8)}</span><span class="alias-date-copy"><b>${esc(group.label)}</b><small>${files.length?`上传文件：${files.map(esc).join('、')}`:'包含单条新增或系统初始化内容'}</small></span><span class="alias-date-count"><strong>${group.items.length}</strong><small>条知识 · ${groupAliases} 条问法</small></span></summary><div class="alias-date-body">${categories}</div></details>`}).join('');
-  const taskRows=tasks.slice(0,30).map(item=>`<div class="mini-record"><span>${badge(item.status)} <b>知识 #${item.knowledge_id}</b> ${esc(item.knowledge_question||'原知识已删除')}</span><small>生成 ${item.generated_count||0} 条 · ${fmt(item.updated_at)}${item.error_message?` · ${esc(item.error_message)}`:''}</small></div>`).join('');
-  $('#content').innerHTML=`<section class="settings-page-head"><div><span class="panel-kicker">SEMANTIC ALIAS LIBRARY</span><h2>相似问法库</h2><p>先按知识新增或上传日期归档，再按知识大类划分；默认只展开最新日期，不再把全部相似问法平铺出来。</p></div><div class="button-row"><button class="btn secondary" id="aliasRefresh">刷新</button><button class="btn" id="aliasGenerateAll">全部生成</button></div></section><div class="metric-grid alias-metric-grid"><div class="metric"><span>问法总数</span><strong>${aliases.length}</strong></div><div class="metric"><span>已启用</span><strong>${enabled}</strong></div><div class="metric"><span>冲突停用</span><strong>${conflicts}</strong></div><div class="metric"><span>生成中</span><strong>${running}</strong></div></div><section class="panel alias-archive-panel"><div class="panel-head"><div><h2>按新增日期归档</h2><p>点击日期展开当日内容，再按大类查看；点击知识问题或“管理相似问法”进行勾选。</p></div><span class="muted">${knowledgeItems.length} 条知识</span></div><div class="alias-archive">${archives||'<div class="empty">暂无可管理的知识或相似问法。</div>'}</div></section><details class="panel alias-task-history"><summary><span><b>最近生成任务</b><small>任务串行执行；知识删除或版本变化后，过期结果会自动丢弃。</small></span><em>${tasks.length} 条记录</em></summary><div class="card-list compact">${taskRows||'<div class="empty">暂无生成任务。</div>'}</div></details>`;
-  $('#aliasRefresh').onclick=()=>renderKnowledgeAliases();
-  $('#aliasGenerateAll').onclick=async()=>{const button=$('#aliasGenerateAll');button.disabled=true;try{const data=await api('/api/knowledge-aliases/generate-all',{method:'POST',body:'{}'});toast(`已排队 ${data.queued} 个生成任务`);setTimeout(()=>renderKnowledgeAliases(),800)}catch(error){toast(error.message,true);button.disabled=false}};
-  document.querySelectorAll('.alias-manage').forEach(button=>button.onclick=async()=>{const item=knowledgeItems.find(entry=>Number(entry.id)===Number(button.dataset.id));if(!item)return;try{const result=await knowledgeAliasSelectionDialog(item);if(result?.enabledIds){await api(`/api/knowledge/${item.id}/aliases/selections`,{method:'POST',body:JSON.stringify({enabledIds:result.enabledIds})});toast('相似问法启用选择已保存');renderKnowledgeAliases()}else if(result?.regenerating)setTimeout(()=>renderKnowledgeAliases(),800)}catch(error){toast(error.message,true)}});
-  document.querySelectorAll('.alias-toggle').forEach(button=>button.onclick=async event=>{event.stopPropagation();try{await api(`/api/knowledge-aliases/${button.dataset.id}/${button.dataset.action}`,{method:'POST',body:'{}'});renderKnowledgeAliases()}catch(error){toast(error.message,true)}});
-  document.querySelectorAll('.alias-regenerate').forEach(button=>button.onclick=async()=>{button.disabled=true;try{await api(`/api/knowledge/${button.dataset.id}/aliases/regenerate`,{method:'POST',body:'{}'});toast('已重新排队生成');setTimeout(()=>renderKnowledgeAliases(),500)}catch(error){toast(error.message,true);button.disabled=false}});
-  document.querySelectorAll('.alias-delete').forEach(button=>button.onclick=async()=>{if(!confirm('确认删除这条相似问法？不会删除标准知识。'))return;try{await api(`/api/knowledge-aliases/${button.dataset.id}`,{method:'DELETE'});renderKnowledgeAliases()}catch(error){toast(error.message,true)}});
+function bindBrowserStatusPanel(){
+  const panel=$('#browserStatusPanel');if(!panel)return;
+  const model=browserStatusModel(state.bootstrap),owner=capturePageOwner();
+  panel.dataset.browserSnapshot=JSON.stringify(model);
+  bindBrowserStatus(panel,model,{onAccounts:()=>navigate('platforms'),onIssues:()=>navigate('issues')});
+  const refresh=$('#browserRefresh');refresh.onclick=async()=>{refresh.disabled=true;refresh.textContent='刷新中…';try{if(await refreshBootstrap(owner))await renderBrowserControl()}catch(error){toast('状态刷新失败，请稍后重试',true)}finally{if(refresh.isConnected){refresh.disabled=false;refresh.textContent='刷新状态'}}};
+}
+function refreshBrowserStatusPanel(){
+  const panel=$('#browserStatusPanel');if(!panel||$('#browserRefresh')?.disabled||document.querySelector('dialog.browser-repair-dialog'))return;
+  const model=browserStatusModel(state.bootstrap);if(panel.dataset.browserSnapshot===JSON.stringify(model))return;
+  const active=document.activeElement,helpKey=active?.dataset.browserHelp,wasRefresh=active?.id==='browserRefresh';
+  const holder=document.createElement('div');holder.innerHTML=browserStatusMarkup(model);panel.replaceWith(holder.firstElementChild);bindBrowserStatusPanel();
+  if(wasRefresh)$('#browserRefresh').focus();else if(helpKey)[...document.querySelectorAll('[data-browser-help]')].find(button=>button.dataset.browserHelp===helpKey)?.focus();
 }
 async function renderBrowserControl(){
+  const owner=capturePageOwner();
   const [{browserControl:summary},{commands=[]}]=await Promise.all([api('/api/browser-control/summary'),api('/api/browser-control/commands?limit=100')]);
+  if(!ownsPageOwner(owner))return;
   const platforms=state.bootstrap?.platforms||[];
   const accounts=state.bootstrap?.accounts||[];
   const platformNames=new Map(platforms.map(item=>[item.code,item.name||item.display_name||item.code]));
@@ -3009,26 +2546,12 @@ async function renderBrowserControl(){
   const deviceCards=devices.length?devices.map(device=>{const cap=device.browserControl||{};const providers=Array.isArray(cap.providers)?cap.providers:[];return `<article class="browser-device-card"><div class="browser-device-head"><span class="browser-led ${device.status==='ONLINE'?'online':'offline'}"></span><div><b>${esc(device.name||`设备 #${device.id}`)}</b><small>${esc(device.status==='ONLINE'?'Local Agent 在线':'Local Agent 离线')} · ${fmt(device.last_heartbeat)}</small></div></div><dl><div><dt>控制模式</dt><dd>${esc(cap.mode||'尚未上报')}</dd></div><div><dt>主 Provider</dt><dd>${esc(browserProviderName(cap.primaryProvider||cap.defaultProvider))}</dd></div><div><dt>正式业务路由</dt><dd>${esc(cap.businessRouting||'尚未上报')}</dd></div><div><dt>兼容 / 回退</dt><dd>${esc(cap.fallbackProvider?`${browserProviderName(cap.fallbackProvider)}（仅故障回退）`:'已关闭')}</dd></div><div><dt>Provider</dt><dd>${esc(providers.map(item=>typeof item==='string'?item:(item.name||item.code||item.provider)).filter(Boolean).join('、')||'尚未上报')}</dd></div></dl></article>`}).join(''):'<div class="empty">尚未登记 Local Agent 设备。</div>';
   const runtimeCards=enabledPlatforms.map((code,index)=>{const info=runtimeByCode.get(code)||{};const runtime=info.runtime||{};const actual=info.actual||runtime.provider||null;const started=Boolean(runtime.startedAt||runtime.connected||runtime.contextConnected);const proxyPort=runtime.proxyPort||summary.cdpProxyPort||(3456+index);const debugPort=runtime.browserDebugPort||summary.browserDebugBasePort||(9310+index);return `<article class="browser-device-card"><div class="browser-device-head"><span class="browser-led ${started?'online':'offline'}"></span><div><b>${esc(platformNames.get(code)||code)}</b><small>${started?'Web Access 隔离运行时已连接':'按需启动，当前未占用浏览器'}</small></div></div><dl><div><dt>实际 Provider</dt><dd>${esc(actual?browserProviderName(actual):'待首次业务执行')}</dd></div><div><dt>执行层</dt><dd>${esc(runtime.compatibilityLayer||'Playwright connectOverCDP')}</dd></div><div><dt>Proxy / Debug</dt><dd>${esc(`${proxyPort} / ${debugPort}`)}</dd></div><div><dt>Profile 隔离</dt><dd><span class="browser-state on">是</span></dd></div>${runtime.lastError?`<div><dt>最近错误</dt><dd class="browser-command-error">${esc(runtime.lastError.message||runtime.lastError.code)}</dd></div>`:''}</dl></article>`}).join('')||'<div class="empty">尚未配置 Web Access 平台运行时。</div>';
   const rowsHtml=commands.length?commands.map(command=>{const result=command.result||{};const requested=result.providerRequested||command.provider;const used=result.providerUsed||result.provider||command.provider;const fallback=result.fallbackUsed?` · 已回退 ${browserProviderName(used)}`:'';const reason=result.fallbackReason?.message||result.fallbackReason?.code||'';const message=command.error_message||result.message||reason||'';return `<tr><td><b>#${command.id}</b><small>${fmt(command.created_at)}</small></td><td><span>${esc(platformNames.get(command.platform_code)||command.platform_code)}</span><small>${esc(accountNames.get(Number(command.account_id))||`账号 #${command.account_id}`)}</small></td><td><b>${esc(browserActionName(command.action))}</b><small>请求 ${esc(browserProviderName(requested))} · 实际 ${esc(browserProviderName(used))}${esc(fallback)}</small></td><td><code>${esc(command.session_id||'—')}</code><button class="browser-copy-session" type="button" data-session="${esc(command.session_id||'')}" ${command.session_id?'':'disabled'}>复制</button></td><td>${badge(command.status)}${command.confirmation_required?'<small class="browser-confirm-mark">需人工确认</small>':''}</td><td><span>${esc(command.evidence_ref||result.evidenceRef||'—')}</span>${message?`<small class="browser-command-error">${esc(statusName(message))}</small>`:''}</td></tr>`}).join(''):'<tr><td colspan="6"><div class="empty">尚无浏览器控制命令。建议先执行“连接自检”和只读诊断。</div></td></tr>';
+  const browserStatus=browserStatusModel(state.bootstrap);
   $('#content').innerHTML=`
-    <section class="browser-console-hero ${summary.enabled?'is-enabled':'is-disabled'}">
-      <div><span class="hero-kicker"><i></i>WEB ACCESS PRIMARY CONTROL</span><h2>Web Access 浏览器主控中心</h2><p>最新版正式业务统一由 Web Access 管理平台隔离浏览器与 CDP Proxy；发布、回复、登录检查、消息采集等业务仍保留原有审核、发布锁和回显确认，Playwright 只作为 connectOverCDP 兼容执行层及受控故障回退。</p></div>
-      <div class="browser-master-state"><span>${summary.enabled?'正式主控已启用':'主控未启用'}</span><b>${esc(browserProviderName(primaryProvider))}</b><small>${esc(mode)} · ${summary.interactiveEnabled?'交互动作受控开放':'诊断命令保持只读'}</small></div>
-    </section>
-    <section class="browser-summary-grid">
-      <article><span>正式业务路由</span><b class="${String(mode).includes('WEB_ACCESS')?'success':'warning'}">${esc(String(mode).includes('WEB_ACCESS')?'Web Access 主控':'未生效')}</b><small>${esc(businessRouting)}</small></article>
-      <article><span>主 Provider</span><b>${esc(browserProviderName(primaryProvider))}</b><small>平台浏览器和 CDP Proxy 管理</small></article>
-      <article><span>兼容 / 回退</span><b>${esc(fallbackProvider?browserProviderName(fallbackProvider):'关闭')}</b><small>connectOverCDP；非幂等失败不自动重试</small></article>
-      <article><span>排队 / 执行</span><b>${summary.queued} / ${summary.running}</b><small>结构化命令队列</small></article>
-      <article><span>待人工确认</span><b class="${summary.needsConfirmation?'warning':''}">${summary.needsConfirmation}</b><small>结果不确定时停止并等待人工复核</small></article>
-    </section>
-    ${summary.enabled?'':`<div class="notice warn browser-disabled-notice"><span class="notice-icon">!</span><div><b>Web Access 主控尚未启用</b><p>请在最新版服务和 Local Agent 同时启用 BROWSER_CONTROL_ENABLED、web_access_primary、平台白名单与风险确认后重启。</p></div></div>`}
-    <section class="panel">
-      <div class="panel-head"><div><span class="panel-kicker">PLATFORM RUNTIMES</span><h2>五平台隔离运行时</h2><p>每个平台使用独立 Profile、CDP Proxy 和浏览器调试端口；浏览器按需启动，不会在页面加载时一次性拉起五个实例。</p></div><button class="btn secondary" id="browserRefresh" type="button">刷新状态</button></div>
-      <div class="browser-device-grid">${runtimeCards}</div>
-    </section>
-    <div class="grid cols-2 browser-console-grid">
-      <section class="panel browser-command-panel">
-        <div class="panel-head"><div><span class="panel-kicker">SAFE COMMAND</span><h2>Web Access 诊断命令</h2><p>命令会强制请求 Web Access；即使历史调用指定 Playwright，主控模式也会重定向到 Web Access。</p></div></div>
+    ${browserStatusMarkup(browserStatus)}
+    <details id="browserMaintenance" class="preview-details browser-maintenance"><summary>维护详情</summary>
+      ${summary.enabled?'':'<p class="muted">高级检查未开启，日常任务使用现有浏览器。</p>'}
+      <section class="panel browser-command-panel"><div class="panel-head"><h2>高级检查</h2></div>
         <form id="browserCommandForm" class="browser-command-form">
           <fieldset ${summary.enabled?'':'disabled'}>
             <input type="hidden" name="provider" value="web_access_cdp">
@@ -3042,28 +2565,17 @@ async function renderBrowserControl(){
               <div class="field browser-selector-field" hidden><label>读取区域 Selector（可选）</label><input name="selector" placeholder="例如 main 或 .content"></div>
               <div class="field browser-scroll-field" hidden><label>滚动方式</label><select name="direction"><option value="down">向下</option><option value="up">向上</option><option value="top">回到顶部</option><option value="bottom">滚动到底部</option></select></div>
             </div>
-            <div class="browser-command-submit"><small>命令绑定设备、平台和账号并写入审计；非幂等动作失败后禁止自动切换 Provider 重试。</small><button class="btn" type="submit">提交 Web Access 命令</button></div>
+            <div class="browser-command-submit"><small>仅供维护人员检查。</small><button class="btn" type="submit">提交命令</button></div>
           </fieldset>
         </form>
       </section>
-      <section class="panel browser-boundary-panel">
-        <div class="panel-head"><div><span class="panel-kicker">CONTROL ARCHITECTURE</span><h2>正式控制体系</h2><p>Web Access 已替换原浏览器启动与会话管理主路径，原业务安全机制继续保留。</p></div></div>
-        <div class="browser-boundary-list">
-          <article class="allow"><b>Web Access 主控</b><p>接管发布、回复、登录检查、消息采集及诊断命令所需的平台浏览器、Profile 和 CDP 会话。</p></article>
-          <article><b>Playwright CDP 兼容层</b><p>平台已有定位器与回显验证代码通过 connectOverCDP 连接 Web Access 托管浏览器，不再默认自行启动浏览器。</p></article>
-          <article class="guard"><b>受控故障回退</b><p>仅在 Web Access 启动类故障且策略允许时回退；点击、上传、发布等非幂等动作失败后绝不自动换引擎重试。</p></article>
-          <article class="deny"><b>安全逻辑不替换</b><p>发布锁、人工审核、结果回显、验证码/密码/Cookie 禁读以及账号风控提示继续生效。</p></article>
-        </div>
+      <section class="panel"><div class="panel-head"><h2>浏览器信息</h2></div><div class="browser-device-grid">${runtimeCards}</div></section>
+      <section class="panel"><div class="panel-head"><h2>设备信息</h2></div><div class="browser-device-grid">${deviceCards}</div></section>
+      <section class="panel"><div class="panel-head"><h2>检查记录</h2><span class="browser-command-count">排队 ${Number(summary.queued)||0} · 执行 ${Number(summary.running)||0} · 待确认 ${Number(summary.needsConfirmation)||0}</span></div>
+        <div class="table-wrap browser-command-table"><table><thead><tr><th>命令</th><th>平台 / 账号</th><th>动作 / Provider</th><th>Session</th><th>状态</th><th>证据 / 说明</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
       </section>
-    </div>
-    <section class="panel">
-      <div class="panel-head"><div><span class="panel-kicker">LOCAL AGENT</span><h2>设备与主控能力</h2><p>以下为 Local Agent 心跳实际上报的控制模式、正式业务路由和 Provider 状态。</p></div></div>
-      <div class="browser-device-grid">${deviceCards}</div>
-    </section>
-    <section class="panel">
-      <div class="panel-head"><div><span class="panel-kicker">AUDIT TRAIL</span><h2>浏览器命令与证据</h2><p>显示请求 Provider、实际 Provider、故障回退、Session、证据引用和失败原因。</p></div><span class="browser-command-count">最近 ${commands.length} 条</span></div>
-      <div class="table-wrap browser-command-table"><table><thead><tr><th>命令</th><th>平台 / 账号</th><th>动作 / Provider</th><th>Session</th><th>状态</th><th>证据 / 说明</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
-    </section>`;
+    </details>`;
+  bindBrowserStatusPanel();
   const form=$('#browserCommandForm');
   const actionSelect=form?.elements.action;
   const platformSelect=form?.elements.platformCode;
@@ -3073,12 +2585,13 @@ async function renderBrowserControl(){
   if(actionSelect){actionSelect.onchange=syncBrowserFields;syncBrowserFields()}
   if(platformSelect){platformSelect.onchange=syncBrowserAccounts;syncBrowserAccounts()}
   if(form)form.onsubmit=async event=>{event.preventDefault();const button=form.querySelector('button[type="submit"]');button.disabled=true;try{const values=Object.fromEntries(new FormData(form));const params={};if(['OPEN_PAGE','NAVIGATE'].includes(values.action))params.url=values.url;if(values.action==='READ_TEXT'){params.selector=values.selector||'';params.maxChars=8000}if(values.action==='SCROLL'){params.direction=values.direction||'down';params.y=1200}const payload={platformCode:values.platformCode,accountId:Number(values.accountId),provider:'web_access_cdp',action:values.action,purpose:'DIAGNOSTIC',params,idempotencyKey:`web-console-${Date.now()}-${Math.random().toString(16).slice(2)}`};if(values.sessionId?.trim())payload.sessionId=values.sessionId.trim();const created=await api('/api/browser-control/commands',{method:'POST',body:JSON.stringify(payload)});toast(created.reused?'已复用相同 Web Access 命令':'Web Access 命令已进入安全队列');await renderBrowserControl()}catch(error){toast(error.message,true)}finally{button.disabled=false}};
-  const refresh=$('#browserRefresh');if(refresh)refresh.onclick=()=>renderBrowserControl().catch(error=>toast(error.message,true));
   document.querySelectorAll('.browser-copy-session').forEach(button=>button.onclick=async()=>{try{await navigator.clipboard.writeText(button.dataset.session);toast('Session ID 已复制')}catch{toast('无法复制，请手动选择 Session ID',true)}});
 }
 
 async function renderIssues(){
+  const owner=capturePageOwner();
   const items=(await api('/api/issues')).issues||[];
+  if(!ownsPageOwner(owner))return;
   const activeStatuses=new Set(['OPEN','DIAGNOSING','DIAGNOSED','RETRYING']);
   const cards=items.map(i=>{
     const active=activeStatuses.has(i.status);
@@ -3198,11 +2711,27 @@ function aiTokenDonut(summary={}){
   const donutBackground=total?`conic-gradient(#4f7cff 0 ${inputRatio}%,#35bea0 ${inputRatio}% 100%)`:'#e8edf4';
   return `<div class="ai-token-donut" style="--donut-background:${donutBackground}" role="img" aria-label="今日输入 Token ${input.toLocaleString('zh-CN')}，输出 Token ${output.toLocaleString('zh-CN')}"><div><b>${Number(summary.total_tokens||0).toLocaleString('zh-CN')}</b><span>Token</span></div></div><div class="ai-token-legend"><span><i class="input"></i>输入 <b>${input.toLocaleString('zh-CN')}</b><small>${total?inputRatio:0}%</small></span><span><i class="output"></i>输出 <b>${output.toLocaleString('zh-CN')}</b><small>${total?Math.round((100-inputRatio)*10)/10:0}%</small></span></div>`;
 }
-async function renderWecom(){
-  const [wecomData,aiData]=await Promise.all([api('/api/settings/wecom'),api('/api/settings/ai?limit=100')]);
+function captureSettingsDraft(form){
+  if(!form)return null;
+  const fields=[...form.elements].filter(field=>field.name&&!field.disabled);
+  const dirty=fields.some(field=>field.tagName==='SELECT'?field.value!==([...field.options].find(option=>option.defaultSelected)?.value||field.options[0]?.value):field.value!==field.defaultValue);
+  return dirty?Object.fromEntries(new FormData(form)):null;
+}
+function restoreSettingsDraft(form,draft){
+  if(!form||!draft)return;
+  for(const [name,value] of Object.entries(draft)){const field=form.elements.namedItem(name);if(field)field.value=value;}
+  form.dispatchEvent(new Event('input',{bubbles:true}));
+}
+async function renderWecom(prefetchedData=null,changedPanel=null){
+  const owner=capturePageOwner();
+  const [wecomData,aiData]=prefetchedData||await Promise.all([api('/api/settings/wecom'),api('/api/settings/ai?limit=100')]);
+  if(!ownsPageOwner(owner)||state.page!=='wecom')return;
+  const drafts={ai:changedPanel==='ai'?null:captureSettingsDraft($('#aiSettingsForm')),wecom:changedPanel==='wecom'?null:captureSettingsDraft($('#wecomForm'))};
   const settings=wecomData.settings||{};
   const notifications=wecomData.notifications||[];
   const ai=aiData.settings||{};
+  const aiConnection=aiConnectionPresentation(ai);
+  $('#qwenMode').textContent=ai.mode==='mock'?'AI：模拟模式':'AI：在线模式';
   const summary=aiData.summary||{};
   const logs=aiData.logs||[];
   const daily=aiData.daily||[];
@@ -3217,52 +2746,53 @@ async function renderWecom(){
   <section class="settings-page-head wecom-settings-hero">
     <div class="settings-hero-copy">
       <span class="settings-hero-icon">${iconSvg('wecom')}</span>
-      <div><span class="panel-kicker">WECOM & AI CONTROL</span><h2>企微及 AI</h2><p>集中管理企业微信通知通道与 AI 服务参数，配置状态、连接测试和调用消耗一目了然。</p></div>
+      <div><span class="panel-kicker">WECOM & AI CONTROL</span><h2>模型与通知</h2><p></p></div>
     </div>
-    <div class="settings-hero-status ${ai.mode==='online'&&ai.configured?'is-online':'is-standby'}"><span>AI 服务状态</span><b><i></i>${esc(aiModeName(ai.mode))}</b><small>${ai.mode==='online'&&ai.configured?'配置已就绪，可进行真实调用':'当前按配置模式运行'}</small></div>
+    <div class="settings-hero-status ${aiConnection.passed?'is-online':'is-standby'}"><span>AI 服务状态</span><b><i></i>${esc(aiModeName(ai.mode))}</b><small>${esc(aiConnection.label)}</small></div>
   </section>
   <section class="settings-config-flow-frame ${state.settingsConfigPanel?'is-expanded':''}" data-settings-config-frame>
     <div class="settings-config-strip" role="group" aria-label="通知与 AI 服务配置">
-      <button class="settings-config-toggle wecom ${state.settingsConfigPanel==='wecom'?'active':''}" type="button" data-settings-config-toggle="wecom" aria-label="${state.settingsConfigPanel==='wecom'?'收起':'展开'}企业微信群机器人配置" title="企业微信群机器人配置" aria-expanded="${state.settingsConfigPanel==='wecom'}" aria-controls="wecomSettingsDrawer">
+      <button class="settings-config-toggle wecom ${state.settingsConfigPanel==='wecom'?'active':''}" type="button" data-settings-config-toggle="wecom" aria-label="${state.settingsConfigPanel==='wecom'?'收起':'展开'}企业微信通知配置" title="企业微信通知配置" aria-expanded="${state.settingsConfigPanel==='wecom'}" aria-controls="wecomSettingsDrawer">
         <span class="settings-card-icon wecom">${iconSvg('wecom')}</span>
-        <span class="settings-toggle-copy"><small>NOTIFICATION CHANNEL</small><b>企业微信群机器人</b><em>${settings.configured?'通知通道已连接':'等待配置通知通道'}</em></span>
+        <span class="settings-toggle-copy"><small>NOTIFICATION CHANNEL</small><b>企业微信通知</b><em>${settings.configured?'通知通道已连接':'等待配置通知通道'}</em></span>
         <span class="settings-toggle-status ${settings.configured?'is-ready':'is-pending'}"><i></i>${settings.configured?'正常':'待配置'}</span>
         <span class="settings-toggle-action">${state.settingsConfigPanel==='wecom'?'收起':'展开'}</span><span class="settings-toggle-chevron" aria-hidden="true">⌄</span>
       </button>
       <button class="settings-config-toggle ai ${state.settingsConfigPanel==='ai'?'active':''}" type="button" data-settings-config-toggle="ai" aria-label="${state.settingsConfigPanel==='ai'?'收起':'展开'}AI 服务配置" title="AI 服务配置" aria-expanded="${state.settingsConfigPanel==='ai'}" aria-controls="aiSettingsDrawer">
         <span class="settings-card-icon ai">AI</span>
-        <span class="settings-toggle-copy"><small>AI SERVICE</small><b>AI 服务配置</b><em>${ai.mode==='online'&&ai.configured?'在线服务已就绪':ai.mode==='mock'?'当前使用模拟模式':'在线服务等待配置'}</em></span>
-        <span class="settings-toggle-status ${ai.mode==='online'&&ai.configured?'is-ready':ai.mode==='mock'?'is-info':'is-pending'}"><i></i>${ai.mode==='online'&&ai.configured?'正常':ai.mode==='mock'?'模拟':'待配置'}</span>
+        <span class="settings-toggle-copy"><small>AI SERVICE</small><b>AI 服务配置</b><em>${esc(aiConnection.label)}</em></span>
+        <span class="settings-toggle-status ${aiConnection.tone}"><i></i>${esc(aiConnection.short)}</span>
         <span class="settings-toggle-action">${state.settingsConfigPanel==='ai'?'收起':'展开'}</span><span class="settings-toggle-chevron" aria-hidden="true">⌄</span>
       </button>
     </div>
     <div id="wecomSettingsDrawer" class="settings-config-drawer wecom-settings-drawer" ${state.settingsConfigPanel==='wecom'?'':'hidden'}>
-      <div class="settings-drawer-heading"><div><span class="settings-card-eyebrow">NOTIFICATION CHANNEL</span><h2>企业微信群机器人</h2><p>用于风险转人工、账号异常和系统运行告警的群通知通道。</p></div>${settings.configured?badge('READY'):badge('PENDING')}</div>
+      <div class="settings-drawer-heading"><div><span class="settings-card-eyebrow">NOTIFICATION CHANNEL</span><h2>企业微信通知</h2><p>转人工与运行异常通知</p></div>${settings.configured?badge('READY'):badge('PENDING')}</div>
       <div class="settings-status-card ${settings.configured?'is-ready':'is-warning'}">
         <span class="settings-status-dot"></span>
         <div><b>${settings.configured?'通知通道已连接':'等待配置通知通道'}</b><p>${settings.configured?`Webhook：<code>${esc(settings.maskedUrl)}</code>`:'尚未填写机器人 Webhook，通知只会在系统内生成记录。'}</p><small>${settings.configured?`来源：${esc(sourceName)}${settings.updatedAt?` · 更新于 ${fmt(settings.updatedAt)}`:''}`:'未配置时会生成 SIMULATED 记录，不会实际发送到企业微信群。'}</small></div>
       </div>
       <form id="wecomForm" class="form-grid settings-form wecom-config-form">
-        <label class="full settings-field"><span class="settings-field-label">机器人 Webhook 地址</span><div class="settings-input-wrap"><span class="settings-input-prefix">URL</span><input type="password" name="webhookUrl" autocomplete="new-password" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." ${settings.configured?'':'required'}></div><small>完整地址不会回显；数据库采用 AES-256-GCM 加密保存。</small></label>
+        <label class="full settings-field"><span class="settings-field-label">机器人 Webhook 地址</span><div class="settings-input-wrap"><span class="settings-input-prefix">URL</span><input type="password" name="webhookUrl" autocomplete="new-password" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." ${settings.configured?'':'required'}></div><small>通知地址加密保存，不回显。</small></label>
         <label class="settings-field"><span class="settings-field-label">更新人</span><input name="updatedBy" value="技术部" maxlength="100" placeholder="填写配置维护人"></label>
         <div class="settings-mini-card" aria-label="Webhook 安全说明"><span>安全存储</span><b>AES-256-GCM</b><small>敏感地址加密保存，不写入普通日志</small></div>
         <div class="full button-row settings-form-actions"><button class="btn" type="submit">保存企微配置</button><button class="btn secondary" type="button" id="wecomTest" ${settings.configured?'':'disabled'}>发送测试消息</button><button class="btn danger" type="button" id="wecomClear" ${settings.source==='DATABASE'?'':'disabled'}>清除页面配置</button></div>
       </form>
     </div>
     <div id="aiSettingsDrawer" class="settings-config-drawer ai-settings-drawer" ${state.settingsConfigPanel==='ai'?'':'hidden'}>
-      <div class="settings-drawer-heading"><div><span class="settings-card-eyebrow">AI SERVICE</span><h2>AI 服务配置</h2><p>统一管理天河、知识库答案生成、微信客服和机器人聊天的模型。保存后，后续调用使用新配置。</p></div>${ai.mode==='online'&&ai.configured?badge('READY'):ai.mode==='mock'?badge('SIMULATED'):badge('PENDING')}</div>
-      <div class="settings-status-card ${ai.mode==='online'&&ai.configured?'is-ready':ai.mode==='mock'?'is-info':'is-warning'}">
+      <div class="settings-drawer-heading"><div><span class="settings-card-eyebrow">AI SERVICE</span><h2>AI 服务配置</h2><p>配置对话、知识回复与微信客服使用的模型。</p></div>${aiConnection.passed?badge('READY'):ai.mode==='mock'?badge('SIMULATED'):badge('PENDING')}</div>
+      <div class="settings-status-card ${aiConnection.tone}">
         <span class="settings-status-dot"></span>
-        <div><b>${ai.mode==='online'&&ai.configured?'在线服务已就绪':ai.mode==='mock'?'当前使用模拟模式':'在线服务等待配置'}</b><p>AI Key：<code>${ai.configured?esc(ai.maskedApiKey):'未配置'}</code></p><small>来源：${esc(aiSourceName)}${ai.updatedAt?` · 更新于 ${fmt(ai.updatedAt)}`:''}</small></div>
+        <div><b>${esc(aiConnection.label)}</b><p>AI Key：<code>${ai.configured?esc(ai.maskedApiKey):'未配置'}</code></p><small>来源：${esc(aiSourceName)}${ai.updatedAt?` · 更新于 ${fmt(ai.updatedAt)}`:''}</small><small>${esc(aiConnection.detail)}${ai.connectionTest?.testedAt?` · 测试于 ${fmt(ai.connectionTest.testedAt)}`:''}</small></div>
       </div>
       <form id="aiSettingsForm" class="form-grid ai-settings-grid settings-form">
         <label class="settings-field settings-select-field"><span class="settings-field-label">AI 调用模式</span><select name="mode"><option value="mock" ${ai.mode==='mock'?'selected':''}>模拟模式（不调用在线 AI）</option><option value="online" ${ai.mode==='online'?'selected':''}>在线调用</option></select></label>
         <label class="settings-field"><span class="settings-field-label">更新人</span><input name="updatedBy" value="技术部" maxlength="100" placeholder="填写配置维护人"></label>
         <div class="full ai-mode-card ${ai.mode==='online'?'is-online':'is-standby'}"><span class="ai-mode-card-icon">${ai.mode==='online'?'✓':'↗'}</span><div><b>${ai.mode==='online'?'Online 在线模式已启用':'需要使用真实 AI 能力？'}</b><p>${ai.mode==='online'?'当前会按下方模型配置进行真实调用。':'切换到 Online 模式后，确认 AI Key 与模型参数并保存。'}</p></div><button class="btn secondary" type="button" id="selectAiOnlineMode" ${ai.mode==='online'?'disabled':''}>${ai.mode==='online'?'已启用 Online 模式':'切换为 Online'}</button></div>
         <label class="full settings-field"><span class="settings-field-label">AI Key</span><div class="settings-input-wrap"><span class="settings-input-prefix">KEY</span><input type="password" name="apiKey" autocomplete="new-password" placeholder="${ai.configured?'留空表示保留当前 Key':'输入 AI Key'}"></div><small class="ai-key-status">完整 Key 不会回传页面或写入普通日志；${ai.configured?`当前仅显示 ${esc(ai.maskedApiKey)}`:'当前未配置'}。</small></label>
-        <label class="full settings-field"><span class="settings-field-label">Base URL</span><div class="settings-input-wrap"><span class="settings-input-prefix">API</span><input name="baseUrl" value="${esc(ai.baseUrl||'')}" required placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"></div></label>
-        <label class="settings-field"><span class="settings-field-label">对话模型</span><input name="model" value="${esc(ai.model||'')}" required placeholder="例如 qwen3.7-plus"></label>
-        <label class="settings-field"><span class="settings-field-label">视觉 / OCR 模型</span><input name="visionModel" value="${esc(ai.visionModel||'')}" required placeholder="例如 qwen3.5-ocr"></label>
+        <label class="full settings-field"><span class="settings-field-label">Base URL</span><div class="settings-input-wrap"><span class="settings-input-prefix">API</span><input name="baseUrl" value="${esc(ai.baseUrl||'')}" required placeholder="填写服务商提供的兼容接口地址，例如 https://api.example.com/v1"></div><small>仅向此地址查询模型。更换平台域名时需重新输入 Key，不会向其他平台试探。</small></label>
+        <div class="full settings-field"><div class="button-row"><button class="btn secondary" type="button" id="aiFetchModels">获取可用模型</button></div><small id="aiModelDiscoveryStatus" role="status" aria-live="polite">填写 Key 和接口地址后获取模型；不支持列表的平台仍可手动填写。获取列表不会保存配置。</small></div>
+        <label class="settings-field"><span class="settings-field-label">对话模型</span><select data-ai-model-picker="model" aria-label="选择可用对话模型" disabled><option value="">获取模型后可在此选择，也可在下方手动填写</option></select><input name="model" aria-label="手动填写对话模型 ID" value="${esc(ai.model||'')}" required placeholder="选择或手动填写模型 ID"><small>选择后仍可手动修改，保存后测试是否可调用。</small></label>
+        <label class="settings-field"><span class="settings-field-label">视觉 / OCR 模型</span><select data-ai-model-picker="visionModel" aria-label="选择可用视觉模型" disabled><option value="">获取模型后可在此选择，也可在下方手动填写</option></select><input name="visionModel" aria-label="手动填写视觉模型 ID" value="${esc(ai.visionModel||'')}" required placeholder="选择或手动填写视觉模型 ID"><small>此列表不区分能力，请选择服务商明确支持图片 / OCR 的模型。</small></label>
         <details class="full"><summary>专用模型（按需配置）</summary><div class="form-grid settings-form">
           <label class="settings-field"><span class="settings-field-label">音视频转文字模型</span><input name="asrModel" value="${esc(ai.modelOverrides?.asrModel||'')}" placeholder="${esc(ai.asrModel||'local:whisper-small')}"><small>本地识别填写 local:whisper-small，无需语音 API Key。DeepSeek 接口不支持千问语音识别。</small></label>
           <label class="settings-field"><span class="settings-field-label">音视频文案模型</span><input name="contentModel" value="${esc(ai.modelOverrides?.contentModel||'')}" placeholder="留空跟随对话模型"></label>
@@ -3271,12 +2801,13 @@ async function renderWecom(){
           <label class="settings-field"><span class="settings-field-label">微信知识库向量模型</span><input name="embeddingModel" value="${esc(ai.embeddingModel||'')}" placeholder="local:BAAI/bge-small-zh-v1.5"></label>
           <p class="full muted">微信原生知识库默认使用 local:BAAI/bge-small-zh-v1.5（本地 512 维向量）。改用其他向量模型时需同步机器人向量维度并重建索引。local: 模型在本机运行；在线专用模型共用上方接口和密钥，请填写服务商实际支持的模型。</p>
         </div></details>
-        <div class="full button-row settings-form-actions"><button class="btn" type="submit">保存 AI 配置</button><button class="btn secondary" type="button" id="aiConnectionTest" ${ai.mode==='online'&&!ai.configured?'disabled':''}>测试 AI 连接</button><button class="btn danger" type="button" id="aiKeyClear" ${ai.source==='DATABASE'?'':'disabled'}>清除 AI Key</button></div>
+        <small class="full" id="aiConnectionTestNote" role="status"></small>
+        <div class="full button-row settings-form-actions"><button class="btn" type="submit">保存 AI 配置</button><button class="btn secondary" type="button" id="aiConnectionTest" ${ai.mode==='online'&&!ai.configured?'disabled':''}>测试对话连接</button><button class="btn danger" type="button" id="aiKeyClear" ${ai.source==='DATABASE'?'':'disabled'}>清除 AI Key</button></div>
       </form>
     </div>
   </section>
   <div class="panel ai-usage-panel">
-    <div class="panel-head"><div><h2>AI 今日调用与 Token 成本</h2><p>用柱状图查看近 7 日每日调用量，并按官方 Token 单价估算今日输入、输出消费；模拟调用 Token 为 0。</p></div><span class="muted">今日 ${Number(summary.calls||0)} 次</span></div>
+    <div class="panel-head"><div><h2>调用记录</h2><p>费用按 Token 估算，模拟调用不计费。</p></div><span class="muted">今日 ${Number(summary.calls||0)} 次</span></div>
     <div class="ai-summary-grid"><article><span>今日调用</span><b>${Number(summary.calls||0)}</b></article><article><span>总 Token</span><b>${tokenValue(summary.total_tokens)}</b><small>输入 ${tokenValue(summary.input_tokens)} · 输出 ${tokenValue(summary.output_tokens)}</small></article><article class="cost"><span>今日 Token 估算费用</span><b>${aiCostValue(summary.estimated_cost_cny)}</b><small>${Number(summary.unpriced_tokens||0)>0?`${tokenValue(summary.unpriced_tokens)} Token 未计价`:Number(summary.non_token_billed_calls||0)>0?`${Number(summary.priced_calls||0)} 次按 Token · ${Number(summary.non_token_billed_calls||0)} 次按时长`:'已计价 Token 调用 '+Number(summary.priced_calls||0)+' 次'}</small></article><article><span>平均耗时</span><b>${Number(summary.average_duration_ms||0).toLocaleString('zh-CN')}<em> ms</em></b></article></div>
     <div class="ai-usage-visual-grid">
       <article class="ai-visual-card ai-daily-card"><div class="ai-visual-head"><div><span>DAILY CALLS</span><h3>近 7 日每日调用量</h3></div><b>${daily.reduce((sum,item)=>sum+Number(item.calls||0),0)}<small> 次</small></b></div>${aiDailyCallChart(daily)}</article>
@@ -3285,7 +2816,7 @@ async function renderWecom(){
     <div class="table-wrap ai-log-table"><table><thead><tr><th>时间</th><th>任务类型</th><th>模式</th><th>模型</th><th>状态</th><th>Token 输入/输出</th><th>耗时</th><th>错误摘要</th></tr></thead><tbody>${aiLogRows}</tbody></table></div>
   </div>
   <section class="panel wecom-history-panel wecom-history-wide">
-    <div class="panel-head"><div><span class="settings-card-eyebrow">NOTIFICATION HISTORY</span><h2>最近企微通知记录</h2><p>按通知类型快速筛选，点击任一记录可展开查看完整内容与发送结果。</p></div><span class="records-count-pill">共 ${notifications.length} 条</span></div>
+    <div class="panel-head"><div><span class="settings-card-eyebrow">NOTIFICATION HISTORY</span><h2>通知记录</h2><p>展开记录查看内容与结果。</p></div><span class="records-count-pill">共 ${notifications.length} 条</span></div>
     <div id="wecomNotificationRecords">${notifications.length?renderWecomNotifications(notifications):'<div class="empty">暂无企微通知记录。</div>'}</div>
   </section>`;
   const bindWecomCategoryTabs=()=>document.querySelectorAll('[data-wecom-category]').forEach(button=>button.onclick=()=>{state.wecomCategory=button.dataset.wecomCategory;$('#wecomNotificationRecords').innerHTML=renderWecomNotifications(notifications);bindWecomCategoryTabs()});
@@ -3306,16 +2837,21 @@ async function renderWecom(){
   document.querySelectorAll('[data-settings-config-toggle]').forEach(button=>button.onclick=()=>{
     const panel=button.dataset.settingsConfigToggle;
     state.settingsConfigPanel=state.settingsConfigPanel===panel?null:panel;
+    state.workspacePresentation=panel==='wecom'?'notifications':'ai';
     syncSettingsConfigPanel();
+    presentWorkspace();syncWorkspaceNavigation();syncNavigationHash();
   });
   syncSettingsConfigPanel();
-  $('#wecomForm').onsubmit=async event=>{event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));if(!String(values.webhookUrl||'').trim())return toast('\u8bf7\u8f93\u5165\u65b0\u7684\u673a\u5668\u4eba Webhook \u5730\u5740',true);try{await api('/api/settings/wecom',{method:'POST',body:JSON.stringify(values)});toast('\u4f01\u5fae Webhook \u5df2\u5b89\u5168\u4fdd\u5b58');renderWecom()}catch(error){toast(error.message,true)}};
+  presentWorkspace();
+  $('#wecomForm').onsubmit=async event=>{event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));if(!String(values.webhookUrl||'').trim())return toast('\u8bf7\u8f93\u5165\u65b0\u7684\u673a\u5668\u4eba Webhook \u5730\u5740',true);try{await api('/api/settings/wecom',{method:'POST',body:JSON.stringify(values)});toast('\u4f01\u5fae Webhook \u5df2\u5b89\u5168\u4fdd\u5b58');renderWecom(null,'wecom')}catch(error){toast(error.message,true)}};
   $('#wecomTest').onclick=async()=>{const button=$('#wecomTest');button.disabled=true;button.textContent='\u53d1\u9001\u4e2d\u2026';try{await api('/api/settings/wecom/test',{method:'POST',body:'{}'});toast('\u6d4b\u8bd5\u6d88\u606f\u53d1\u9001\u6210\u529f');renderWecom()}catch(error){toast(`${error.message}${error.detail?'\uff1a'+error.detail:''}`,true);button.disabled=false;button.textContent='\u53d1\u9001\u6d4b\u8bd5\u6d88\u606f'}};
-  $('#wecomClear').onclick=async()=>{if(!confirm('\u786e\u5b9a\u6e05\u9664\u7ba1\u7406\u9875\u9762\u4fdd\u5b58\u7684\u4f01\u5fae Webhook \u5417\uff1f'))return;try{await api('/api/settings/wecom/clear',{method:'POST',body:'{}'});toast('\u4f01\u5fae\u9875\u9762\u914d\u7f6e\u5df2\u6e05\u9664');renderWecom()}catch(error){toast(error.message,true)}};
-  $('#selectAiOnlineMode').onclick=()=>{const form=$('#aiSettingsForm'),mode=form?.querySelector('[name="mode"]'),key=form?.querySelector('[name="apiKey"]');if(mode)mode.value='online';if(key&&!key.value&&ai.configured!==true)key.focus();toast(ai.configured?'已选择 Online 在线模式，请点击“保存 AI 配置”使其生效':'已选择 Online 在线模式，请填写 AI Key 后点击“保存 AI 配置”');};
-  $('#aiSettingsForm').onsubmit=async event=>{event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));try{await api('/api/settings/ai',{method:'POST',body:JSON.stringify(values)});toast('AI 配置已保存，天河、知识库与微信服务的后续调用将使用新配置');renderWecom()}catch(error){toast(error.message,true)}};
-  $('#aiConnectionTest').onclick=async()=>{const button=$('#aiConnectionTest');button.disabled=true;button.textContent='\u6d4b\u8bd5\u4e2d\u2026';try{const result=await api('/api/settings/ai/test',{method:'POST',body:'{}'});toast(result.result?.message||'AI \u8fde\u63a5\u6d4b\u8bd5\u6210\u529f');renderWecom()}catch(error){toast(`${error.message}${error.detail?'\uff1a'+error.detail:''}`,true);button.disabled=false;button.textContent='\u6d4b\u8bd5 AI \u8fde\u63a5'}};
-  $('#aiKeyClear').onclick=async()=>{if(!confirm('\u786e\u5b9a\u6e05\u9664\u7ba1\u7406\u9875\u9762\u4fdd\u5b58\u7684 AI Key \u5417\uff1f\u5728\u7ebf\u6a21\u5f0f\u5c06\u65e0\u6cd5\u8c03\u7528 AI\u3002'))return;try{await api('/api/settings/ai/clear-key',{method:'POST',body:'{}'});toast('AI Key \u5df2\u6e05\u9664');renderWecom()}catch(error){toast(error.message,true)}};
+  $('#wecomClear').onclick=async()=>{if(!confirm('\u786e\u5b9a\u6e05\u9664\u7ba1\u7406\u9875\u9762\u4fdd\u5b58\u7684\u4f01\u5fae Webhook \u5417\uff1f'))return;try{await api('/api/settings/wecom/clear',{method:'POST',body:'{}'});toast('\u4f01\u5fae\u9875\u9762\u914d\u7f6e\u5df2\u6e05\u9664');renderWecom(null,'wecom')}catch(error){toast(error.message,true)}};
+  $('#selectAiOnlineMode').onclick=()=>{const form=$('#aiSettingsForm'),mode=form?.querySelector('[name="mode"]'),key=form?.querySelector('[name="apiKey"]');if(mode){mode.value='online';mode.dispatchEvent(new Event('change',{bubbles:true}));}if(key&&!key.value&&ai.configured!==true)key.focus();toast(ai.configured?'已选择 Online 在线模式，请点击“保存 AI 配置”使其生效':'已选择 Online 在线模式，请填写 AI Key 后点击“保存 AI 配置”');};
+  $('#aiSettingsForm').onsubmit=async event=>{event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));try{await api('/api/settings/ai',{method:'POST',body:JSON.stringify(values)});toast('AI 配置已保存，天河、知识库与微信服务的后续调用将使用新配置');renderWecom(null,'ai')}catch(error){toast(error.message,true)}};
+  bindAiModelSettings({form:$('#aiSettingsForm'),ai,api,toast,refresh:renderWecom});
+  restoreSettingsDraft($('#aiSettingsForm'),drafts.ai);
+  restoreSettingsDraft($('#wecomForm'),drafts.wecom);
+  $('#aiKeyClear').onclick=async()=>{if(!confirm('\u786e\u5b9a\u6e05\u9664\u7ba1\u7406\u9875\u9762\u4fdd\u5b58\u7684 AI Key \u5417\uff1f\u5728\u7ebf\u6a21\u5f0f\u5c06\u65e0\u6cd5\u8c03\u7528 AI\u3002'))return;try{await api('/api/settings/ai/clear-key',{method:'POST',body:'{}'});toast('AI Key \u5df2\u6e05\u9664');renderWecom(null,'ai')}catch(error){toast(error.message,true)}};
 }
 function renderLoginBadge(code,status,prefix='platformStatus-'){const el=document.getElementById(`${prefix}${code}`);if(!el)return;const m=loginStatusMeta(status);el.textContent=m.text;el.className=`badge ${m.cls}`;el.title=[status?.message,status?.checkedAt?`\u68c0\u67e5\u65f6\u95f4\uff1a${fmt(status.checkedAt)}`:''].filter(Boolean).join('\n')}
 function dashboardPlatformLoginView(platform){const account=(state.bootstrap?.accounts||[]).find(item=>item.platform_code===platform.code);const runtime=(state.bootstrap?.platforms||[]).find(item=>item.code===platform.code);const planned=runtime?.lifecycle_state==='PLANNED';return {account,runtime,planned,meta:planned?{text:'RPA\u65b9\u6848\u89c4\u5212\u4e2d',cls:'planned'}:loginStatusMeta(accountLoginState(account)),detail:planned?'\u5e73\u53f0\u5c1a\u672a\u6b63\u5f0f\u63a5\u5165':accountLoginDetail(account)}}
@@ -3488,165 +3024,19 @@ function renderPlatformRuntimePage(){
   document.querySelectorAll('.platform-login-action').forEach(button=>button.onclick=()=>openPlatformAccountLogin(button));
   const enableAll=$('#enableAllPlatforms');if(enableAll)enableAll.onclick=()=>startAllPlatforms(enableAll);
   const openSelected=$('#openSelectedPlatforms');if(openSelected)openSelected.onclick=()=>batchPlatformAction('open',openSelected);
+  presentInteractions();
   const stopAll=$('#stopAllPlatforms');if(stopAll)stopAll.onclick=()=>stopAllPlatforms(stopAll);
   document.querySelectorAll('[data-go]').forEach(button=>button.onclick=()=>navigate(button.dataset.go));
 }
 
 
 
-function xiaozhiSelectedValue(id,fallback){const element=$(id);return element?element.value:fallback}
-async function ensureXiaozhiSession(force=false){
-  if(!state.xiaozhiOptions)state.xiaozhiOptions=(await api('/api/xiaozhi/options')).options;
-  const backend=state.xiaozhiOptions?.backend||'LEGACY';
-  if(backend==='RAG'&&!['published','pre_release','single_document'].includes(state.xiaozhiSettings.scope))state.xiaozhiSettings.scope='pre_release';
-  if(backend!=='RAG'&&!['published','import_batch'].includes(state.xiaozhiSettings.scope))state.xiaozhiSettings.scope='published';
-  if(state.xiaozhiSession&&!force)return state.xiaozhiSession;
-  const result=await api('/api/xiaozhi/sessions',{method:'POST',body:JSON.stringify(state.xiaozhiSettings)});
-  state.xiaozhiSession=result.session;
-  return result.session;
-}function xiaozhiSourceReferences(result){
-  const candidates=[result?.sourceReferences,result?.grounding?.sourceReferences,result?.source_references,result?.grounding?.source_references];
-  return candidates.find(item=>Array.isArray(item)&&item.length)||[];
-}
-function xiaozhiSourceContent(source={}){
-  const candidates=[source.excerpt,source.text,source.content,source.snippet];
-  return candidates.map(value=>String(value??'').replace(/\r\n/g,'\n').trim()).find(Boolean)||'';
-}
-function xiaozhiSourceLocation(source={}){
-  const page=source.page??source.location?.page;
-  const sheet=source.sheet??source.location?.sheet;
-  const row=source.rowStart??source.location?.row;
-  const location=[];
-  if(page!==undefined&&page!==null&&String(page)!=='')location.push(`第 ${esc(page)} 页`);
-  if(sheet)location.push(`工作表：${esc(sheet)}`);
-  if(row!==undefined&&row!==null&&String(row)!=='')location.push(`第 ${esc(row)} 行`);
-  return location.join(' · ');
-}
-function xiaozhiDiagnostic(result){
-  const matches=(result.matches||[]).map(item=>`<div class="xiaozhi-match"><b>#${item.knowledgeId} ${esc(item.question)}</b><span>置信度 ${Math.round(Number(item.confidence||0)*100)}% · ${esc(matchMethodName(item.matchMethod))}${item.contextUsed?' · 已使用上下文':''}</span><p>${esc(item.answer)}</p></div>`).join('');
-  const hasRetrievalScore=typeof result.retrievalConfidence==='number'&&Number.isFinite(result.retrievalConfidence);
-  const scoreLabel=hasRetrievalScore?`知识匹配参考分 ${Math.round(result.retrievalConfidence*100)}%`:result.ragStatus==='NOT_QUERIED'?'尚未查询知识库':`回复置信度 ${Math.round(Number(result.confidence||0)*100)}%`;
-  const answerLabel=result.ragStatus==='NO_ANSWER'?'暂无可靠答案 · ':'';
-  const analysis=result.queryAnalysis;
-  const queryDetails=analysis?`${analysis.keywords?.length?`<div><b>提取关键词：</b>${esc(analysis.keywords.join('、'))}</div>`:''}<div><b>实际检索问题：</b>${esc(analysis.resolvedQuestion||'—')}</div>`:'';
-  const scoreSource=hasRetrievalScore?'<div><b>分数来源：</b>RAG 知识检索与重排序，表示知识匹配程度；是否能回答还需检查答案依据。</div>':'';
-  const guidance=Number(result.guidanceAttempt||0)>0?`<div><b>业务引导：</b>第 ${Number(result.guidanceAttempt)}/${Number(result.maxGuidanceAttempts||5)} 轮${result.handoffRequested?'，已判定转人工':result.handoffOffered?'，已提供“转人工”入口':'，继续确认具体业务'}</div>`:'';
-  const references=xiaozhiSourceReferences(result);
-  const sources=references.map(item=>{
-    const content=xiaozhiSourceContent(item);
-    const title=String(item.title||item.filename||item.fileName||'知识库引用').trim();
-    const location=xiaozhiSourceLocation(item);
-    return `<div class="xiaozhi-match xiaozhi-source"><b>引用内容</b>${content?`<p class="xiaozhi-source-excerpt">${esc(content)}</p>`:'<p class="xiaozhi-source-empty">引用内容暂未返回</p>'}${title?`<span>来源文件：${esc(title)}${location?` · ${location}`:''}</span>`:''}</div>`;
-  }).join('');
-  return `<details class="xiaozhi-diagnostic"><summary>查看判断依据 · ${answerLabel}${scoreLabel} · ${Number(result.elapsedMs||0)}ms</summary><div class="xiaozhi-diagnostic-body"><div><b>处理结果：</b>${esc(statusName(result.decision)||result.decision)}</div><div><b>判断原因：</b>${esc(result.reason||'—')}</div><div><b>匹配方式：</b>${esc(matchMethodName(result.matchMethod))}</div><div><b>上下文：</b>${result.contextUsed?'已用于补全省略问题':'未使用'}${result.topicSwitched?'，已识别话题切换':''}</div>${queryDetails}${scoreSource}${guidance}${sources}${matches||(!sources?'<div class="muted">未命中可用知识</div>':'')}</div></details>`;
-}
-function xiaozhiAssistantMessageHtml(item,index){
-  const status=item.status||'done';
-  const result=item.result||{};
-  const id=esc(item.id||`xiaozhi-assistant-${index}`);
-  if(status==='thinking')return `<div class="xiaozhi-row assistant is-entering"><div class="xiaozhi-avatar">智</div><div class="xiaozhi-bubble is-thinking"><span>小智 <i>正在处理</i></span><div class="xiaozhi-thinking" aria-live="polite"><span class="xiaozhi-thinking-label">正在理解问题并组织回复</span><span class="xiaozhi-thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="xiaozhi-thinking-shimmer" aria-hidden="true"></span></div></div></div>`;
-  const text=status==='typing'?(item.displayText||''):(result.replyText||item.displayText||'');
-  const done=status==='done';
-  const approvalDecision=result.approvalDecision||'ENABLED';
-  const approvalLabel=approvalDecision==='DISABLED'?'已停用':'已启用';
-  const approvalClass=approvalDecision==='DISABLED'?'is-disabled':'is-enabled';
-  const answerControls=done&&result.answerId?`<div class="xiaozhi-approval ${approvalClass}"><span>应用状态：<b>${approvalLabel}</b></span><div class="button-row compact"><button class="btn ${approvalDecision==='ENABLED'?'primary':'secondary'} xiaozhi-enable" data-index="${index}" data-answer-id="${esc(result.answerId)}" ${approvalDecision==='ENABLED'?'disabled':''}>启用</button><button class="btn ${approvalDecision==='DISABLED'?'primary danger':'secondary'} xiaozhi-disable" data-index="${index}" data-answer-id="${esc(result.answerId)}" ${approvalDecision==='DISABLED'?'disabled':''}>不启用</button></div></div>`:'';
-  return `<div class="xiaozhi-row assistant ${status==='typing'?'is-typing-row':''}"><div class="xiaozhi-avatar">智</div><div class="xiaozhi-bubble"><span>小智 ${done?`<i>${Number(result.elapsedMs||0)}ms</i>`:'<i>正在回复</i>'}</span><p id="xiaozhiText-${id}" class="xiaozhi-reply-text ${status==='typing'?'is-typing':''}">${esc(text)}</p>${done?`${answerControls}<div class="button-row compact"><button class="btn secondary xiaozhi-copy" data-index="${index}">复制回复</button></div>${xiaozhiDiagnostic(result)}`:''}</div></div>`;
-}
-function xiaozhiMessageHtml(item,index){
-  if(item.role==='user')return `<div class="xiaozhi-row user is-entering"><div class="xiaozhi-bubble"><span>运营测试</span><p>${esc(item.text)}</p></div></div>`;
-  return xiaozhiAssistantMessageHtml(item,index);
-}
-async function typeXiaozhiReply(messageId,text){
-  const item=state.xiaozhiChat.find(entry=>entry.id===messageId);
-  if(!item)return;
-  const characters=Array.from(String(text||''));
-  const interval=characters.length<=80?22:characters.length<=220?14:8;
-  item.status='typing';item.displayText='';
-  for(let index=0;index<characters.length;index+=1){
-    if(!state.xiaozhiChat.includes(item))return;
-    item.displayText+=characters[index];
-    const element=document.getElementById(`xiaozhiText-${messageId}`);
-    if(!element){item.displayText=String(text||'');break}
-    element.textContent=item.displayText;
-    const box=$('#xiaozhiMessages');if(box)box.scrollTop=box.scrollHeight;
-    const pause=/[。！？!?；;\n]/.test(characters[index])?Math.min(55,interval*3):interval;
-    await new Promise(resolve=>setTimeout(resolve,pause));
-  }
-  item.displayText=String(text||'');item.status='done';
-  await renderXiaozhi();
-}
-async function updateXiaozhiDecision(button){
-  const sessionId=state.xiaozhiSession?.id;
-  const answerId=button?.dataset?.answerId;
-  const index=Number(button?.dataset?.index);
-  const item=Number.isInteger(index)?state.xiaozhiChat[index]:null;
-  if(!sessionId||!answerId||!item?.result)return toast('测试答案信息不完整，无法更新状态',true);
-  const disable=button.classList.contains('xiaozhi-disable');
-  let reason=null;
-  let reasonCode=null;
-  if(disable){
-    const review=await xiaozhiDisableReasonDialog();
-    if(!review)return;
-    reason=review.reason;
-    reasonCode=review.reasonCode;
-  }
-  const controls=document.querySelectorAll('.xiaozhi-enable,.xiaozhi-disable');
-  controls.forEach(element=>{element.disabled=true});
-  try{
-    const response=await api(`/api/xiaozhi/sessions/${encodeURIComponent(sessionId)}/answers/${encodeURIComponent(answerId)}/decision`,{method:'PUT',body:JSON.stringify({decision:disable?'DISABLED':'ENABLED',reasonCode,reason})});
-    const answer=response.answer||{};
-    item.result={...item.result,approvalDecision:answer.decision,decisionVersion:answer.decisionVersion,decisionReasonCode:answer.reasonCode,decisionReason:answer.reason};
-    await renderXiaozhi();
-    toast(disable?'已停用，正式用户端不会应用该测试答案':'已启用，正式用户端可以继续应用该测试答案');
-  }catch(error){
-    controls.forEach(element=>{element.disabled=false});
-    toast(error.message||'更新测试答案状态失败',true);
-  }
-}
-async function renderXiaozhi(){
-  await ensureXiaozhiSession();
-  const options=state.xiaozhiOptions||{};
-  const settings=state.xiaozhiSettings;
-  const backend=options.backend||'LEGACY';
-  const isRag=backend==='RAG';
-  const platformOptions=(options.platforms||[]).map(item=>`<option value="${esc(item.code)}" ${settings.platformCode===item.code?'selected':''}>${esc(item.name)}</option>`).join('');
-  const batchOptions=(options.importBatches||[]).map(item=>`<option value="${item.id}" ${Number(settings.importBatchId)===Number(item.id)?'selected':''}>#${item.id} ${esc(item.file_name)} · ${esc(statusName(item.status))}</option>`).join('');
-  const documentOptions=(options.ragDocuments||[]).map(item=>{const key=`${encodeURIComponent(item.documentId)}:${Number(item.documentVersion)||1}`;const selected=settings.selectedDocumentId===item.documentId&&Number(settings.selectedDocumentVersion||0)===Number(item.documentVersion||1);return `<option value="${esc(key)}" ${selected?'selected':''}>${esc(unifiedRagDocumentLabel(item.title||item.filename||item.documentId,item))} · v${Number(item.documentVersion)||1}</option>`}).join('');
-  const scopeOptions=isRag
-    ? `<option value="published" ${settings.scope==='published'?'selected':''}>当前正式发布版本</option><option value="pre_release" ${settings.scope==='pre_release'?'selected':''}>正式版本 + 待测文档</option><option value="single_document" ${settings.scope==='single_document'?'selected':''}>仅测试所选文档</option>`
-    : `<option value="published" ${settings.scope==='published'?'selected':''}>正式知识库</option><option value="import_batch" ${settings.scope==='import_batch'?'selected':''}>上传批次草稿预览</option>`;
-  const documentField=isRag?`<label class="xiaozhi-batch xiaozhi-document ${settings.scope==='published'?'is-hidden':''}">选择测试文档<select id="xiaozhiDocument"><option value="">请选择测试文档</option>${documentOptions}</select></label>`:'';
-  const batchField=!isRag?`<label class="xiaozhi-batch ${settings.scope==='import_batch'?'':'is-hidden'}">上传批次<select id="xiaozhiBatch"><option value="">请选择</option>${batchOptions}</select></label>`:'';
-  const activeRelease=options.activeRelease;
-  const backendNote=isRag?`统一 RAG 测试模式（不区分平台，所有平台共用同一知识库）${activeRelease?.release_id||activeRelease?.releaseId?` · 当前正式版本 ${esc(activeRelease.release_id||activeRelease.releaseId)}`:' · 当前暂无正式发布版本'}`:'兼容模式：仍使用业务本地知识库';
-  const publishCandidates=state.xiaozhiSession?.candidateDocuments||[];
-  const selectedCandidateWasTested=settings.scope!=='published'&&Boolean(settings.selectedDocumentId)&&publishCandidates.some(item=>item.documentId===settings.selectedDocumentId&&Number(item.documentVersion||1)===Number(settings.selectedDocumentVersion||1));
-  const canPublish=isRag&&Boolean(state.xiaozhiSession?.ragTestSessionId)&&state.xiaozhiSession?.scope===settings.scope&&selectedCandidateWasTested;
-  const isBusy=state.xiaozhiChat.some(item=>item.role==='assistant'&&['thinking','typing'].includes(item.status));
-  const messages=state.xiaozhiChat.length?state.xiaozhiChat.map(xiaozhiMessageHtml).join(''):`<div class="xiaozhi-empty"><div class="xiaozhi-avatar large">智</div><h3>先在这里测试知识库回复效果</h3><p>${isRag?'选择待测文档后，可测试“正式版本 + 待测文档”或仅测试单个文档；所有平台共用同一知识库，测试答案默认启用，可逐条改为不启用。':'直接输入用户可能会问的问题。小智会即时复用正式回复核心，但不会打开平台、不会创建真实消息，也不会通知企微。'}</p></div>`;
-  $('#content').innerHTML=`<section class="xiaozhi-page"><div class="panel xiaozhi-toolbar"><div class="panel-head"><div><h2>小智 · 知识库即时测试</h2><p>上传文档先测试、逐条启用或不启用，满意后再发布到正式用户端。</p></div><div class="button-row"><button class="btn" id="xiaozhiPublish" ${canPublish?'':'disabled title="请先完成至少一轮待测文档问答"'}>发布为正式版本</button><button class="btn secondary" id="xiaozhiNew">新建测试</button></div></div><div class="xiaozhi-settings"><label>消息场景<select id="xiaozhiType"><option value="PRIVATE_MESSAGE" ${settings.messageType==='PRIVATE_MESSAGE'?'selected':''}>私信</option><option value="COMMENT" ${settings.messageType==='COMMENT'?'selected':''}>评论</option></select></label><label>文字<select id="xiaozhiScript"><option value="auto" ${settings.script==='auto'?'selected':''}>自动跟随</option><option value="simplified" ${settings.script==='simplified'?'selected':''}>简体中文</option><option value="traditional" ${settings.script==='traditional'?'selected':''}>繁体中文</option></select></label><label>知识范围<select id="xiaozhiScope">${scopeOptions}</select></label>${documentField}${batchField}<label class="switch-label"><input type="checkbox" id="xiaozhiContext" ${settings.contextEnabled?'checked':''}><span>连续上下文</span></label></div><div class="muted xiaozhi-scope-note">${backendNote}</div></div><div class="panel xiaozhi-chat"><div class="xiaozhi-messages" id="xiaozhiMessages">${messages}</div><div class="xiaozhi-composer"><textarea id="xiaozhiInput" rows="3" placeholder="例如：参加志愿者活动要收费吗？&#10;Enter 发送，Shift + Enter 换行"></textarea><button class="btn" id="xiaozhiSend" ${isBusy?'disabled':''}>${isBusy?'小智处理中…':'发送测试'}</button></div><div class="muted xiaozhi-footnote">测试会话编号：${esc(state.xiaozhiSession?.id||'—')} · ${esc(backendNote)} · 测试内容不会写入真实消息列表或创建 Agent 任务</div></div></section>`;
-  const syncSettings=()=>{
-    const documentValue=xiaozhiSelectedValue('#xiaozhiDocument','');
-    const separator=documentValue.lastIndexOf(':');
-    const selectedDocumentId=separator>0?decodeURIComponent(documentValue.slice(0,separator)):null;
-    const selectedDocumentVersion=separator>0?(Number(documentValue.slice(separator+1))||1):null;
-    state.xiaozhiSettings={platformCode:state.xiaozhiSettings.platformCode||'douyin',messageType:xiaozhiSelectedValue('#xiaozhiType','PRIVATE_MESSAGE'),script:xiaozhiSelectedValue('#xiaozhiScript','auto'),scope:xiaozhiSelectedValue('#xiaozhiScope',isRag?'pre_release':'published'),importBatchId:Number(xiaozhiSelectedValue('#xiaozhiBatch',''))||null,selectedDocumentId,selectedDocumentVersion,contextEnabled:Boolean($('#xiaozhiContext')?.checked)};
-  };
-  $('#xiaozhiScope').onchange=event=>{const scope=event.target.value;if(scope==='published'){const document=$('#xiaozhiDocument');if(document)document.value=''}syncSettings();renderXiaozhi().catch(error=>toast(error.message,true))};
-  ['#xiaozhiType','#xiaozhiScript','#xiaozhiBatch','#xiaozhiContext'].forEach(selector=>{const element=$(selector);if(element)element.onchange=syncSettings});
-  const documentSelect=$('#xiaozhiDocument');if(documentSelect)documentSelect.onchange=()=>{syncSettings();renderXiaozhi().catch(error=>toast(error.message,true))};
-  const send=async()=>{const input=$('#xiaozhiInput');const content=input.value.trim();if(!content)return toast('请输入要测试的问题',true);if(state.xiaozhiChat.some(item=>item.role==='assistant'&&['thinking','typing'].includes(item.status)))return toast('小智正在处理上一条消息，请稍候',true);syncSettings();if(isRag&&state.xiaozhiSettings.scope!=='published'&&!state.xiaozhiSettings.selectedDocumentId)return toast('请先选择一个待测试文档',true);const requestSettings={...state.xiaozhiSettings};const messageId=`xiaozhi-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;const assistantId=`${messageId}-assistant`;state.xiaozhiChat.push({id:`${messageId}-user`,role:'user',text:content},{id:assistantId,role:'assistant',status:'thinking',displayText:'',result:null});input.value='';await renderXiaozhi();try{const result=await api('/api/xiaozhi/chat',{method:'POST',body:JSON.stringify({sessionId:state.xiaozhiSession?.id,content,...requestSettings})});state.xiaozhiSession=result.session;const item=state.xiaozhiChat.find(entry=>entry.id===assistantId);if(!item)return;item.result=result;item.status='typing';item.displayText='';await renderXiaozhi();await typeXiaozhiReply(assistantId,result.replyText)}catch(error){const item=state.xiaozhiChat.find(entry=>entry.id===assistantId);if(!item)return;item.result={replyText:`测试失败：${error.message}`,decision:'TECHNICAL_ERROR',confidence:0,reason:error.detail||error.message,elapsedMs:0,matches:[]};item.status='typing';item.displayText='';await renderXiaozhi();await typeXiaozhiReply(assistantId,item.result.replyText);toast(error.message,true)}};
-  $('#xiaozhiSend').onclick=send;$('#xiaozhiInput').onkeydown=event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}};
-  const publishButton=$('#xiaozhiPublish');if(publishButton)publishButton.onclick=async()=>{if(!canPublish)return toast('请先选择待测文档并完成至少一轮小智测试',true);if(!(await xiaozhiPublishConfirmDialog()))return;publishButton.disabled=true;publishButton.textContent='正在提交发布…';try{const response=await api('/api/rag/releases',{method:'POST',body:JSON.stringify({testSessionId:state.xiaozhiSession.ragTestSessionId,candidateDocuments:publishCandidates,publishNote:`运营人员于 ${new Date().toLocaleString()} 从小智测试页发布`})});const release=response.release||{};state.ragCurrentDocumentId=settings.selectedDocumentId;state.ragCurrentDocumentVersion=Number(settings.selectedDocumentVersion)||1;state.xiaozhiOptions=null;toast(`发布版本 ${release.releaseId||'已创建'} 正在构建，构建完成后自动成为正式版本`);navigate('knowledge','rag')}catch(error){toast(error.message||'发布失败',true);publishButton.disabled=false;publishButton.textContent='发布为正式版本'}};  $('#xiaozhiNew').onclick=async()=>{syncSettings();if(state.xiaozhiSession)try{await api(`/api/xiaozhi/sessions/${state.xiaozhiSession.id}`,{method:'DELETE'})}catch{}state.xiaozhiSession=null;state.xiaozhiChat=[];await ensureXiaozhiSession(true);renderXiaozhi()};
-  document.querySelectorAll('.xiaozhi-copy').forEach(button=>button.onclick=async()=>{const item=state.xiaozhiChat[Number(button.dataset.index)];try{await navigator.clipboard.writeText(item?.result?.replyText||'');toast('回复已复制')}catch{toast('复制失败，请手动选择文本',true)}});
-  document.querySelectorAll('.xiaozhi-enable,.xiaozhi-disable').forEach(button=>button.onclick=()=>updateXiaozhiDecision(button));
-  const messageBox=$('#xiaozhiMessages');if(messageBox)messageBox.scrollTop=messageBox.scrollHeight;
-}let refreshTimer=null;
+let refreshTimer=null;
 let taskRefreshTimer=null;
 let messageRefreshTimer=null;
 let messageCountdownTimer=null;
 let taskRefreshInFlight=false;
+let taskRefreshSignatureValue='';
 let messageRefreshInFlight=false;
 let messageRefreshSignatureValue='';
 function messageFormHasEditingFocus(){
@@ -3654,12 +3044,17 @@ function messageFormHasEditingFocus(){
   return active&&(active.isContentEditable||['INPUT','TEXTAREA'].includes(active.tagName))&&$('#content')?.contains(active);
 }
 async function refreshTasksFromTimer(){
-  if(state.page!=='tasks'||document.hidden||taskRefreshInFlight||document.querySelector('.confirm-overlay'))return;
+  if(state.page!=='tasks'||pageRenderInFlightGeneration===pageRenderGeneration||document.hidden||taskRefreshInFlight||document.querySelector('.confirm-overlay'))return;
   taskRefreshInFlight=true;
-  try{await renderTasks()}catch{}finally{taskRefreshInFlight=false}
+  const owner=capturePageOwner(),selected=state.taskPlatform;
+  try{
+    const data=await api('/api/tasks'+(selected&&selected!=='ALL'?`?platformCode=${encodeURIComponent(selected)}`:''));
+    if(!ownsPageOwner(owner)||selected!==state.taskPlatform)return;
+    if(JSON.stringify(data)!==taskRefreshSignatureValue)await renderTasks(data);
+  }catch{}finally{taskRefreshInFlight=false}
 }
 async function refreshMessagesFromTimer(){
-  if(state.page!=='messages'||document.hidden||messageRefreshInFlight||messageFormHasEditingFocus()||document.querySelector('.confirm-overlay'))return;
+  if(state.page!=='messages'||pageRenderInFlightGeneration===pageRenderGeneration||document.hidden||messageRefreshInFlight||messageFormHasEditingFocus()||document.querySelector('.confirm-overlay'))return;
   const pageOwner=capturePageOwner();
   messageRefreshInFlight=true;
   try{
@@ -3670,6 +3065,8 @@ async function refreshMessagesFromTimer(){
   }catch{}finally{messageRefreshInFlight=false}
 }
 function clearWorkspaceSession(){
+  expandedCommentPosts.clear();
+  commentPostReadPositions.clear();
   if(state.materialPreviewUrl){try{URL.revokeObjectURL(state.materialPreviewUrl)}catch{}}
   Object.assign(state,{
     page:'dashboard',
@@ -3679,14 +3076,14 @@ function clearWorkspaceSession(){
     knowledgeView:'rag',
     knowledgeCategory:null,
     knowledgeSubcategory:null,
-    knowledgeImportPreview:null,
-    knowledgeImportStage:'IDLE',
-    knowledgeImportFailedStep:null,
+
+
+
     knowledgeCategoryData:null,
-    knowledgeImportSelected:[],
-    knowledgeImportExpanded:[],
-    knowledgeImportDirty:[],
-    knowledgeImportFilter:'ALL',
+
+
+
+
     knowledgeCreateExpanded:false,
     publishHistoryPage:1,
     materialPreviewUrl:null,
@@ -3707,6 +3104,7 @@ function clearWorkspaceSession(){
   const toastElement=$('#toast');if(toastElement)toastElement.className='toast';
 }
 function showLoginScreen(message=''){
+  resetKnowledgeTools();
   cleanupWechatAdmin();
   hideHotTopicStudio({reset:true});
   closeContentLibraryPicker();
@@ -3733,15 +3131,15 @@ function startWorkspace(){
   const operator=$('.operator small');if(operator)operator.textContent=state.auth?.username||'\u7ba1\u7406\u5458';
   if(!state.appStarted){window.appRefresh=()=>render();$('#refreshBtn').onclick=()=>render();$('#masterSwitch').onclick=()=>toggleMasterSwitch();if(logout)logout.onclick=logoutAdmin;buildNav();state.appStarted=true}
   const initialRoute=resolveWorkspaceHash(location.hash);
-  navigate(initialRoute?initialRoute.page:(state.page||'dashboard'),initialRoute?initialRoute.view||null:null);
-  if(!refreshTimer)refreshTimer=setInterval(()=>{const page=state.page,pageGeneration=pageRenderGeneration;if(['dashboard','tasks','messages','browser','issues','wecom','platforms'].includes(page)&&pageRenderInFlightGeneration!==pageGeneration)refreshBootstrap({page,pageGeneration}).then(bootstrap=>{if(!bootstrap||state.page!==page||pageRenderGeneration!==pageGeneration)return;if(state.page==='dashboard')refreshDashboardLoginStatus();else if(state.page==='platforms')refreshPlatformLoginStatus();else if(state.page==='issues')renderIssues()}).catch(()=>{})},5000);
+  navigate(initialRoute?initialRoute.page:(state.page||'dashboard'),initialRoute?initialRoute.view||null:null,initialRoute?.presentation||null);
+  if(!refreshTimer)refreshTimer=setInterval(()=>{const page=state.page,pageGeneration=pageRenderGeneration;if(['dashboard','tasks','messages','browser','issues','wecom','platforms'].includes(page)&&pageRenderInFlightGeneration!==pageGeneration)refreshBootstrap({page,pageGeneration}).then(bootstrap=>{if(!bootstrap||state.page!==page||pageRenderGeneration!==pageGeneration)return;if(state.page==='dashboard')refreshDashboardLoginStatus();else if(state.page==='platforms')refreshPlatformLoginStatus();else if(state.page==='browser')refreshBrowserStatusPanel();else if(state.page==='issues')renderIssues()}).catch(()=>{})},5000);
   if(!taskRefreshTimer)taskRefreshTimer=setInterval(refreshTasksFromTimer,2000);
   if(!messageRefreshTimer)messageRefreshTimer=setInterval(refreshMessagesFromTimer,3000);
   if(!messageCountdownTimer)messageCountdownTimer=setInterval(updateMessageChannelCountdowns,1000);
   updateMessageChannelCountdowns();
 }
 async function logoutAdmin(){
-  try{await api('/api/auth/logout',{method:'POST',body:'{}'})}catch{}
+  try{await api('/api/auth/logout',{method:'POST',body:'{}'})}catch(error){toast('\u9000\u51fa\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\uff1a'+error.message);return}
   state.auth={authenticated:false,authEnabled:true};
   showLoginScreen('\u5df2\u5b89\u5168\u9000\u51fa\u7ba1\u7406\u7aef');
 }
@@ -3812,7 +3210,7 @@ function studioCopyView(){
     <div class="panel-head"><div><span class="panel-kicker">STEP 02 · COPY</span><h2>标题与正文</h2><p>由 AI 依据素材内容生成；生成结果必须人工确认后才能发布。</p></div></div>
     <div id="studioCopyStatus">${generating?'<div class="notice info"><span class="notice-icon">i</span><div><b>正在生成标题与正文…</b><p>处理链路：读取素材 → 提炼主题 → 生成标题正文 → 风险校验。</p></div></div>':''}</div>
     ${copy.status==='FAILED'&&copy.error?`<div class="notice warn"><span class="notice-icon">!</span><div><b>文案生成失败</b><p>${esc(copy.error)}</p></div></div>`:''}
-    ${copy.mock?`<div class="notice warn"><span class="notice-icon">!</span><div><b>当前为 Mock 演示模式</b><p>未真实分析素材内容，请在「企微及 AI」中启用在线模型后重新生成。</p></div></div>`:''}
+    ${copy.mock?`<div class="notice warn"><span class="notice-icon">!</span><div><b>当前为 Mock 演示模式</b><p>未真实分析素材内容，请在「模型与通知」中启用在线模型后重新生成。</p></div></div>`:''}
     <div class="gap-form">
       <label>作品标题<input id="studioTitle" maxlength="30" value="${esc(contentStudio.title||result.title||'')}" placeholder="生成后在此确认标题"></label>
       <label>正文<textarea id="studioBody" rows="7" placeholder="生成后在此确认正文">${esc(contentStudio.body||result.body||'')}</textarea></label>
@@ -3878,8 +3276,8 @@ function contentStudioLibraryView(){
   </section>`;
 }
 async function renderContentStudio(){
-  if(state.page!=='create')return;
-  return renderHotTopicStudio($('#content'),{onUnauthorized:()=>showLoginScreen('登录已过期，请重新登录'),onPublish:publishContentLibraryItem});
+  if(!['create','creativeSettings'].includes(state.page))return;
+  return renderHotTopicStudio($('#content'),{view:state.page==='creativeSettings'?'settings':null,onOpenSettings:()=>{if(state.page!=='creativeSettings')openWorkspaceItem('creation-settings')},onUnauthorized:()=>showLoginScreen('登录已过期，请重新登录'),onPublish:publishContentLibraryItem,onViewChanged:({title})=>{if(state.page==='create'){state.contentWorkspaceTitle=title;$('#pageTitle').textContent=title}}});
 }
 function renderMaterialEditor(){
   const precheck=contentStudio.precheck;

@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { revealControl } from './helpers/ui-details.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { chromium } from 'playwright-core';
@@ -24,10 +25,9 @@ function deferred() {
   return { promise, resolve };
 }
 
-test('发布历史随主操作列同步高度，并在窄屏和离开页面时清理', { skip: !chromePath }, async t => {
+test('发布排期独立显示并保留草稿，窄屏不截断且离开页面时清理', { skip: !chromePath }, async t => {
   const runtime = await startServer();
   t.after(async () => { await stopChild(runtime.child); cleanupDir(runtime.dir); });
-
   const browser = await chromium.launch({ headless: true, executablePath: chromePath });
   t.after(() => browser.close());
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -35,68 +35,51 @@ test('发布历史随主操作列同步高度，并在窄屏和离开页面时�
     const NativeResizeObserver = window.ResizeObserver;
     window.__publishResizeObserver = { created: 0, observed: 0, disconnected: 0 };
     window.ResizeObserver = class InstrumentedResizeObserver {
-      constructor(callback) {
-        window.__publishResizeObserver.created += 1;
-        this.observer = new NativeResizeObserver(callback);
-      }
-      observe(target, options) {
-        window.__publishResizeObserver.observed += 1;
-        this.observer.observe(target, options);
-      }
+      constructor(callback) { window.__publishResizeObserver.created += 1; this.observer = new NativeResizeObserver(callback); }
+      observe(target, options) { window.__publishResizeObserver.observed += 1; this.observer.observe(target, options); }
       unobserve(target) { this.observer.unobserve(target); }
-      disconnect() {
-        window.__publishResizeObserver.disconnected += 1;
-        this.observer.disconnect();
-      }
+      disconnect() { window.__publishResizeObserver.disconnected += 1; this.observer.disconnect(); }
     };
   });
   const page = await context.newPage();
-
+  const show = async key => {
+    await page.evaluate(value => { location.hash = '#' + value; }, key);
+    await page.locator('#workspaceSubnav [data-workspace-item="' + key + '"][aria-current="page"]').waitFor({state:'attached'});
+  };
   await page.goto(runtime.base);
   await openWorkspacePage(page, 'publish');
-  await page.locator('#publishHistory').waitFor();
-  await page.waitForFunction(() => document.querySelector('#publishHistory')?.classList.contains('is-height-limited'), null, { timeout: 4000 });
-
-  const desktop = await page.evaluate(() => {
-    const mainPanel = document.querySelector('.publish-main-column > .panel');
-    const sideColumn = document.querySelector('.publish-side-column');
-    const sidePanel = document.querySelector('.publish-side-column > .panel:not(.publish-history-panel)');
-    const history = document.querySelector('#publishHistory');
-    const gap = Number.parseFloat(getComputedStyle(sideColumn).rowGap || getComputedStyle(sideColumn).gap) || 18;
-    const expected = Math.floor(mainPanel.getBoundingClientRect().height - sidePanel.getBoundingClientRect().height - gap);
-    const applied = Number.parseFloat(history.style.getPropertyValue('--publish-history-max-height'));
-    return {
-      expected,
-      applied,
-      maxHeight: getComputedStyle(history).maxHeight,
-      classApplied: history.classList.contains('is-height-limited'),
-      stats: { ...window.__publishResizeObserver }
-    };
-  });
-  assert.ok(desktop.expected > 0, JSON.stringify(desktop));
-  assert.ok(Math.abs(desktop.applied - desktop.expected) <= 1, JSON.stringify(desktop));
-  assert.equal(desktop.maxHeight, `${desktop.applied}px`);
-  assert.equal(desktop.classApplied, true);
-  assert.ok(desktop.stats.created >= 1 && desktop.stats.observed >= 2, JSON.stringify(desktop.stats));
-
+  await page.locator('#publishHistory').waitFor({state:'attached'});
+  await page.waitForFunction(() => !document.querySelector('#content').dataset.pageLoading);
+  await page.locator('#publishTitle').fill('跨栏目保留的发布草稿');
+  assert.equal(await page.locator('#publishHistory').isVisible(), false);
+  const historyHandle = await page.locator('#publishHistory').elementHandle();
+  await show('schedule');
+  await page.locator('#publishHistory').waitFor({state:'visible'});
+  await page.waitForFunction(() => !document.querySelector('#publishHistory').classList.contains('is-height-limited'));
+  assert.equal(await historyHandle.evaluate(node => node === document.querySelector('#publishHistory')), true);
+  assert.equal(await page.locator('#publishTitle').isVisible(), false);
+  assert.equal(await page.locator('#publishTitle').inputValue(), '跨栏目保留的发布草稿');
+  assert.equal(await page.locator('#publishHistory').evaluate(node => getComputedStyle(node).maxHeight), 'none');
+  const stats = await page.evaluate(() => ({...window.__publishResizeObserver}));
+  assert.ok(stats.created >= 1 && stats.observed >= 2, JSON.stringify(stats));
+  await show('publishing');
+  await page.locator('#publishTitle').waitFor({state:'visible'});
+  assert.equal(await page.locator('#publishTitle').inputValue(), '跨栏目保留的发布草稿');
+  await show('schedule');
+  await page.locator('#publishHistory').waitFor({state:'visible'});
   await page.setViewportSize({ width: 900, height: 1000 });
   await page.waitForFunction(() => {
     const history = document.querySelector('#publishHistory');
     return history && !history.classList.contains('is-height-limited') && !history.style.getPropertyValue('--publish-history-max-height');
   });
   assert.equal(await page.locator('#publishHistory').evaluate(node => getComputedStyle(node).maxHeight), 'none');
-
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.waitForFunction(() => document.querySelector('#publishHistory')?.classList.contains('is-height-limited'));
-  const historyHandle = await page.locator('#publishHistory').elementHandle();
+  assert.equal(await page.locator('#publishHistory').evaluate(node => getComputedStyle(node).maxHeight), 'none');
   const disconnectedBefore = await page.evaluate(() => window.__publishResizeObserver.disconnected);
   await openWorkspacePage(page, 'dashboard');
   await page.locator('.operations-dashboard').waitFor();
-  const cleanup = await historyHandle.evaluate(node => ({
-    connected: node.isConnected,
-    classApplied: node.classList.contains('is-height-limited'),
-    heightVariable: node.style.getPropertyValue('--publish-history-max-height')
-  }));
+  const cleanup = await historyHandle.evaluate(node => ({ connected: node.isConnected, classApplied: node.classList.contains('is-height-limited'), heightVariable: node.style.getPropertyValue('--publish-history-max-height') }));
   assert.deepEqual(cleanup, { connected: false, classApplied: false, heightVariable: '' });
   assert.ok(await page.evaluate(() => window.__publishResizeObserver.disconnected) > disconnectedBefore);
 });
@@ -230,14 +213,16 @@ test('离开发布页后的预检响应不能写入新页面或触发内容生�
   await page.goto(runtime.base);
   await openWorkspacePage(page, 'publish');
   await page.locator('#publishForm').waitFor();
+  await revealControl(page.locator('#materialPath'));
   await page.locator('#materialPath').fill('C:\\old-page-image.png');
-  await page.locator('#runPrecheck').click();
+  await page.locator('#publishTitle').click();
   await precheckEntered.promise;
 
   await openWorkspacePage(page, 'dashboard');
   await page.locator('.operations-dashboard').waitFor();
   await openWorkspacePage(page, 'publish');
   await page.locator('#publishForm').waitFor();
+  await revealControl(page.locator('#materialPath'));
   await page.locator('#materialPath').fill('C:\\new-page-image.png');
   assert.match(await page.locator('#precheckBox').innerText(), /等待上传/);
 
@@ -309,15 +294,19 @@ test('同一发布页较慢的旧预检不能覆盖较新的素材与平台选�
   await openWorkspacePage(page, 'publish');
   await page.locator('#publishForm').waitFor();
   const platform = page.locator('.platform-check[data-platform="douyin"]');
+  await revealControl(platform);
   await platform.check();
+  await revealControl(page.locator('#materialPath'));
   await page.locator('#materialPath').fill('C:\\slow-a.png');
-  await page.locator('#runPrecheck').click();
+  await page.locator('#publishTitle').click();
   await slowPrecheckEntered.promise;
 
+  await revealControl(page.locator('#materialPath'));
   await page.locator('#materialPath').fill('C:\\fast-b.jpg');
+  await revealControl(platform);
   await platform.uncheck();
   await fastGenerationEntered.promise;
-  await page.waitForFunction(() => document.querySelector('#precheckBox')?.textContent.includes('JPEG'));
+  await page.waitForFunction(() => { const text = document.querySelector('#precheckBox')?.textContent || ''; return text.includes('JPEG') && text.includes('待选择平台'); });
   assert.match(await page.locator('#precheckBox').innerText(), /待选择平台/);
   assert.match(await page.locator('#toast').innerText(), /素材基础检测完成/);
 

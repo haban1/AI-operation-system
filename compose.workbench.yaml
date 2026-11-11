@@ -26,7 +26,7 @@ services:
       start_period: 20s
       retries: 6
   signal:
-    image: tianhe-signal:brief-schema-20261030
+    image: tianhe-signal:weibo-page-20261105
     build:
       context: ./engines/ai-signal-studio
     init: true
@@ -40,6 +40,8 @@ services:
       SIGNAL_PORT: "8892"
       SIGNAL_BASE_PATH: /integrations/ai-signal
       SIGNAL_CONFIG_DIR: /app/runtime-config
+      SIGNAL_XHS_MCP_URL: http://host.docker.internal:9200/mcp
+      SIGNAL_WEIBO_AGENT_URL: http://host.docker.internal:17831
     volumes:
       - ./runtime/workbench/signal/runs:/app/runs
       - ./runtime/workbench/signal/data:/app/data

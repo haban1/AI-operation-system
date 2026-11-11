@@ -24,6 +24,7 @@ from speech_api import normalize_speech, public_speech, stored_speech, require_s
 from comparison import create_batch, run_batch, read_batch, list_batches, recover_batches, choose, supervise_batch, safe_error
 from research import normalize_topic, research_topic
 from runtime import base_path, config_path, public_url
+from source_collectors import normalize_sources, resolve_candidate, xhs_login
 
 LOCK = threading.Lock()
 JOB = {'status':'idle','step':'等待开始'}
@@ -34,6 +35,7 @@ if (ROOT/'data/last-job.json').exists():
         save(ROOT/'data/last-job.json',JOB)
 SETTINGS = config()
 SETTINGS['tts'] = normalize_speech({}, SETTINGS['tts'])
+SETTINGS['sources'] = normalize_sources(SETTINGS.get('sources'))
 recover_batches(ROOT)
 
 def style_preference():
@@ -82,7 +84,12 @@ def task(action, payload):
     run = None
     try:
         if action=='collect':
-            JOB['step']='正在采集公开热点'; collect()
+            JOB['step']='正在采集各平台热点'; result=collect(SETTINGS.get('sources'))
+            failed=[s for s in result['sources'] if s['status']=='unavailable']
+            JOB.update(status='done' if not failed or len(failed)<len(result['sources']) else 'failed',
+                       step=f"采集完成：{len(result['candidates'])} 条选题，{len(failed)} 个来源暂不可用" if result['sources'] else '尚未启用任何来源',
+                       finished_at=now())
+            return
         elif action in ['compare','compare-retry']:
             result=run_batch(ROOT,payload['comparison_id'],SETTINGS,on_progress=lambda message:JOB.update(step=message))
             JOB.update(status='done' if result['status']=='done' else 'failed',
@@ -238,6 +245,11 @@ class Handler(BaseHTTPRequestHandler):
             payload=json.loads(self.rfile.read(size) or b'{}')
             if not isinstance(payload,dict):raise ValueError('请求内容必须是对象')
             action=urlsplit(self.path).path.removeprefix('/api/')
+            if action in ('draft','build','compare') and 'candidate_id' in payload:
+                if 'topic' in payload or 'repo' in payload:raise ValueError('请选择一种选题方式')
+                if not isinstance(payload['candidate_id'],str) or len(payload['candidate_id'])>300:raise ValueError('热点编号不正确')
+                try:payload.update(resolve_candidate(ROOT,payload['candidate_id']))
+                except (OSError,StopIteration):raise ValueError('热点记录不可用，请重新采集') from None
             if action in ('draft','build','compare') and 'topic' in payload:
                 payload['topic']=normalize_topic(payload['topic'])
                 if payload['topic']['search_mode']=='model' and SETTINGS['llm']['provider']!='responses':
@@ -253,6 +265,22 @@ class Handler(BaseHTTPRequestHandler):
                 style=get_style(payload['style_id'])
                 save(ROOT/'data/style-preference.json',{'style_id':style['id'],'updated_at':now()})
                 self.send_json({'ok':True,'style_id':style['id']});return
+            if action in ('xhs-status','xhs-login-qr'):
+                if not LOCK.acquire(blocking=False):self.send_json({'error':'请等待当前任务结束后检查小红书登录'},409);return
+                try:self.send_json(xhs_login(qrcode=action=='xhs-login-qr'))
+                finally:LOCK.release()
+                return
+            if action=='sources-config':
+                sources=normalize_sources(payload.get('sources',{}))
+                if not LOCK.acquire(blocking=False):self.send_json({'error':'请等待当前任务结束后修改来源'},409);return
+                try:
+                    updated={**SETTINGS,'sources':sources}
+                    stored={**updated,'tts':stored_speech(updated['tts']),'llm':{k:v for k,v in updated['llm'].items() if k!='api_key'}}
+                    save(config_path(ROOT),stored)
+                    SETTINGS=updated
+                    self.send_json({'ok':True,'sources':sources})
+                finally:LOCK.release()
+                return
             if action=='config':
                 if LOCK.locked():raise ValueError('任务运行中，请完成后再改设置')
                 llm=normalize_settings(payload['llm'],SETTINGS['llm'])

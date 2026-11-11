@@ -27,8 +27,8 @@ export interface ThemePreferences {
 export const themeStorageKey = 'theme-preferences';
 
 export const defaultThemePreferences: ThemePreferences = {
-	themeMode: 'system',
-	colorPreset: 'default',
+	themeMode: 'dark',
+	colorPreset: 'forest',
 	fontFamily: 'auto',
 	radius: 'auto',
 	density: 'default',

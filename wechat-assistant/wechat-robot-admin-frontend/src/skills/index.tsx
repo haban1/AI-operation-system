@@ -47,14 +47,16 @@ const Skills = (props: IProps) => {
 	);
 
 	return (
-		<Spin spinning={loading}>
+		<Spin
+			spinning={loading}
+			className="wx-skills-page"
+		>
 			<SkillsToolbar>
 				<SkillsToolbarInfo>
 					<SkillsToolbarIcon>
 						<AppstoreAddOutlined />
 					</SkillsToolbarIcon>
 					<SkillsToolbarText>
-						前往{' '}
 						<Button
 							color="primary"
 							variant="link"
@@ -63,8 +65,7 @@ const Skills = (props: IProps) => {
 							onClick={setSkillsMarketOpen.setTrue}
 						>
 							技能市场
-						</Button>{' '}
-						探索更多技能
+						</Button>
 					</SkillsToolbarText>
 				</SkillsToolbarInfo>
 				<SkillsToolbarButton

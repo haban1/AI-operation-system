@@ -15,6 +15,7 @@ from xml.etree import ElementTree
 from collect import now, save
 from llm_api import generate, web_search
 from public_web import public_url, read_public
+from source_collectors import collected_document
 
 MAX_SOURCES = 8
 TEXT = {'type':'string'}
@@ -43,8 +44,16 @@ def normalize_topic(value):
     if not isinstance(urls,list) or len(urls)>5:raise ValueError('最多补充5个参考链接')
     mode=value.get('search_mode','auto')
     if mode not in ('auto','public','model'):raise ValueError('搜索方式不正确')
-    return {'title':title.strip(),'angle':angle.strip(),'urls':list(dict.fromkeys(public_url(u) for u in urls)),
+    result={'title':title.strip(),'angle':angle.strip(),'urls':list(dict.fromkeys(public_url(u) for u in urls)),
             'search_mode':mode}
+    if 'collected_ref' in value:
+        ref=value['collected_ref']
+        if (not isinstance(ref,dict) or not isinstance(ref.get('archive'),str) or
+            not re.fullmatch(r'data/capture-\d{8}-\d{6}(?:-\d{6})?',ref['archive']) or
+            not isinstance(ref.get('id'),str) or not 1<=len(ref['id'])<=300):
+            raise ValueError('热点来源记录格式不正确')
+        result['collected_ref']={'archive':ref['archive'],'id':ref['id']}
+    return result
 
 
 class PageText(HTMLParser):
@@ -178,6 +187,15 @@ def research_topic(topic,target,settings,on_progress=None):
         if not isinstance(queries,list) or not 2<=len(queries)<=3 or any(not isinstance(q,str) or not 2<=len(q)<=200 for q in queries):
             raise ValueError('研究计划缺少有效搜索词')
         sources=[];seen=set();model_supported=True
+        if topic.get('collected_ref'):
+            progress('读取选中热点的原始资料')
+            try:seed=collected_document(Path(__file__).resolve().parents[1],topic['collected_ref'])
+            except (ValueError,OSError) as error:
+                raise ValueError('选中热点的正文读取失败：'+str(error)) from None
+            if seed:
+                seed['id']='s1';sources.append(seed);seen.add(seed['url'])
+                folder=target/'sources';folder.mkdir(exist_ok=True)
+                (folder/'s1.txt').write_text(seed['text'],encoding='utf-8')
         for round_index in range(2):
             report['queries']+=queries
             progress(f'第{round_index+1}轮搜索：查找公开资料')

@@ -1,0 +1,71 @@
+:root{color-scheme:dark;color:#e3edef;background:#080e13;--muted:#8fa7b3;--border:#24343e;--green:#80dfc1;--lime:#80dfc1}
+body{background:#080e13;color:#e3edef;font-family:'Microsoft YaHei','Segoe UI',sans-serif;font-size:13px}
+body .sidebar{position:sticky;inset:auto;top:0;width:100%;height:auto;min-height:58px;padding:0;background:#080e13;border-bottom:1px solid var(--border);flex-direction:row;align-items:center;z-index:5}
+body .sidebar>:not(nav){display:none}
+body .sidebar nav{display:flex;align-items:center;gap:24px;overflow-x:auto;white-space:nowrap;width:100%}
+body .navItem{display:flex;gap:0;color:var(--muted);padding:18px 0 15px;font-size:12px;border-radius:0;border-bottom:2px solid transparent;min-height:58px;margin:0;background:none}
+body .navItem.selected{color:var(--lime);background:none;border-bottom-color:var(--lime)}
+body .navItem :is(.routeNumber,.navIcon,small,.navDot),body .navDivider{display:none}
+body .sidebar .navItem>span:not(.navIcon):not(.routeNumber){display:inline}
+body .sidebar .navItem:first-child{margin-top:0}
+body .shell{margin:0}
+body .topbar{height:46px;padding:8px 0;background:#080e13;border:0;justify-content:flex-end}
+body .breadcrumb,body .workspaceAvatar{display:none}
+body .topActions{gap:12px}
+body .serviceSummary{color:var(--muted);font-size:11px}
+body .iconButton{font-size:20px;color:var(--muted)}
+body .overview{max-width:none;padding:10px 0 30px}
+body .welcome{margin:0 0 24px}
+body .welcome :is(.eyebrow,.workspaceTag),body .sectionHeading>span,body .routeArt,body .numberLabel,body .steps,body .cardFoot>span,body .overviewFooter>span:last-child{display:none}
+body .welcome h1{font-size:19px;font-weight:550;letter-spacing:0;margin:0 0 8px}
+body .welcome p{color:var(--muted);font-size:12px}
+body .sectionHeading h2{font-size:14px;font-weight:500}
+body .overview>.sectionHeading{display:none}
+body .routeGrid{gap:18px}
+body .routeCard{padding:22px;background:#101a21;border:1px solid var(--border);color:#e3edef;border-radius:10px;min-height:225px}
+body .cardTop{justify-content:flex-end}
+body .routeCard h3{font-size:19px;font-weight:550;letter-spacing:0;margin:20px 0 12px}
+body .routeCard .cardDescription{min-height:40px;color:var(--muted);font-size:12px}
+body .cardFoot{border:0;padding-top:22px;justify-content:flex-start}
+body .routeButton{font-size:12px;background:var(--lime);color:#0b2119;border:1px solid #77cdb1;gap:12px;padding:9px 14px;border-radius:7px}
+body .statusBadge{background:#18382c;color:#91dfbf;font-size:10px;border-radius:5px}
+body .statusBadge.offline{background:#382f1e;color:#e2bd7d}
+body .statusBadge.muted{background:#1b2a34;color:#9db3c1}
+body .workbench-service-details{margin-top:24px;border-top:1px solid var(--border);padding-top:16px}
+body .workbench-service-details>summary{cursor:pointer;color:var(--muted);font-size:12px}
+body .bottomGrid{gap:18px;margin-top:18px}
+body :is(.connectionPanel,.readinessPanel){padding:20px;background:#101a21;border:1px solid var(--border);border-radius:9px}
+body :is(.connectionInfo strong,.sectionHeading h2){color:#d1e0e3}
+body :is(.connectionInfo span,.readinessItem p,.noteFoot,.overviewFooter){color:var(--muted);font-size:11px}
+body :is(.connectionRow,.noteFoot){border-color:var(--border)}
+body .productIcon,body .readinessItem>span{color:#80dfc1;background:#18382c}
+body .connectionState{font-size:11px}
+body .connectionState.online{color:var(--lime)}
+body .embedded{height:calc(100dvh - 104px);background:#080e13;min-height:550px}
+body .workspaceToolbar{background:#101a21;border-color:var(--border);padding:14px 16px}
+body :is(.miniRoute,#activeProduct){display:none}
+body .workspaceIdentity{gap:12px}
+body .workspaceIdentity h1{font-size:15px;margin:0;font-weight:500}
+body .workspaceTools{gap:16px}
+body :is(.standaloneLink,.textButton){background:transparent;color:var(--muted);border-color:#2b404b;font-size:11px}
+body .workspaceNotice{font-size:11px;background:#0c161d;border-color:var(--border);color:var(--muted);padding:10px 16px}
+body .frameArea,body .frameArea iframe{background:#080e13}
+body .connectionPlaceholder{background:#101a21;color:#e3edef}
+body .connectionPlaceholder h2{font-size:17px;font-weight:500}
+body .connectionPlaceholder p{font-size:12px;color:var(--muted)}
+body .libraryView{padding:10px 0 24px;max-width:none}
+body :is(.libraryAdmissionTabs,.libraryControls){border-color:var(--border)}
+body :is(.libraryAdmissionTabs button,.libraryFilters button){color:var(--muted);background:transparent;border-color:var(--border);font-size:12px}
+body :is(.libraryAdmissionTabs button[aria-selected=true],.libraryFilters button[aria-pressed=true]){color:var(--lime);background:#17372d;border-color:#29483d}
+body :is(.libraryAdmissionTabs button span,.libraryFilters button span){background:#1b2a34;color:#9db3c1}
+body :is(.libraryCard,.libraryItem,.libraryEmpty,.librarySources,.receiveOutputDialog){background:#101a21;color:#e3edef;border-color:var(--border);box-shadow:none}
+body :is(.librarySecondaryAction,.libraryAction){background:#15242c;color:#c5d8dc;border-color:#2b404b;border-radius:7px;font-size:12px}
+body :is(.libraryCount,.librarySyncState,.libraryMeta,.libraryEmpty p){color:var(--muted);font-size:11px}
+body :is(.receiveOutputDialog input,.receiveOutputDialog select){background:#0c161d;color:#e3edef;border-color:#2a404c;border-radius:7px}
+body .receiveOutputDialog{border-radius:10px}
+body .receiveOutputDialog label{font-size:12px;color:#c5d8dc}
+body .receiveOutputDialog h2{font-size:18px;font-weight:550}
+body .toast{background:#17372d;color:#d1e9df;border:1px solid #29483d}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid var(--lime);outline-offset:4px}
+@media(max-width:1000px){body .routeGrid{grid-template-columns:minmax(0,1fr)}body .routeCard{min-height:190px}body .routeCard h3{margin-top:8px}body .bottomGrid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:650px){body .sidebar{padding:0}body .sidebar nav{gap:20px;padding:0}body .navItem{font-size:11px}body .overview{padding:10px 0 24px}body .welcome{margin-bottom:20px}body .routeCard{padding:18px}body .embedded{height:760px}body .workspaceToolbar{align-items:flex-start;flex-wrap:wrap;gap:14px}body .workspaceTools{gap:15px;flex-wrap:wrap}body .workspaceIdentity{flex-wrap:wrap}body .libraryView{padding:10px 0}body .libraryControls{flex-wrap:wrap}body .libraryFilters{flex-wrap:wrap}body .libraryToolbar{flex-wrap:wrap}body .libraryWelcome{align-items:flex-start;gap:12px}body .receiveOutputDialog{max-width:calc(100vw - 24px)}body .receiveOutputActions{flex-wrap:wrap}}

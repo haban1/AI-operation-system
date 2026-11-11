@@ -1,0 +1,5 @@
+# Apply after the existing weixin_robot .deploy/local/docker-compose.yml.
+# Keeps its local-only port, cookies and image mounts unchanged.
+services:
+  xiaohongshu-mcp:
+    image: tianhe-xiaohongshu:browser-20261104

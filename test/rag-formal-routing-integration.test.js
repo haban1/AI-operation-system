@@ -123,9 +123,9 @@ test('正式 RAG 链路只查询正常业务消息，并覆盖回答、澄清、
       res.end(JSON.stringify({ error: { code: 'RAG_DOWN', message: '测试服务异常' } }));
       return;
     }
-    if (question.includes('无答案') || question === '你好') {
+    if (question.includes('无答案') || question.includes('需要澄清') || question === '你好') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ requestId: payload.requestId, result: 'NO_ANSWER', snapshot: payload.snapshot, grounding: { confidence: 0, sourceReferences: [] }, meta: { knowledgeVersion: 'test-release-1' } }));
+      res.end(JSON.stringify({ requestId: payload.requestId, result: question.includes('需要澄清') ? 'NEED_CLARIFICATION' : 'NO_ANSWER', snapshot: payload.snapshot, grounding: { confidence: 0, sourceReferences: [] }, meta: { knowledgeVersion: 'test-release-1' } }));
       return;
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -241,13 +241,120 @@ test('正式 RAG 链路只查询正常业务消息，并覆盖回答、澄清、
   });
 
   const commentNoAnswer = await simulate({ content: '无答案的评论问题', messageType: 'COMMENT', conversationId: 'formal-rag-comment-empty' });
+  const commentClarification = await simulate({ content: '需要澄清的评论问题', messageType: 'COMMENT', conversationId: 'formal-rag-comment-clarification' });
   const commentGreeting = await simulate({ content: '你好', messageType: 'COMMENT', conversationId: 'formal-rag-comment-greeting' });
-  for (const message of [commentNoAnswer]) {
-    assert.equal(message.status, 'MANUAL_REQUIRED', JSON.stringify(message));
-    assert.match(message.decision, /HUMAN_FOLLOWUP_NOTIFICATION_PENDING|HUMAN_FOLLOWUP_NOTIFIED/);
-    assert.equal(message.reply_text, null);
-    assert.equal(message.reply_job_id, null);
+  for (const message of [commentNoAnswer, commentClarification]) {
+    assert.equal(message.status, 'REPLY_QUEUED', JSON.stringify(message));
+    assert.equal(message.decision, 'COMMENT_HANDOFF_OFFER');
+    assert.ok(message.reply_text);
+    assert.match(message.reply_text, /详情/);
+    assert.match(message.reply_text, /站内消息/);
+    assert.doesNotMatch(message.reply_text, /转人工|需要人工/);
+    assert.ok(message.reply_job_id);
+    assert.ok(message.manual_handoff_intent_id);
+    const context = JSON.parse(message.reply_context_json);
+    assert.equal(context.handoffOffered, true);
+    assert.equal(context.guidanceAttempt, 0);
+    const verify = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      assert.equal(verify.prepare('SELECT COUNT(*) AS count FROM notifications WHERE message_id=?').get(message.id).count, 0);
+      assert.equal(verify.prepare('SELECT status FROM manual_handoff_intents WHERE id=?').get(message.manual_handoff_intent_id).status, 'WAITING_USER_CONFIRMATION');
+      const conversation = verify.prepare('SELECT handling_mode,clarification_attempts FROM conversations WHERE id=?').get(message.conversation_id);
+      assert.equal(conversation.handling_mode, 'BOT_ACTIVE');
+      assert.equal(conversation.clarification_attempts, 0);
+    } finally { verify.close(); }
   }
+  assert.equal(commentGreeting.status, 'REPLY_QUEUED');
+  assert.equal(commentGreeting.decision, 'COMMENT_SOCIAL_REPLY');
+  assert.ok(commentGreeting.reply_text);
+  assert.ok(commentGreeting.reply_job_id);
+  assert.equal(commentGreeting.knowledge_id, null);
+
+  const markOfferSent = message => {
+    // Only this temporary fixture DB is changed; no Agent or platform send runs.
+    const fixture = new DatabaseSync(dbPath);
+    try {
+      fixture.exec('PRAGMA busy_timeout=15000');
+      fixture.prepare("UPDATE agent_jobs SET status='SUCCESS' WHERE id=?").run(message.reply_job_id);
+      fixture.prepare("UPDATE messages SET status='AUTO_REPLIED',handled_at=?,handled_by='AI' WHERE id=?").run(new Date().toISOString(), message.id);
+    } finally { fixture.close(); }
+  };
+  await t.test('已发送的评论邀约回复详情后才通知人工，并保留原问题', async () => {
+    const conversationId = 'formal-comment-offer-accepted';
+    const originalQuestion = '无答案的评论原始问题：社区申请还缺哪些材料？';
+    const offered = await simulate({ content: originalQuestion, messageType: 'COMMENT', conversationId });
+    assert.equal(offered.decision, 'COMMENT_HANDOFF_OFFER');
+    markOfferSent(offered);
+    const beforeConfirmation = ragRequests.length;
+    const confirmed = await simulate({ content: '详情', messageType: 'COMMENT', conversationId });
+    assert.equal(confirmed.status, 'MANUAL_REQUIRED', JSON.stringify(confirmed));
+    assert.equal(confirmed.reply_job_id, null);
+    assert.equal(ragRequests.length, beforeConfirmation, '邀约确认不再查询业务知识');
+    // /retry is the existing public reprocessing route; there is no /process route.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const repeated = await request(base, `/api/messages/${confirmed.id}/retry`, { method: 'POST', body: '{}' });
+      assert.equal(repeated.response.status, 200, JSON.stringify(repeated.data));
+      assert.equal(repeated.data.message.status, 'MANUAL_REQUIRED');
+      assert.equal(repeated.data.message.reply_job_id, null);
+    }
+    assert.equal(ragRequests.length, beforeConfirmation);
+    const verify = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      const notifications = verify.prepare("SELECT type,content FROM notifications WHERE message_id=? AND json_extract(metadata_json,'$.handoff')=1").all(confirmed.id);
+      assert.equal(notifications.length, 1);
+      assert.equal(verify.prepare('SELECT COUNT(*) AS count FROM notifications WHERE message_id=?').get(confirmed.id).count, 1, '重复处理同一确认消息不能新增风险通知');
+      assert.equal(notifications[0].type, 'KNOWLEDGE_GAP_CONFIRMED');
+      assert.ok(notifications[0].content.includes(originalQuestion), notifications[0].content);
+      assert.equal(verify.prepare('SELECT handling_mode FROM conversations WHERE id=?').get(confirmed.conversation_id).handling_mode, 'HANDOFF_PENDING');
+      assert.equal(verify.prepare('SELECT status FROM manual_handoff_intents WHERE id=?').get(offered.manual_handoff_intent_id).status, 'NOTIFY_QUEUED');
+    } finally { verify.close(); }
+  });
+  await t.test('没有已发送邀约时单独回复详情仍查询业务知识，不转人工', async () => {
+    const beforeDetails = ragRequests.length;
+    const message = await simulate({ content: '详情', messageType: 'COMMENT', conversationId: 'formal-comment-details-without-offer' });
+    assert.equal(message.status, 'REPLY_QUEUED', JSON.stringify(message));
+    assert.equal(message.decision, 'RAG_ANSWERED');
+    assert.equal(message.manual_handoff_intent_id, null);
+    assert.equal(ragRequests.length, beforeDetails + 1);
+    assert.equal(ragRequests.at(-1).query.text, '详情');
+    const verify = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      assert.equal(verify.prepare('SELECT COUNT(*) AS count FROM notifications WHERE message_id=?').get(message.id).count, 0);
+      assert.equal(verify.prepare('SELECT handling_mode FROM conversations WHERE id=?').get(message.conversation_id).handling_mode, 'BOT_ACTIVE');
+    } finally { verify.close(); }
+  });
+  await t.test('拒绝评论人工邀约后继续自动回复且不发人工通知', async () => {
+    const conversationId = 'formal-comment-offer-declined';
+    const offered = await simulate({ content: '无答案的评论问题：社区开放时间？', messageType: 'COMMENT', conversationId });
+    markOfferSent(offered);
+    const beforeDecline = ragRequests.length;
+    const declined = await simulate({ content: '暂时不用', messageType: 'COMMENT', conversationId });
+    assert.equal(declined.status, 'REPLY_QUEUED', JSON.stringify(declined));
+    assert.ok(declined.reply_text);
+    assert.equal(ragRequests.length, beforeDecline, '拒绝邀约不再查询业务知识');
+    const verify = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      assert.equal(verify.prepare('SELECT handling_mode FROM conversations WHERE id=?').get(declined.conversation_id).handling_mode, 'BOT_ACTIVE');
+      assert.equal(verify.prepare('SELECT COUNT(*) AS count FROM notifications WHERE conversation_id=?').get(declined.conversation_id).count, 0);
+      assert.equal(verify.prepare('SELECT status FROM manual_handoff_intents WHERE id=?').get(offered.manual_handoff_intent_id).status, 'DECLINED');
+    } finally { verify.close(); }
+    const answered = await simulate({ content: '办理业务需要什么材料？', messageType: 'COMMENT', conversationId });
+    assert.equal(answered.status, 'REPLY_QUEUED');
+    assert.equal(answered.decision, 'RAG_ANSWERED');
+  });
+  await t.test('评论邀约尚未发送时普通肯定不能触发人工通知', async () => {
+    const conversationId = 'formal-comment-offer-not-sent';
+    const offered = await simulate({ content: '无答案的评论问题：社区收费？', messageType: 'COMMENT', conversationId });
+    assert.equal(offered.status, 'REPLY_QUEUED');
+    const next = await simulate({ content: '好的', messageType: 'COMMENT', conversationId });
+    assert.equal(next.status, 'REPLY_QUEUED', JSON.stringify(next));
+    assert.equal(next.decision, 'COMMENT_SOCIAL_REPLY');
+    const verify = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      assert.equal(verify.prepare('SELECT handling_mode FROM conversations WHERE id=?').get(next.conversation_id).handling_mode, 'BOT_ACTIVE');
+      assert.equal(verify.prepare('SELECT COUNT(*) AS count FROM notifications WHERE conversation_id=?').get(next.conversation_id).count, 0);
+    } finally { verify.close(); }
+  });
 
   const evidenceGapIds = [];
   await t.test('五个平台连续三次证据不足仍给诚实边界提示，不累计澄清、不自动转人工', async () => {
@@ -375,14 +482,13 @@ test('正式 RAG 链路只查询正常业务消息，并覆盖回答、澄清、
   assert.equal(ragRequests.length, beforeManagedFollowupCount);
 
   const verifyDb = new DatabaseSync(dbPath, { readOnly: true });
-  assert.equal(commentGreeting.status, 'REPLY_QUEUED', '抖音纯互动评论按既有社交路由自然回应');
-  assert.equal(commentGreeting.decision, 'COMMENT_SOCIAL_REPLY');
-  assert.equal(commentGreeting.reply_text, '你好呀，很高兴见到你！');
-  for (const message of [commentNoAnswer]) {
-    assert.equal(verifyDb.prepare("SELECT COUNT(*) AS count FROM agent_jobs WHERE job_type='REPLY' AND CAST(json_extract(payload,'$.messageId') AS INTEGER)=?").get(message.id).count, 0);
-    assert.equal(verifyDb.prepare("SELECT COUNT(*) AS count FROM notifications WHERE message_id=? AND type='COMMENT_KNOWLEDGE_GAP' AND json_extract(metadata_json,'$.handoff')=1").get(message.id).count, 1);
-    assert.equal(verifyDb.prepare('SELECT handling_mode FROM conversations WHERE id=?').get(message.conversation_id).handling_mode, 'HANDOFF_PENDING');
+  for (const message of [commentNoAnswer, commentClarification]) {
+    assert.equal(verifyDb.prepare("SELECT COUNT(*) AS count FROM agent_jobs WHERE job_type='REPLY' AND CAST(json_extract(payload,'$.messageId') AS INTEGER)=?").get(message.id).count, 1);
+    assert.equal(verifyDb.prepare('SELECT COUNT(*) AS count FROM notifications WHERE message_id=?').get(message.id).count, 0);
+    assert.equal(verifyDb.prepare('SELECT handling_mode FROM conversations WHERE id=?').get(message.conversation_id).handling_mode, 'BOT_ACTIVE');
   }
+  assert.equal(verifyDb.prepare("SELECT COUNT(*) AS count FROM agent_jobs WHERE job_type='REPLY' AND CAST(json_extract(payload,'$.messageId') AS INTEGER)=?").get(commentGreeting.id).count, 1);
+  assert.equal(verifyDb.prepare("SELECT COUNT(*) AS count FROM notifications WHERE message_id=? AND json_extract(metadata_json,'$.handoff')=1").get(commentGreeting.id).count, 0);
   assert.equal(verifyDb.prepare(`SELECT COUNT(*) AS count FROM knowledge_gaps WHERE message_id IN (${evidenceGapIds.map(() => '?').join(',')})`).get(...evidenceGapIds).count, 0);
   assert.ok(verifyDb.prepare("SELECT COUNT(*) AS count FROM notifications WHERE message_id=? AND json_extract(metadata_json,'$.handoff')=1").get(risk.id).count >= 1);
   assert.ok(verifyDb.prepare("SELECT COUNT(*) AS count FROM notifications WHERE message_id=? AND json_extract(metadata_json,'$.handoff')=1").get(managedFollowup.id).count >= 1);

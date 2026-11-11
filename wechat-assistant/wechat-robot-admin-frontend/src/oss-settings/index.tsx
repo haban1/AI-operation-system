@@ -130,7 +130,10 @@ const OSSSettings = (props: IProps) => {
 	};
 
 	return (
-		<Spin spinning={loading}>
+		<Spin
+			spinning={loading}
+			className="wx-storage-page"
+		>
 			<ParamsGroup
 				title="OSS 设置"
 				style={{ marginTop: 10 }}

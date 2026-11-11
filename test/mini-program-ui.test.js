@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { revealControl, revealDetails } from './helpers/ui-details.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { chromium } from 'playwright-core';
@@ -218,6 +219,8 @@ test('小程序对话工作台通过真实页面完成筛选、详情和管理�
   await openWorkspacePage(page, 'miniProgram');
   await page.locator('.mini-program-page').waitFor();
   assert.equal(await page.locator('.mini-program-page').count(), 1);
+  assert.equal(await page.locator('.ws-mini-settings').evaluate(node => node.open), false);
+  await revealControl(page.locator('.mini-program-summary'));
   assert.match(await page.locator('.mini-program-summary').innerText(), /开放接口|应用配置|回调配置|最近接收|待处理|待回调|企微失败/);
 
   const filterLabels = ['全部', 'AI 处理中', '回复待发送', '转人工通知中', '已转人工', '异常'];
@@ -240,11 +243,12 @@ test('小程序对话工作台通过真实页面完成筛选、详情和管理�
   const renderedTexts = await page.locator('.mini-program-message .mini-program-inbound').allTextContents();
   assert.match(renderedTexts[0], /较早问题/);
   assert.match(renderedTexts[1], /还需要准备什么资料/);
+  await revealDetails(page, '.ws-mini-delivery,.ws-mini-conversation-meta');
   const detailText = await page.locator('.mini-program-detail').innerText();
   assert.match(detailText, /居住证办理地点|回调发送失败|503|AI 回复/);
   assert.match(detailText, /知识库已回复/);
   assert.doesNotMatch(detailText, /RAG_ANSWERED/);
-  assert.equal(await page.locator('.mini-program-page textarea, .mini-program-page input').count(), 0);
+  assert.equal(await page.locator('.mini-program-workbench textarea, .mini-program-workbench input').count(), 0);
   assert.doesNotMatch(detailText, /发送回复|人工回复输入/);
 
   await page.getByRole('button', { name: '重试回调', exact: true }).click();
@@ -274,6 +278,7 @@ test('小程序对话工作台通过真实页面完成筛选、详情和管理�
 
   const allowed = [
     ['GET', /^\/api\/mini-program\/status$/],
+    ['GET', /^\/api\/mini-program\/connection$/],
     ['GET', /^\/api\/mini-program\/conversations$/],
     ['GET', /^\/api\/mini-program\/conversations\/\d+\/messages$/],
     ['POST', /^\/api\/mini-program\/conversations\/\d+\/handoff$/],
@@ -417,7 +422,8 @@ test('管理响应经过状态、标识、数字和时间安全投影且空结�
   await openWorkspacePage(page, 'miniProgram');
   await page.locator('.mini-program-page').waitFor();
   assert.deepEqual(await page.locator('.mini-program-conversation').evaluateAll(nodes => nodes.map(node => node.dataset.conversationId)), ['808']);
-  assert.deepEqual(await page.locator('.mini-program-summary-item>b').allTextContents(), ['已开启', '已就绪', '已就绪', '—', '0', '0', '0']);
+  await revealDetails(page, '.ws-mini-settings,.ws-mini-delivery,.ws-mini-conversation-meta');
+  assert.deepEqual(await page.locator('.mini-program-summary-item>b').allTextContents(), ['—', '0', '0', '0']);
   assert.doesNotMatch(await page.locator('.mini-program-page').innerText(), /Invalid Date|2000\/1\/1|2026\/3\/2|browser-contract-shared-secret|x"|#-4|9007199254740992/);
   assert.ok((await page.getByText('未知状态', { exact: true }).count()) >= 2);
   const unsafeMessage = page.locator('.mini-program-message').filter({ hasText: 'message-later' });
@@ -529,10 +535,13 @@ test('三类动作锁跨重绘生效，失败清理后可重试并保持选中�
   assert.equal(postCounts.notification, 1);
 
   excludeSelected = true;
+  const previousPage = await page.locator('.mini-program-page').elementHandle();
   const statusRequest = page.waitForRequest(request => new URL(request.url()).pathname === '/api/mini-program/status');
   await page.getByRole('button', { name: '刷新小程序对话', exact: true }).click();
   await statusRequest;
+  await page.waitForFunction(node => !node.isConnected, previousPage);
   await page.waitForFunction(() => document.querySelector('.mini-program-detail')?.textContent.includes('consultation-with-a-very-long-id-20260905-000000000001'));
+  await revealControl(page.locator('.mini-program-detail .mini-program-id'));
   assert.match(await page.locator('.mini-program-detail').innerText(), /consultation-with-a-very-long-id-20260905-000000000001/);
   assert.equal(await page.locator('.mini-program-conversation.active').count(), 0);
 });
@@ -575,15 +584,15 @@ test('旧页面 bootstrap 响应不能覆盖最新页面的全局运行门禁', 
   await oldBootstrapEntered.promise;
   await openWorkspacePage(page, 'miniProgram');
   await page.locator('.mini-program-page').waitFor();
-  assert.match(await page.locator('#qwenMode').innerText(), /在线/);
-  assert.equal(await page.locator('#operationsBadge').innerText(), 'LIVE');
+  assert.match(await page.locator('#qwenMode').textContent(), /在线/);
+  assert.equal(await page.locator('#operationsBadge').textContent(), 'LIVE');
   assert.equal(await page.locator('body').evaluate(node => node.classList.contains('operations-paused')), false);
 
   releaseOldBootstrap.resolve();
   await delay(200);
-  assert.match(await page.locator('#qwenMode').innerText(), /在线/);
-  assert.equal(await page.locator('#operationsBadge').innerText(), 'LIVE');
-  assert.equal(await page.locator('#agentStatus').innerText(), '在线');
+  assert.match(await page.locator('#qwenMode').textContent(), /在线/);
+  assert.equal(await page.locator('#operationsBadge').textContent(), 'LIVE');
+  assert.equal(await page.locator('#agentStatus').textContent(), '在线');
   assert.equal(await page.locator('body').evaluate(node => node.classList.contains('operations-paused')), false);
   assert.equal(await page.locator('.mini-program-page').count(), 1);
 });
@@ -646,15 +655,15 @@ test('旧定时 bootstrap 刷新不能覆盖小程序页面较新的运行门禁
 
   await openWorkspacePage(page, 'miniProgram');
   await page.locator('.mini-program-page').waitFor();
-  assert.match(await page.locator('#qwenMode').innerText(), /在线/);
-  assert.equal(await page.locator('#operationsBadge').innerText(), 'LIVE');
-  assert.equal(await page.locator('#agentStatus').innerText(), '在线');
+  assert.match(await page.locator('#qwenMode').textContent(), /在线/);
+  assert.equal(await page.locator('#operationsBadge').textContent(), 'LIVE');
+  assert.equal(await page.locator('#agentStatus').textContent(), '在线');
 
   releaseTimerBootstrap.resolve();
   await delay(200);
-  assert.match(await page.locator('#qwenMode').innerText(), /在线/);
-  assert.equal(await page.locator('#operationsBadge').innerText(), 'LIVE');
-  assert.equal(await page.locator('#agentStatus').innerText(), '在线');
+  assert.match(await page.locator('#qwenMode').textContent(), /在线/);
+  assert.equal(await page.locator('#operationsBadge').textContent(), 'LIVE');
+  assert.equal(await page.locator('#agentStatus').textContent(), '在线');
   assert.equal(await page.locator('body').evaluate(node => node.classList.contains('operations-paused')), false);
   assert.equal(await page.locator('.mini-program-page').count(), 1);
 });
@@ -725,6 +734,7 @@ test('旧平台动作完成后不能借用小程序页面所有权刷新或重�
       return action;
     };
   });
+  await revealControl(page.locator('#stopAllPlatforms'));
   await page.locator('#stopAllPlatforms').click();
   await page.getByRole('button', { name: '确认全部停止', exact: true }).click();
   await actionPostEntered.promise;
@@ -804,6 +814,7 @@ test('旧平台刷新晚于小程序渲染返回时不能重绘已提交的新�
     };
   });
   holdActionRefresh = true;
+  await revealControl(page.locator('#stopAllPlatforms'));
   await page.locator('#stopAllPlatforms').click();
   await page.getByRole('button', { name: '确认全部停止', exact: true }).click();
   await actionRefreshEntered.promise;
@@ -963,6 +974,7 @@ test('小程序管理响应中的文本对象统一安全降级且不会中断�
   await delay(150);
   assert.equal(await page.locator('.mini-program-page').count(), 1);
   assert.deepEqual(pageErrors, []);
+  await revealDetails(page, '.ws-mini-settings,.ws-mini-delivery,.ws-mini-conversation-meta');
   const text = await page.locator('.mini-program-page').innerText();
   assert.match(text, /未知用户|会话 —|暂无已保存文字|用户文字\s+—|未命中知识问法/);
   assert.doesNotMatch(text, /\[object Object\]|not-callable|页面加载失败/);

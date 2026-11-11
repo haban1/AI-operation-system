@@ -128,8 +128,21 @@ test('正式 RAG 评论直接回复知识答案并保留 grounding 引用', () =
   assert.deepEqual(result.sourceReferences, [{ documentId: 'doc-1', chunkId: 'chunk-1' }]);
 });
 
-test('RAG 评论没有可靠答案时直接转人工且不生成公开回复', () => {
-  for (const result of ['NO_ANSWER', 'NEED_CLARIFICATION', 'REJECTED', 'ANSWERED', 'UNAVAILABLE']) {
+test('RAG 评论无答案先询问是否需要人工，不编造业务答案', () => {
+  for (const result of ['NO_ANSWER', 'NEED_CLARIFICATION']) {
+    const comment = formalRagReplyResult({ result }, { messageType: 'COMMENT' });
+    assert.equal(comment.action, 'REPLY', result);
+    assert.equal(comment.decision, 'COMMENT_HANDOFF_OFFER');
+    assert.match(comment.replyText, /回复“详情”.*站内消息/);
+    assert.doesNotMatch(comment.replyText, /转人工|人工协助|已通知|已发私信/);
+    assert.equal(comment.handoffOffered, true);
+    assert.equal(comment.handoffRequested, false);
+    assert.equal(comment.guidanceAttempt, 0);
+  }
+});
+
+test('RAG 拒绝、空答案或服务不可用的评论仍走人工处理', () => {
+  for (const result of ['REJECTED', 'ANSWERED', 'UNAVAILABLE']) {
     const comment = formalRagReplyResult({ result }, { messageType: 'COMMENT' });
     assert.equal(comment.action, 'HANDOFF', result);
     assert.equal(comment.replyText, null, result);
@@ -322,14 +335,29 @@ test('已入库的B站作品标题兼容平台字段并参与检索指纹', () =
 });
 
 test('费用材料地址报名先确认对象，已有业务上下文时再查询知识库', () => {
-  for (const question of ['多少钱？', '请问要什么材料', '地址在哪里', '如何报名', '在哪里申请', '这个要多少钱', '需要什麼材料？']) {
+  const clarificationCopy = new Map([
+    ['多少钱？', '你问的是哪项服务的费用？发个名字我看看。'],
+    ['请问要什么材料', '你想办哪件事？告诉我名字，我看看要准备什么。'],
+    ['地址在哪里', '想找哪个机构或活动的地址？发个名字我看看。'],
+    ['如何报名', '想报哪个活动或课程？发个名字就行。'],
+    ['在哪里申请', '你问的是哪项业务？发个名字就行。'],
+    ['在哪里办理', '你问的是哪项业务？发个名字就行。']
+  ]);
+  for (const question of ['多少钱？', '请问要什么材料', '地址在哪里', '如何报名', '在哪里申请', '在哪里办理', '这个要多少钱', '需要什麼材料？']) {
     const first = routeBusinessClarification({ question });
     assert.equal(first?.matchMethod, 'OUTER_ROUTER', question);
     assert.equal(first.guidanceAttempt, 1);
+    if (clarificationCopy.has(question)) assert.equal(first.replyText, clarificationCopy.get(question));
+    assert.doesNotMatch(first.replyText, /请补充|已查询|已查到|转人工/);
     assert.equal(routeBusinessClarification({ question, context: [{ role: 'USER', text: '我想了解OPC港澳服务社区' }] }), null);
     const second = routeBusinessClarification({ question, context: [{ role: 'USER', text: '多少钱？' }, { role: 'USER', text: '你好' }], guidanceAttempt: 2 });
     assert.equal(second?.guidanceAttempt, 2, '省略对象和问候不能冒充已知业务');
     assert.equal(routeBusinessClarification({ question, messageType: 'COMMENT' }), null);
+  }
+  for (const question of ['在哪裡申請', '在哪裡辦理']) {
+    const result = routeBusinessClarification({ question, script: 'traditional' });
+    assert.equal(result?.replyText, '你問的是哪項業務？發個名字就行。');
+    assert.doesNotMatch(result.replyText, /活動|課程|報名/);
   }
   for (const question of ['澳车北上需要什么材料', 'OPC社区入驻多少钱', '社区政策有哪些', '这个App在哪里下载']) {
     assert.equal(routeBusinessClarification({ question }), null, question);

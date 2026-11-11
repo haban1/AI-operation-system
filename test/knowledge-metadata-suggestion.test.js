@@ -94,7 +94,10 @@ test('Web 知识库不再暴露待补充知识模块或请求知识缺口接口'
 
 test('Web 使用原知识上传界面接入统一知识库，不展示 RAG 专用字段或旧分类入口', () => {
   const app = fs.readFileSync(path.resolve(import.meta.dirname, '../public/app.js'), 'utf8');
-  const ragView = app.slice(app.indexOf('async function renderRagKnowledge()'), app.indexOf('async function renderKnowledge()', app.indexOf('async function renderRagKnowledge()')));
+  const ragStart = app.indexOf('async function renderRagKnowledge(');
+  const ragEnd = app.indexOf('async function renderKnowledge(', ragStart);
+  assert.ok(ragStart >= 0 && ragEnd > ragStart, 'knowledge render function boundaries are present');
+  const ragView = app.slice(ragStart, ragEnd);
   assert.match(app, /<b>知识库内容<\/b><small>资料上传、测试与发布<\/small>/);
   assert.match(app, /<b>转人工说法<\/b>/);
   assert.match(app, /class="knowledge-upload-form"/);

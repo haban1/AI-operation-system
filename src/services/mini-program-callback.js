@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { config } from '../config.js';
+import { getMiniProgramConnection } from './mini-program-connection.js';
 import { immediateTransaction, now, row, run } from '../db.js';
 import { signMiniProgramRequest, validateMiniProgramCallbackUrl } from './mini-program-auth.js';
 import { conversationHandlingMode } from './conversation-control.js';
@@ -63,7 +64,7 @@ function normalizeCreatedAt(value) {
 
 function callbackIdentity(message) {
   const context = parseMessageContext(message);
-  const appId = String(context.appId || config.miniProgramAppId || '').trim();
+  const appId = String(context.appId || getMiniProgramConnection().appId || '').trim();
   const conversationId = String(context.conversationId || '').trim();
   const userId = String(context.userId || message?.user_name || '').trim();
   const sourceMessageId = String(context.messageId || context.platformMessageId || '').trim();
@@ -126,8 +127,8 @@ function safeFailureMessage(error, callback, extraSensitive = []) {
   const timeout = ['AbortError', 'TimeoutError'].includes(String(error?.name || ''));
   const source = timeout ? '小程序回调请求超时' : (error?.message || error || '小程序回调发送失败');
   return replaceSensitive(source, [
-    config.miniProgramSharedSecret,
-    config.miniProgramCallbackUrl,
+    getMiniProgramConnection().sharedSecret,
+    getMiniProgramConnection().callbackUrl,
     callback?.payload_json,
     payload.text,
     ...extraSensitive
@@ -138,8 +139,8 @@ function safeResponseExcerpt(value, callback, signature) {
   let payload = {};
   try { payload = JSON.parse(callback?.payload_json || '{}') || {}; } catch {}
   const sensitiveValues = responseSensitiveRepresentations([
-    config.miniProgramSharedSecret,
-    config.miniProgramCallbackUrl,
+    getMiniProgramConnection().sharedSecret,
+    getMiniProgramConnection().callbackUrl,
     callback?.payload_json,
     payload.text,
     signature
@@ -208,7 +209,7 @@ function cancelMiniProgramCallback(id, reason = 'CONVERSATION_HANDOFF') {
   const updated = run(`UPDATE mini_program_callback_outbox
     SET status='CANCELLED',available_at=NULL,claimed_at=NULL,lease_expires_at=NULL,error_message=?,updated_at=?
     WHERE id=? AND status='SENDING' AND attempt_count=? AND claimed_at=?`,
-  replaceSensitive(reason, [config.miniProgramSharedSecret, config.miniProgramCallbackUrl]), stamp,
+  replaceSensitive(reason, [getMiniProgramConnection().sharedSecret, getMiniProgramConnection().callbackUrl]), stamp,
   callback.id, callback.attempt_count, callback.claimed_at);
   if (updated.changes !== 1) return { ...callbackById(callback.id), delivered: false };
   return { ...callbackById(callback.id), delivered: false, cancelled: true };
@@ -323,12 +324,14 @@ export async function deliverMiniProgramCallback(callbackOrId, { fetchImpl = glo
     if (!conversation || conversationHandlingMode(conversation) !== 'BOT_ACTIVE') {
       return cancelMiniProgramCallback(callback, 'CONVERSATION_HANDOFF');
     }
-    if (!String(config.miniProgramCallbackUrl || '').trim()) return markNotConfigured(callback);
+    const connection = getMiniProgramConnection();
+    if (callback.app_id !== connection.appId) return markDeliveryFailure(callback, new Error('小程序应用身份与回复不匹配'));
+    if (!String(connection.callbackUrl || '').trim()) return markNotConfigured(callback);
 
     let signature = '';
     try {
       const rawBody = Buffer.from(callback.payload_json, 'utf8');
-      const target = validateMiniProgramCallbackUrl(config.miniProgramCallbackUrl);
+      const target = validateMiniProgramCallbackUrl(connection.callbackUrl);
       const timestamp = String(Math.floor(Date.now() / 1000));
       const nonce = crypto.randomUUID();
       signature = signMiniProgramRequest({
@@ -337,14 +340,14 @@ export async function deliverMiniProgramCallback(callbackOrId, { fetchImpl = glo
         timestamp,
         nonce,
         rawBody,
-        secret: config.miniProgramSharedSecret
+        secret: connection.sharedSecret
       });
       const response = await fetchImpl(target.href, {
         method: 'POST',
         redirect: 'manual',
         headers: {
           'Content-Type': 'application/json',
-          'X-Mini-App-Id': config.miniProgramAppId,
+          'X-Mini-App-Id': connection.appId,
           'X-Timestamp': timestamp,
           'X-Nonce': nonce,
           'X-Signature': signature

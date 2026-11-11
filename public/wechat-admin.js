@@ -4,7 +4,7 @@ export function cleanupWechatAdmin() { dispose(); dispose = () => {}; }
 export function renderWechatAdmin(container) {
   cleanupWechatAdmin();
   const controller = new AbortController();
-  container.innerHTML = `<section class="panel wx-robot-panel"><div class="panel-head"><div><h3>微信客服</h3><p class="muted">微信助手 · 联系人、人工接待、好友群发与知识库</p></div><button class="btn ghost" data-robot-reload type="button">重新加载</button></div><div data-robot-status class="notice" role="status">正在连接微信助手…</div><div data-robot-frame></div></section>`;
+  container.innerHTML = `<section class="panel wx-robot-panel"><div class="panel-head"><div><h3>微信客服</h3></div><button class="btn ghost" data-robot-reload type="button">重新加载</button></div><div data-robot-status class="notice" role="status">正在连接微信助手…</div><div data-robot-frame></div></section>`;
   container.querySelector('[data-robot-reload]').onclick = () => renderWechatAdmin(container);
   dispose = () => { controller.abort(); container.querySelectorAll('iframe').forEach(frame => frame.remove()); };
   (async () => {

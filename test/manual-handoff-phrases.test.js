@@ -90,7 +90,7 @@ test('运营人员可在知识库内容和转人工说法页签之间切换', { 
   assert.equal(await knowledgeTab('documents').getAttribute('aria-current'), 'page');
   assert.equal(await knowledgeTab('handoff-rules').getAttribute('aria-current'), 'false');
 });
-test('运营人员可维护私信转人工说法，停用和删除后立即失效，评论未命中知识时直接转人工', async t => {
+test('运营人员可维护私信转人工说法，停用和删除后立即失效，评论未命中知识时先询问人工意愿', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'manual-handoff-phrases-'));
   const dbPath = path.join(dir, 'test.db');
   const port = await freePort();
@@ -156,7 +156,7 @@ test('运营人员可维护私信转人工说法，停用和删除后立即失�
       body: JSON.stringify({
         platformCode: 'douyin', accountId: account.id, messageType, externalId: `custom-handoff-${suffix}`,
         userName: '转人工测试用户', content,
-        context: { conversationId, messageId: `custom-handoff-message-${suffix}`, direction: 'incoming', sourceVerified: true, chatTitleVerified: true, previewOnly: false, unreadCount: 1, noteId: 'note-custom-handoff' }
+        context: { conversationId, messageId: `custom-handoff-message-${suffix}`, direction: 'incoming', sourceVerified: true, chatTitleVerified: true, previewOnly: false, unreadCount: 1, noteId: 'note-custom-handoff', commentId: messageType === 'COMMENT' ? `comment-${suffix}` : undefined }
       })
     });
     assert.equal(result.response.status, 201, JSON.stringify(result.data));
@@ -196,14 +196,15 @@ test('运营人员可维护私信转人工说法，停用和删除后立即失�
   const notificationsBeforeComment = dbBeforeComment.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type='KNOWLEDGE_GAP_CONFIRMED'").get().count;
   dbBeforeComment.close();
   const comment = await simulate({ content: '给我安排专员', suffix: 'comment-enabled', messageType: 'COMMENT' });
-  assert.equal(comment.decision, 'HUMAN_FOLLOWUP_NOTIFICATION_PENDING');
-  assert.equal(comment.status, 'MANUAL_REQUIRED');
-  assert.equal(comment.reply_job_id, null);
-  assert.equal(comment.reply_text, null);
-  assert.equal(comment.manual_handoff_intent_id, null);
+  assert.equal(comment.decision, 'COMMENT_HANDOFF_OFFER');
+  assert.equal(comment.status, 'REPLY_QUEUED');
+  assert.ok(comment.reply_job_id);
+  assert.ok(comment.reply_text);
+  assert.ok(comment.manual_handoff_intent_id);
+  assert.equal(JSON.parse(comment.reply_context_json).handoffOffered, true);
   const dbAfterComment = new DatabaseSync(dbPath, { readOnly: true });
   assert.equal(dbAfterComment.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type='KNOWLEDGE_GAP_CONFIRMED'").get().count, notificationsBeforeComment);
-  assert.equal(dbAfterComment.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type='COMMENT_KNOWLEDGE_GAP' AND message_id=?").get(comment.id).count, 1);
+  assert.equal(dbAfterComment.prepare('SELECT COUNT(*) AS count FROM notifications WHERE message_id=?').get(comment.id).count, 0);
   dbAfterComment.close();
 
   const updated = await request(base, `/api/manual-handoff-phrases/${phraseId}`, { method: 'PUT', body: JSON.stringify({ phrase: '帮我联系业务专员', updatedBy: '集成测试' }) });
@@ -220,13 +221,17 @@ test('运营人员可维护私信转人工说法，停用和删除后立即失�
   assert.notEqual(afterDelete.decision, 'HUMAN_FOLLOWUP_NOTIFICATION_PENDING');
 
   const schemaDb = new DatabaseSync(dbPath, { readOnly: true });
-  for (const item of [privateMatched, aliasMatched, updatedMatched, comment]) {
+  for (const item of [privateMatched, aliasMatched, updatedMatched]) {
     const conversation = schemaDb.prepare('SELECT handling_mode,human_followup_state FROM conversations WHERE id=?').get(item.conversation_id);
     assert.equal(conversation.handling_mode, 'HANDOFF_PENDING');
     assert.equal(conversation.human_followup_state, 'WAITING');
     assert.equal(schemaDb.prepare("SELECT COUNT(*) AS count FROM agent_jobs WHERE job_type='REPLY' AND CAST(json_extract(payload,'$.messageId') AS INTEGER)=?").get(item.id).count, 0);
     assert.equal(schemaDb.prepare("SELECT COUNT(*) AS count FROM notifications WHERE message_id=?").get(item.id).count, 1);
   }
+  const commentConversation = schemaDb.prepare('SELECT handling_mode,clarification_attempts FROM conversations WHERE id=?').get(comment.conversation_id);
+  assert.equal(commentConversation.handling_mode, 'BOT_ACTIVE');
+  assert.equal(commentConversation.clarification_attempts, 0);
+  assert.equal(schemaDb.prepare('SELECT status FROM manual_handoff_intents WHERE id=?').get(comment.manual_handoff_intent_id).status, 'WAITING_USER_CONFIRMATION');
   assert.equal(schemaDb.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='manual_handoff_phrases'").get().count, 1);
   assert.equal(schemaDb.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='manual_handoff_phrase_aliases'").get().count, 1);
   assert.equal(schemaDb.prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='manual_handoff_alias_generation_tasks'").get().count, 1);

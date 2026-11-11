@@ -1,6 +1,6 @@
 :root {
-	--app-color-surface-tint: #f0fdfa;
-	--app-shadow-icon-accent: 0 6px 16px rgba(15, 116, 144, 0.18);
+	--app-color-surface-tint: var(--ant-color-bg-container);
+	--app-shadow-icon-accent: none;
 }
 
 body {
@@ -29,6 +29,7 @@ body {
 .embedded-robot-body {
 	height: calc(100vh - 126px);
 	min-height: 520px;
+	overflow: auto;
 }
 
 @media (max-width: 1100px) {
@@ -43,8 +44,8 @@ html[data-theme-mode='light'] body {
 }
 
 html[data-theme-mode='dark'] body {
-	background-color: #090f1d;
-	color: #dbeafe;
+	background-color: #080e13;
+	color: #e3edef;
 }
 
 .ellipsis {
@@ -54,8 +55,7 @@ html[data-theme-mode='dark'] body {
 }
 
 .skin {
-	background-color: rgb(64, 64, 64);
-	background-image: url(https://img.houhoukang.com/wechat-robot-admin-bg.jpg);
+	background-color: var(--ant-color-bg-layout);
 	position: fixed;
 	top: 0;
 	left: 0;
@@ -72,7 +72,7 @@ html[data-theme-mode='dark'] body {
 }
 
 html[data-theme-mode='dark'] .skin {
-	filter: saturate(0.78) brightness(0.34);
+	background-color: #080e13;
 }
 
 .nav,
@@ -90,9 +90,9 @@ html[data-theme-mode='dark'] .nav,
 html[data-theme-mode='dark'] .filter,
 html[data-theme-mode='dark'] .content,
 html[data-theme-mode='dark'] .pagination {
-	border-color: #213049;
-	background-color: #101827;
-	color: #dbeafe;
+	border-color: var(--ant-color-border-secondary);
+	background-color: var(--ant-color-bg-container);
+	color: var(--ant-color-text);
 }
 
 .nav {
@@ -134,5 +134,765 @@ html[data-theme-mode='dark'] .pagination {
 @media (max-width: 768px) {
 	.hide-on-mobile {
 		display: none !important;
+	}
+}
+
+.wechat-account-actions {
+	position: relative;
+
+	summary {
+		cursor: pointer;
+		padding: 7px 10px;
+		border: 1px solid var(--ant-color-border);
+		border-radius: 7px;
+		color: var(--ant-color-text-secondary);
+		font-size: 12px;
+	}
+
+	.account-action-list {
+		position: absolute;
+		right: 0;
+		top: calc(100% + 8px);
+		z-index: 20;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		padding: 12px;
+		border: 1px solid var(--ant-color-border);
+		border-radius: 8px;
+		background: var(--ant-color-bg-elevated);
+		box-shadow: var(--ant-box-shadow-secondary);
+		white-space: nowrap;
+	}
+}
+
+.wechat-settings-tabs {
+	min-width: 0;
+	padding: 8px 0;
+}
+
+@media (max-width: 768px) {
+	.embedded-robot-heading {
+		padding: 12px;
+	}
+
+	.wechat-settings-tabs > .ant-tabs-nav {
+		width: 110px;
+	}
+
+	.wechat-settings-tabs > .ant-tabs-content-holder {
+		min-width: 0;
+	}
+}
+
+.embedded-workbench {
+	position: relative;
+	background: var(--ant-color-bg-layout);
+	font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
+}
+.wx-account-toolbar {
+	min-height: 64px;
+	padding: 12px 28px;
+	padding-right: 270px;
+	border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+.wx-account-caption {
+	display: none;
+}
+.wx-account-toolbar .ant-select {
+	min-width: 150px !important;
+}
+.embedded-robot-heading {
+	position: absolute;
+	top: 0;
+	right: 0;
+	min-height: 64px;
+	border: 0;
+	padding: 12px 28px;
+}
+
+.embedded-robot-body {
+	height: auto;
+	min-height: 620px;
+	overflow: visible;
+}
+.embedded-robot-body .tech-tabs-header {
+	min-height: 58px;
+	margin: 0;
+	padding: 0 28px;
+	background: transparent;
+}
+.embedded-robot-body .tech-tabs-item .anticon {
+	display: none;
+}
+.embedded-robot-body .tech-tabs-item {
+	font-size: 12px;
+}
+.embedded-robot-body .tech-tabs-content {
+	overflow: visible;
+	padding: 26px 28px 40px;
+}
+.wx-page {
+	min-width: 0;
+}
+.wx-page-toolbar {
+	min-height: 36px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	margin-bottom: 22px;
+}
+.wx-muted,
+.wx-chat-date {
+	color: var(--ant-color-text-secondary);
+	font-size: 12px;
+}
+.wx-chat-shell {
+	display: grid;
+	grid-template-columns: 270px minmax(0, 1fr);
+	border: 1px solid var(--ant-color-border-secondary);
+	border-radius: 10px;
+	background: var(--ant-color-bg-container);
+	min-height: 530px;
+	overflow: hidden;
+}
+.wx-chat-list {
+	border-right: 1px solid var(--ant-color-border-secondary);
+}
+.wx-chat-search {
+	padding: 17px;
+	border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+.wx-conversation {
+	display: flex;
+	align-items: flex-start;
+	gap: 11px;
+	width: 100%;
+	text-align: left;
+	padding: 18px 16px;
+	color: var(--ant-color-text);
+	background: transparent;
+	border: 0;
+	border-bottom: 1px solid var(--ant-color-border-secondary);
+	cursor: pointer;
+}
+.wx-conversation.active {
+	background: var(--ant-color-primary-bg);
+}
+.wx-conversation > span:last-child {
+	min-width: 0;
+	flex: 1;
+}
+.wx-conversation strong {
+	font-size: 12px;
+	font-weight: 500;
+}
+.wx-conversation small {
+	display: block;
+	color: var(--ant-color-text-secondary);
+	font-size: 10px;
+	margin-top: 3px;
+}
+.wx-conversation p {
+	margin: 6px 0 0;
+	color: var(--ant-color-text-secondary);
+	font-size: 11px;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.wx-chat-main {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+.wx-chat-heading {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 16px 20px;
+	border-bottom: 1px solid var(--ant-color-border-secondary);
+	font-size: 13px;
+}
+.wx-chat-history {
+	min-height: 310px;
+	flex: 1;
+	padding: 24px;
+}
+.wx-chat-date {
+	text-align: center;
+	font-size: 10px;
+	margin-bottom: 25px;
+}
+.wx-message-row {
+	display: flex;
+	gap: 12px;
+	align-items: flex-start;
+}
+.wx-message-bubble {
+	border: 1px solid var(--ant-color-border);
+	padding: 12px 15px;
+	border-radius: 0 8px 8px 8px;
+	max-width: 78%;
+	background: var(--ant-color-fill-content);
+	font-size: 12px;
+	white-space: pre-wrap;
+}
+.wx-chat-footer {
+	border-top: 1px solid var(--ant-color-border-secondary);
+	padding: 16px 20px;
+	font-size: 11px;
+	color: var(--ant-color-text-secondary);
+}
+.wx-inline-details {
+	font-size: 11px;
+	color: var(--ant-color-text-secondary);
+	margin-top: 16px;
+}
+.wx-inline-details summary {
+	cursor: pointer;
+	margin-bottom: 10px;
+}
+.wx-support-workspace .ant-card-head {
+	min-height: 54px;
+	border-bottom: 0;
+	font-size: 16px;
+	font-weight: 550;
+}
+.wx-support-workspace .ant-card-body {
+	padding: 0 22px 22px;
+}
+.wx-recipient-select {
+	display: flex;
+	margin: 18px 0;
+}
+.wx-recipient-select > :last-child {
+	margin-left: auto;
+	font-size: 11px;
+	color: var(--ant-color-text-secondary);
+}
+.wx-recipient-list {
+	max-height: 390px;
+	overflow: auto;
+}
+.wx-recipient {
+	display: flex;
+	gap: 11px;
+	align-items: center;
+	min-height: 67px;
+	border-bottom: 1px solid var(--ant-color-border-secondary);
+	cursor: pointer;
+}
+.wx-recipient strong {
+	font-size: 12px;
+	font-weight: 500;
+}
+.wx-avatar {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	background: var(--ant-color-primary-bg);
+	color: var(--ant-color-primary);
+	font-size: 12px;
+}
+.wx-upload {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 12px;
+	min-height: 135px;
+	border: 1px dashed var(--ant-color-border);
+	border-radius: 8px;
+	color: var(--ant-color-text);
+	font-size: 12px;
+	padding: 16px;
+}
+.wx-upload small {
+	color: var(--ant-color-text-secondary);
+	font-size: 10px;
+}
+.wx-upload input {
+	font-size: 11px;
+	max-width: 100%;
+}
+.wx-send-preview {
+	border: 1px solid var(--ant-color-border-secondary);
+	padding: 10px 14px;
+	border-radius: 8px;
+}
+.wx-send-preview summary {
+	cursor: pointer;
+	color: var(--ant-color-text-secondary);
+	font-size: 11px;
+}
+.wx-persona-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1.45fr) minmax(260px, 1fr);
+	gap: 20px;
+}
+.wx-persona-copy {
+	background: var(--ant-color-bg-layout);
+	border: 1px solid var(--ant-color-border);
+	border-radius: 8px;
+	padding: 20px;
+	font-size: 12px;
+	line-height: 1.9;
+	white-space: pre-wrap;
+	min-height: 235px;
+}
+.wx-persona-meta {
+	font-size: 11px;
+	color: var(--ant-color-text-secondary);
+	margin-top: 20px;
+}
+.wx-persona-list button {
+	display: block;
+	width: 100%;
+	padding: 16px 0;
+	border: 0;
+	border-bottom: 1px solid var(--ant-color-border-secondary);
+	background: transparent;
+	color: var(--ant-color-text);
+	text-align: left;
+	cursor: pointer;
+}
+.wx-persona-list button.active strong {
+	color: var(--ant-color-primary);
+}
+.wx-persona-list strong {
+	font-size: 13px;
+	font-weight: 500;
+}
+.wx-persona-list p {
+	font-size: 11px;
+	color: var(--ant-color-text-secondary);
+	margin: 6px 0 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.wechat-settings-tabs {
+	padding: 0;
+}
+.wechat-settings-tabs > .ant-tabs-nav {
+	width: 185px;
+	flex-shrink: 0;
+	align-self: flex-start;
+}
+.wechat-settings-tabs > .ant-tabs-nav::before,
+.wechat-settings-tabs > .ant-tabs-content-holder {
+	border: 0;
+}
+.wechat-settings-tabs > .ant-tabs-nav .ant-tabs-tab {
+	padding: 10px 13px;
+	margin: 0 0 5px;
+	border-radius: 6px;
+	text-align: left;
+	font-size: 12px;
+}
+.wechat-settings-tabs > .ant-tabs-nav .ant-tabs-tab-active {
+	background: var(--ant-color-primary-bg);
+}
+.wechat-settings-tabs > .ant-tabs-nav .ant-tabs-ink-bar {
+	display: none;
+}
+.wechat-settings-tabs > .ant-tabs-nav .anticon {
+	display: none;
+}
+.wechat-settings-tabs > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane {
+	padding-left: 22px;
+}
+.wx-settings-form {
+	max-height: none;
+	overflow: visible;
+}
+.wx-ai-fields {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 16px 20px;
+	margin-top: 18px;
+	.ant-form-item {
+		min-width: 0;
+		margin-bottom: 0;
+	}
+	.wx-wide-field {
+		grid-column: 1 / -1;
+	}
+}
+@media (max-width: 900px) {
+	.wx-ai-fields {
+		grid-template-columns: 1fr;
+	}
+}
+.wx-global-settings .ant-form-item-horizontal {
+	padding: 14px 0;
+	border-bottom: 1px solid var(--ant-color-border-secondary);
+	margin-bottom: 0;
+}
+.wx-global-settings .ant-form-item-horizontal .ant-form-item-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+.wx-global-settings .ant-form-item-horizontal .ant-form-item-label {
+	flex: 1;
+	text-align: left;
+	padding: 0;
+}
+.wx-global-settings .ant-form-item-horizontal .ant-form-item-control {
+	flex: 0 0 auto;
+}
+.wx-advanced-group {
+	margin-top: 16px;
+	border-top: 1px solid var(--ant-color-border-secondary);
+	padding-top: 15px;
+}
+.wx-advanced-group > summary {
+	cursor: pointer;
+	font-size: 12px;
+	color: var(--ant-color-text-secondary);
+}
+.wx-advanced-group > div {
+	margin-top: 15px !important;
+}
+.wx-contacts .tech-list-scroll {
+	height: auto;
+	max-height: 600px;
+	border: 1px solid var(--ant-color-border-secondary);
+	border-radius: 10px;
+	background: var(--ant-color-bg-container);
+}
+.wx-contacts .tech-list-item {
+	padding: 17px 18px;
+	margin: 0;
+	border: 0;
+	border-bottom: 1px solid var(--ant-color-border-secondary);
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+.wx-contacts .tech-list-item .ant-list-item-meta-title {
+	font-size: 12px;
+}
+.wx-contacts .ant-space-compact .ant-btn {
+	border: 0;
+	background: transparent;
+	color: var(--ant-color-text-secondary);
+	font-size: 11px;
+	box-shadow: none;
+}
+.wx-contacts .ant-space-compact .ant-btn-icon {
+	display: none;
+}
+.wx-contacts .ant-list-item-meta-description {
+	font-size: 10px;
+}
+.wx-tool-row {
+	width: 100%;
+	background: var(--ant-color-bg-container) !important;
+	box-shadow: none !important;
+}
+.wx-tool-row .ant-card-head {
+	min-height: 54px;
+	border-bottom: 0;
+}
+.wx-tool-row .ant-card-body {
+	padding: 12px 18px;
+}
+.wx-tool-row .ant-card-meta-description {
+	font-size: 12px;
+}
+.wx-mcp-page .ant-card,
+.wx-skills-page .ant-card {
+	margin-bottom: 12px;
+}
+.wx-mcp-page .ant-card-head-title .ant-avatar,
+.wx-skills-page .ant-card-head-title .ant-avatar {
+	display: none;
+}
+.wx-knowledge-page .ant-table {
+	border: 1px solid var(--ant-color-border-secondary);
+	border-radius: 10px;
+	overflow: hidden;
+}
+.wx-knowledge-page .ant-table-cell {
+	font-size: 12px;
+	padding: 16px 14px;
+}
+@media (max-width: 900px) {
+	.wx-account-toolbar {
+		padding: 12px 18px;
+		padding-right: 240px;
+	}
+	.embedded-robot-heading {
+		padding: 12px 18px;
+	}
+	.embedded-robot-body .tech-tabs-header {
+		padding: 0 18px;
+	}
+	.embedded-robot-body .tech-tabs-content {
+		padding: 22px 18px;
+	}
+	.wx-persona-grid {
+		grid-template-columns: 1fr;
+	}
+	.wx-chat-shell {
+		grid-template-columns: 220px minmax(0, 1fr);
+	}
+	.wechat-settings-tabs > .ant-tabs-nav {
+		width: 140px;
+	}
+}
+@media (max-width: 650px) {
+	.wx-account-toolbar {
+		position: static;
+		padding-right: 18px;
+		padding-bottom: 58px;
+	}
+	.embedded-robot-heading {
+		top: 56px;
+		left: 0;
+		right: 0;
+		min-height: 50px;
+	}
+	.wx-chat-shell {
+		grid-template-columns: 1fr;
+	}
+	.wx-chat-list {
+		border-right: 0;
+		border-bottom: 1px solid var(--ant-color-border-secondary);
+		max-height: 190px;
+		overflow: auto;
+	}
+	.wx-chat-history {
+		min-height: 200px;
+		padding: 16px;
+	}
+	.wechat-settings-tabs > .ant-tabs-nav {
+		width: 110px;
+	}
+	.wechat-settings-tabs > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane {
+		padding-left: 12px;
+	}
+}
+
+.wx-tool-row {
+	display: grid;
+	grid-template-columns: minmax(180px, 0.8fr) minmax(0, 2fr);
+	border-radius: 0;
+	margin: 0 !important;
+	border-width: 0 0 1px;
+	align-items: start;
+}
+.wx-tool-row .ant-card-head {
+	border: 0;
+	min-width: 0;
+	padding: 18px;
+	font-size: 13px;
+}
+.wx-tool-row .ant-card-head-wrapper {
+	flex-wrap: wrap;
+	gap: 10px;
+}
+.wx-tool-row .ant-card-body {
+	display: flex !important;
+	flex-direction: row !important;
+	align-items: start;
+	justify-content: flex-end !important;
+	gap: 14px;
+	padding: 18px;
+}
+.wx-tool-row .ant-card-body > div {
+	min-width: 0;
+	flex: 1;
+}
+.wx-tool-row .ant-card-body .ant-space {
+	flex-wrap: wrap;
+}
+.wx-tool-row .ant-btn {
+	border: 0;
+	box-shadow: none;
+	background: transparent;
+}
+.wx-tool-description,
+.wx-tool-metadata {
+	color: var(--ant-color-text-secondary);
+	font-size: 11px;
+}
+.wx-tool-description {
+	max-width: 190px;
+}
+.wx-tool-description summary,
+.wx-tool-metadata summary {
+	cursor: pointer;
+}
+.wx-tool-description[open],
+.wx-tool-metadata[open] {
+	padding-bottom: 10px;
+}
+.wx-mcp-page .ant-spin-container > div:first-child,
+.wx-skills-page .ant-spin-container > div:first-child {
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	padding: 0;
+	margin-bottom: 22px;
+}
+@media (max-width: 750px) {
+	.wx-tool-row {
+		grid-template-columns: 1fr;
+	}
+	.wx-tool-row .ant-card-body {
+		padding-top: 0;
+	}
+}
+
+.embedded-robot-body .tech-tabs-item::before,
+.embedded-robot-body .tech-tabs-item:hover::before {
+	background: transparent !important;
+}
+.wx-personas .ant-card-head {
+	border-bottom: 0;
+	font-size: 16px;
+}
+.wx-personas .ant-card-body {
+	padding-top: 0;
+}
+.wx-broadcast .ant-space-vertical {
+	gap: 16px !important;
+}
+.wx-broadcast .ant-row {
+	align-items: stretch;
+}
+.wx-broadcast .ant-col > .ant-card {
+	height: 100%;
+}
+.wx-broadcast .wx-upload input {
+	color: var(--ant-color-text-secondary);
+}
+.wx-broadcast .wx-upload input::file-selector-button {
+	border: 1px solid var(--ant-color-border);
+	border-radius: 6px;
+	background: var(--ant-color-fill-content);
+	color: var(--ant-color-text);
+	padding: 5px 10px;
+	font: inherit;
+	margin-right: 9px;
+	cursor: pointer;
+}
+
+.wx-accounts .wx-account-list-header {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+}
+.wx-accounts .wx-account-list-filter {
+	padding: 0;
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+	margin: 22px 0;
+}
+.wx-accounts .wx-account-list-filter .ant-input-affix-wrapper {
+	max-width: 360px;
+	font-size: 12px;
+}
+.wx-accounts .wx-account-list-filter .ant-radio-button-wrapper {
+	font-size: 12px;
+}
+.wx-accounts .wx-account-list-content {
+	height: auto;
+	min-height: 180px;
+	overflow: visible;
+}
+.wx-accounts .wx-robot-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 0;
+	border: 1px solid var(--ant-color-border-secondary);
+	border-radius: 10px;
+	overflow: hidden;
+}
+.wx-accounts .wx-robot-card {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 230px;
+	border-width: 0 0 1px;
+	border-radius: 0;
+	box-shadow: none;
+}
+.wx-accounts .wx-robot-card:last-child {
+	border-bottom: 0;
+}
+.wx-accounts .wx-robot-card > .ant-card-body {
+	min-width: 0;
+}
+.wx-accounts .wx-robot-card > .ant-card-actions {
+	align-self: center;
+	padding: 8px;
+	display: flex;
+	border: 0;
+	background: transparent;
+}
+.wx-accounts .wx-robot-content {
+	padding: 18px;
+}
+.wx-accounts .wx-robot-hero {
+	display: grid;
+	grid-template-columns: minmax(190px, 0.85fr) minmax(0, 1.6fr);
+	align-items: center;
+	gap: 22px;
+	padding: 0;
+}
+.wx-accounts .wx-robot-hero .ant-avatar {
+	width: 32px !important;
+	height: 32px !important;
+	line-height: 32px !important;
+}
+.wx-accounts .wx-robot-hero .ant-flex > div > div > div {
+	font-size: 12px;
+}
+.wx-accounts .wx-robot-info {
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 12px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+.wx-accounts .wx-robot-info > div {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 6px;
+	padding: 0;
+	border: 0;
+}
+.wx-accounts .wx-robot-info > div > div {
+	font-size: 11px;
+	font-weight: 400;
+}
+@media (max-width: 1200px) {
+	.wx-accounts .wx-robot-card {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.wx-accounts .wx-robot-card > .ant-card-actions {
+		width: 230px;
+		justify-self: end;
+	}
+}
+@media (max-width: 800px) {
+	.wx-accounts .wx-robot-hero {
+		grid-template-columns: 1fr;
+	}
+	.wx-accounts .wx-account-list-filter .ant-row {
+		flex-wrap: wrap;
+		gap: 12px;
+	}
+	.wx-accounts .wx-account-list-filter .ant-col {
+		flex: 1 1 100%;
 	}
 }

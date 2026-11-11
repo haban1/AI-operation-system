@@ -35,7 +35,8 @@ export function routeIncomingMessage({ message = {}, conversation = null, source
   if (!content) {
     return { route: MESSAGE_ROUTE.IGNORE, reasonCode: 'EMPTY_MESSAGE', reason: '空消息不进入 RAG', riskLevel: 'LOW', allowRag: false, allowAutoReply: false };
   }
-  const handoffCommand = messageType === 'PRIVATE_MESSAGE' ? detectManualHandoffCommand(content, { customPhrases: customHandoffPhrases }) : null;
+  const handoffCommand = ['PRIVATE_MESSAGE', 'COMMENT'].includes(messageType)
+    ? detectManualHandoffCommand(messageType === 'COMMENT' ? content.replaceAll('轉', '转') : content, { customPhrases: messageType === 'PRIVATE_MESSAGE' ? customHandoffPhrases : [] }) : null;
   if (handoffCommand?.matched) {
     return { route: MESSAGE_ROUTE.HUMAN_HANDOFF, reasonCode: handoffCommand.reason, reason: '用户明确要求转人工', handoffCommand, riskLevel: 'HIGH', allowRag: false, allowAutoReply: false };
   }
@@ -49,35 +50,50 @@ export function routeIncomingMessage({ message = {}, conversation = null, source
   }
   if (messageType === 'COMMENT' && (message.platform_code || message.platformCode) === 'douyin') {
     const socialReplies = {
-      THANKS: '不客气，能帮上忙就好！',
-      PRAISE: '谢谢你的认可！',
-      ACKNOWLEDGEMENT: '好呀，感谢你的留言！',
-      GREETING: '你好呀，很高兴见到你！',
-      FAREWELL: '下次见呀！',
-      APOLOGY: '没关系呀！',
-      LAUGHTER: '哈哈，开心就好！'
+      THANKS: '不客气，能帮上忙就好。',
+      PRAISE: '谢谢，喜欢就好。',
+      ACKNOWLEDGEMENT: '好，收到。',
+      GREETING: '你好，想了解什么？',
+      FAREWELL: '下次聊。',
+      APOLOGY: '没事，不用客气。',
+      LAUGHTER: '哈哈，开心就好。'
     };
     // Douyin renders these positive reactions as text tokens after images load.
     const socialContent = content.replace(/\[(?:666|赞|强|鼓掌|比心|爱心|抱拳)\]/gu, '').trim();
     const intent = detectSmallTalkIntent(socialContent);
     // Exact social expressions only; mixed questions still require grounded RAG.
     const learned = /^(?:学到了|学到啦|学到了新知识|涨知识了|长知识了|受教了|受益匪浅)[!！。,.，～~\s]*$/u.test(socialContent);
-    const replyText = learned ? '能对你有帮助就好！' : intent.smallTalkOnly ? socialReplies[intent.category] : null;
+    const replyText = learned ? '有帮助就好。' : intent.smallTalkOnly ? socialReplies[intent.category] : null;
     if (replyText) return {
       route: MESSAGE_ROUTE.DIRECT_REPLY, reasonCode: 'COMMENT_SOCIAL_REPLY',
       reason: '纯互动评论自动自然回应，无需查询业务知识库', riskLevel: 'LOW',
       allowRag: false, allowAutoReply: true, replyText
     };
   }
-  if (messageType !== 'COMMENT' && (isGreetingOnlyMessage(content) || detectSmallTalkIntent(content).category === 'THANKS')) {
+  const privateSmallTalk = messageType !== 'COMMENT' ? detectSmallTalkIntent(content) : null;
+  if (messageType !== 'COMMENT' && (isGreetingOnlyMessage(content) || privateSmallTalk.smallTalkOnly)) {
+    const checkingPresence = /^(?:在吗|在不在|有人吗|有人在吗|客服在吗|工作人员在吗)[？?！!。\s]*$/u.test(content);
+    const replies = {
+      GREETING: checkingPresence ? '在的，想问什么？' : '你好，想了解什么？',
+      THANKS: '不客气，有问题再问我。',
+      ACKNOWLEDGEMENT: '好。',
+      PRAISE: '谢谢，喜欢就好。',
+      FAREWELL: '好，有需要再聊。',
+      APOLOGY: '没事，不用客气。',
+      LAUGHTER: '哈哈。',
+      IDENTITY: '我是小智，这里的智能助手。',
+      CAPABILITY: '可以帮你查资料、回答问题。你想了解什么？',
+      EMOTION: '想聊的话，可以慢慢说。'
+    };
+    const category = isGreetingOnlyMessage(content) ? 'GREETING' : privateSmallTalk.category;
     return {
       route: MESSAGE_ROUTE.DIRECT_REPLY,
-      reasonCode: 'SIMPLE_GREETING',
-      reason: '简单招呼无需查询知识库',
+      reasonCode: ['GREETING', 'THANKS'].includes(category) ? 'SIMPLE_GREETING' : 'PRIVATE_SOCIAL_REPLY',
+      reason: '纯日常对话无需查询业务知识库',
       riskLevel: 'LOW',
       allowRag: false,
       allowAutoReply: true,
-      replyText: '您好，请问您想了解哪方面的内容？'
+      replyText: replies[category]
     };
   }
   return { route: MESSAGE_ROUTE.RAG_QUERY, reasonCode: 'BUSINESS_QUESTION', reason: '正常业务咨询进入 RAG', riskLevel: 'LOW', allowRag: true, allowAutoReply: true };
