@@ -1,5 +1,4 @@
 import { platformLogo } from './platform-icons.js?v=20261111-v2';
-const privateSelection = new WeakMap();
 const platformNames = { douyin: '抖音', wechat_channels: '视频号', bilibili: 'B站', weibo: '微博', xiaohongshu: '小红书' };
 
 function element(tag, className, text) {
@@ -62,6 +61,33 @@ function privateKey(message, index) {
   return `${account}:${conversation ? `conversation:${conversation}` : user ? `user:${user}` : `message:${message?.id ?? index}`}`;
 }
 
+/* ---------- 私信：会话列表 + 消息 ----------
+   后台刷新时页面会原位合并（patchBackgroundContent），所以交互不绑定在某一批节点上：
+   按钮用 onclick 属性（合并时同步为最新处理器），点击时再从页面上找当前的卡片和最新会话数据。 */
+const privateView = { account: '', key: null, groups: new Map(), total: 0 };
+function selectPrivateConversation(shell, key) {
+  if (!shell) return;
+  if (key !== 'all' && !privateView.groups.has(key)) key = 'all';
+  privateView.key = key;
+  for (const card of shell.querySelectorAll('.private-message-list > .private-item')) card.hidden = key !== 'all' && card.dataset.privateKey !== key;
+  for (const button of shell.querySelectorAll('.ws-private-conversation')) {
+    const active = button.dataset.privateConversation === key;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-current', active ? 'true' : 'false');
+  }
+  const group = privateView.groups.get(key);
+  const heading = shell.querySelector('.ws-private-heading b'), count = shell.querySelector('.ws-private-heading span');
+  if (heading) heading.textContent = key === 'all' ? '全部私信' : group?.name || '';
+  if (count) count.textContent = `${key === 'all' ? privateView.total : group?.count || 0} 条消息`;
+}
+function filterPrivateConversations(shell) {
+  if (!shell) return;
+  const query = shell.querySelector('.ws-private-search')?.value.trim().toLocaleLowerCase() || '';
+  const buttons = [...shell.querySelectorAll('.ws-private-conversation')];
+  for (const button of buttons) button.hidden = Boolean(query) && !button.textContent.toLocaleLowerCase().includes(query);
+  const empty = shell.querySelector('.ws-private-search-empty');
+  if (empty) empty.hidden = buttons.some(button => !button.hidden);
+}
 function presentPrivateMessages(root, options) {
   const list = root.querySelector('.private-message-list');
   if (!list || list.closest('.ws-private-shell')) return;
@@ -74,18 +100,20 @@ function presentPrivateMessages(root, options) {
     const id = card.querySelector('.delete-message[data-id]')?.dataset.id;
     const message = byId.get(id);
     const key = message ? privateKey(message, index) : `message:${id || index}`;
+    card.dataset.privateKey = key;
     if (!groups.has(key)) groups.set(key, {
       key, name: message?.user_name || card.querySelector('.interaction-head b')?.textContent || '未知用户',
       preview: message?.content || card.querySelector('.private-content p')?.textContent || '',
-      time: card.querySelector('.interaction-head time')?.textContent || '', cards: []
+      time: card.querySelector('.interaction-head time')?.textContent || '', count: 0
     });
-    groups.get(key).cards.push(card);
+    groups.get(key).count += 1;
   });
   const shell = element('div', 'ws-private-shell');
   const sidebar = element('aside', 'ws-private-sidebar');
   sidebar.setAttribute('aria-label', '私信会话');
   const search = element('input', 'ws-private-search');
   search.type = 'search'; search.placeholder = '搜索会话'; search.setAttribute('aria-label', '搜索私信会话');
+  search.oninput = event => filterPrivateConversations(event.currentTarget.closest('.ws-private-shell'));
   const navigation = element('nav', 'ws-private-conversations');
   navigation.setAttribute('aria-label', '选择私信会话');
   const empty = element('p', 'ws-private-search-empty', '没有匹配的会话');
@@ -93,50 +121,32 @@ function presentPrivateMessages(root, options) {
   sidebar.append(search, navigation, empty);
   const main = element('section', 'ws-private-main');
   const header = element('header', 'ws-private-heading');
-  const heading = element('b');
-  const count = element('span');
-  header.append(heading, count);
+  header.append(element('b'), element('span'));
   main.append(header);
   list.before(shell); shell.append(sidebar, main); main.append(list);
   const account = String(options.messageAccountId ?? '');
-  const previous = privateSelection.get(root);
-  let selected = previous?.account === account && (previous.key === 'all' || groups.has(previous.key)) ? previous.key : groups.keys().next().value;
-  const buttons = new Map();
-  const select = key => {
-    selected = key;
-    privateSelection.set(root, { account, key });
-    for (const [groupKey, group] of groups) for (const card of group.cards) card.hidden = key !== 'all' && key !== groupKey;
-    for (const [groupKey, button] of buttons) {
-      const active = groupKey === key;
-      button.classList.toggle('active', active);
-      button.setAttribute('aria-current', active ? 'true' : 'false');
-    }
-    heading.textContent = key === 'all' ? '全部私信' : groups.get(key).name;
-    count.textContent = `${key === 'all' ? cards.length : groups.get(key).cards.length} 条消息`;
-  };
+  if (privateView.account !== account) privateView.key = null;
+  privateView.account = account; privateView.groups = groups; privateView.total = cards.length;
   for (const group of [{ key: 'all', name: '全部私信', preview: `${cards.length} 条消息`, time: '' }, ...groups.values()]) {
     const button = element('button', 'ws-private-conversation');
-    button.type = 'button'; button.dataset.privateConversation = group.key;
+    button.type = 'button'; button.dataset.privateConversation = group.key; button.dataset.refreshKey = `conversation:${group.key}`;
     const avatar = element('span', 'ws-private-avatar', String(group.name).slice(0, 1));
     const copy = element('span', 'ws-private-copy');
     copy.append(element('b', '', group.name), element('small', '', String(group.preview).slice(0, 70)), element('time', '', group.time));
     button.append(avatar, copy);
-    button.addEventListener('click', () => select(group.key));
-    navigation.append(button); buttons.set(group.key, button);
+    button.onclick = event => selectPrivateConversation(event.currentTarget.closest('.ws-private-shell'), group.key);
+    navigation.append(button);
   }
-  search.addEventListener('input', () => {
-    const query = search.value.trim().toLocaleLowerCase();
-    for (const button of buttons.values()) button.hidden = Boolean(query) && !button.textContent.toLocaleLowerCase().includes(query);
-    empty.hidden = [...buttons.values()].some(button => !button.hidden);
-  });
-  select(selected);
+  selectPrivateConversation(shell, privateView.key && (privateView.key === 'all' || groups.has(privateView.key)) ? privateView.key : groups.keys().next().value);
 }
 
 /* ---------- 评论三栏收件箱：左侧筛选 / 中间按帖子分组的原列表 / 右侧详情 ----------
    中间列保留 app.js 生成的分组、展开与未读逻辑；右侧详情由接口数据渲染，
-   操作按钮只转发点击到原卡片上的按钮，不复制任何业务逻辑。 */
+   操作按钮只转发点击到原卡片上的按钮，不复制任何业务逻辑。
+   后台刷新原位合并后，点击时再从页面上查找当前节点与最新数据，避免引用已被替换的节点。 */
 let selectedCommentId = null;
 let commentFilter = 'all';
+let latestComments = new Map();
 const PENDING_STATUSES = ['MANUAL_REQUIRED', 'KNOWLEDGE_GAP', 'AI_REPLY_TIMEOUT'];
 function commentCategory(message) {
   if (!message) return 'other';
@@ -146,7 +156,9 @@ function commentCategory(message) {
   return 'other';
 }
 const COMMENT_FILTERS = [['pending', '待处理', 'warn'], ['ai', 'AI 已回复', 'ok'], ['manual', '人工已处理', 'muted'], ['all', '全部', 'all']];
+const ACTION_CLASSES = ['manual-reply', 'detect-manual', 'mark-handled', 'retry-message', 'delete-message', 'open-message'];
 function cardMessageId(card) { return card.querySelector('[data-id]')?.dataset.id || ''; }
+function liveCommentCard(id) { return [...document.querySelectorAll('#content .comment-item')].find(card => cardMessageId(card) === String(id)); }
 function shortStamp(value) {
   const d = new Date(value); if (Number.isNaN(d.getTime())) return '';
   const p = n => String(n).padStart(2, '0');
@@ -158,14 +170,19 @@ function renderCommentDetail(detail, message, card, group) {
     detail.append(element('p', 'v2-empty', '在中间列表展开帖子，点选一条评论查看详情和处理。'));
     return;
   }
+  const id = String(message.id);
   const ctx = element('div', 'v2-inbox-context');
   ctx.innerHTML = platformLogo(message.platform_code, 34);
   const ctxCopy = element('div', 'v2-inbox-context-copy');
   ctxCopy.append(element('b', '', group?.querySelector('.comment-post-title')?.textContent || message.post?.title || '未识别关联帖子'));
   const meta = element('small'); meta.append(element('span', '', message.platform_name || ''), element('span', '', message.account_name || ''));
   ctxCopy.append(meta); ctx.append(ctxCopy);
-  const openPost = group?.querySelector('.comment-post-meta .open-message');
-  if (openPost) { const b = element('button', 'btn secondary', '查看原帖'); b.type = 'button'; b.onclick = () => openPost.click(); ctx.append(b); }
+  const postKey = group?.dataset.commentPost;
+  if (postKey && group.querySelector('.comment-post-meta .open-message')) {
+    const b = element('button', 'btn secondary', '查看原帖'); b.type = 'button';
+    b.onclick = () => [...document.querySelectorAll('#content details[data-comment-post]')].find(item => item.dataset.commentPost === postKey)?.querySelector('.comment-post-meta .open-message')?.click();
+    ctx.append(b);
+  }
   const bubble = element('div', 'v2-bubble');
   bubble.append(element('span', 'v2-avatar', String(message.user_name || '?').trim().slice(0, 1) || '?'));
   const body = element('div', 'v2-bubble-body');
@@ -199,70 +216,80 @@ function renderCommentDetail(detail, message, card, group) {
   const originals = [...card.querySelectorAll('.section-actions button')];
   // 主操作：能直接回复时是“人工回复”，否则是“人工已处理”
   const primary = originals.find(b => b.classList.contains('manual-reply')) || originals.find(b => b.classList.contains('mark-handled'));
-  for (const original of originals) {
+  originals.forEach((original, index) => {
     // 只保留外观类名：app.js 会按 .mark-handled 等类名重新绑定事件，代理按钮不能被它误绑。
     const look = [...original.classList].filter(name => ['btn', 'secondary', 'danger'].includes(name)).join(' ');
     const proxy = element('button', `${look || 'btn'} v2-proxy`, original.textContent);
     proxy.type = 'button'; proxy.disabled = original.disabled; if (original.title) proxy.title = original.title;
-    proxy.onclick = () => original.click();
+    const action = ACTION_CLASSES.find(name => original.classList.contains(name));
+    proxy.onclick = () => {
+      const live = liveCommentCard(id);
+      const target = live && (action ? live.querySelector(`.section-actions .${action}`) : live.querySelectorAll('.section-actions button')[index]);
+      target?.click();
+    };
     if (original === primary) proxy.classList.remove('secondary');
     else if (!proxy.classList.contains('secondary')) proxy.classList.add('secondary');
     if (original.classList.contains('delete-message')) { proxy.classList.remove('secondary'); proxy.classList.add('v2-danger-ghost', 'v2-push-right'); }
-    actions.append(proxy);
-  }
-  if (primary) { const first = [...actions.children].find(b => b.textContent === primary.textContent); if (first) actions.prepend(first); }
+    if (original === primary) actions.prepend(proxy); else actions.append(proxy);
+  });
   detail.append(actions);
+}
+function applyCommentFilter(inbox) {
+  if (!inbox) return;
+  const list = inbox.querySelector('.v2-inbox-list');
+  for (const card of list.querySelectorAll('.comment-item')) {
+    const m = latestComments.get(cardMessageId(card));
+    card.classList.toggle('v2-filtered-out', commentFilter !== 'all' && commentCategory(m) !== commentFilter);
+  }
+  for (const group of list.querySelectorAll('.comment-post-group')) {
+    const visible = [...group.querySelectorAll('.comment-item')].some(card => !card.classList.contains('v2-filtered-out'));
+    group.classList.toggle('v2-filtered-out', !visible);
+  }
+  for (const b of inbox.querySelectorAll('.v2-filter')) { const on = b.dataset.filter === commentFilter; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }
+}
+function selectComment(inbox, id) {
+  if (!inbox) return;
+  selectedCommentId = id;
+  const cards = [...inbox.querySelectorAll('.v2-inbox-list .comment-item')];
+  const card = cards.find(c => cardMessageId(c) === String(id));
+  for (const c of cards) c.classList.toggle('is-selected', c === card);
+  renderCommentDetail(inbox.querySelector('.v2-inbox-detail'), latestComments.get(String(id)), card, card?.closest('.comment-post-group'));
 }
 function presentCommentInbox(root, options) {
   const page = root.querySelector('.message-ops-page.channel-comments');
   const list = page?.querySelector('.interaction-list');
   if (!list || list.closest('.v2-inbox')) return;
   const messages = (Array.isArray(options.messages) ? options.messages : []).filter(m => m.message_type === 'COMMENT');
-  const byId = new Map(messages.map(m => [String(m.id), m]));
+  latestComments = new Map(messages.map(m => [String(m.id), m]));
   const inbox = element('div', 'v2-inbox');
   const filters = element('aside', 'v2-inbox-filter'); filters.setAttribute('aria-label', '评论筛选');
   const middle = element('section', 'v2-inbox-list'); middle.setAttribute('aria-label', '按帖子分组的评论');
   const detail = element('section', 'v2-inbox-detail'); detail.setAttribute('aria-label', '评论详情');
   list.before(inbox); middle.append(list); inbox.append(filters, middle, detail);
-  const cards = [...list.querySelectorAll('.comment-item')];
   const counts = { all: messages.length, pending: 0, ai: 0, manual: 0, other: 0 };
   for (const m of messages) counts[commentCategory(m)] += 1;
   filters.append(element('div', 'v2-filter-caption', '状态'));
-  const buttons = new Map();
-  const apply = () => {
-    for (const card of cards) {
-      const m = byId.get(cardMessageId(card));
-      card.classList.toggle('v2-filtered-out', commentFilter !== 'all' && commentCategory(m) !== commentFilter);
-    }
-    for (const group of list.querySelectorAll('.comment-post-group')) {
-      const visible = [...group.querySelectorAll('.comment-item')].some(card => !card.classList.contains('v2-filtered-out'));
-      group.classList.toggle('v2-filtered-out', !visible);
-    }
-    for (const [key, b] of buttons) { b.classList.toggle('active', key === commentFilter); b.setAttribute('aria-pressed', String(key === commentFilter)); }
-  };
   for (const [key, label, tone] of COMMENT_FILTERS) {
-    const b = element('button', `v2-filter v2-filter-${tone}`); b.type = 'button';
+    const b = element('button', `v2-filter v2-filter-${tone}`); b.type = 'button'; b.dataset.filter = key;
     b.append(element('i'), element('span', '', label), element('em', 'v2-num', String(counts[key] || 0)));
-    b.onclick = () => { commentFilter = key; apply(); };
-    filters.append(b); buttons.set(key, b);
+    b.onclick = event => { commentFilter = key; applyCommentFilter(event.currentTarget.closest('.v2-inbox')); };
+    filters.append(b);
   }
-  const select = (id, { reveal = false } = {}) => {
-    selectedCommentId = id;
-    const card = cards.find(c => cardMessageId(c) === String(id));
-    for (const c of cards) c.classList.toggle('is-selected', c === card);
-    const group = card?.closest('.comment-post-group');
-    if (reveal && group && !group.open) group.open = true;
-    renderCommentDetail(detail, byId.get(String(id)), card, group);
+  for (const card of list.querySelectorAll('.comment-item')) card.tabIndex = 0;
+  middle.onclick = event => {
+    const card = event.target.closest('.comment-item');
+    if (!card || event.target.closest('button,a,summary,details.ws-message-audit')) return;
+    selectComment(event.currentTarget.closest('.v2-inbox'), cardMessageId(card));
   };
-  for (const card of cards) {
-    card.tabIndex = 0;
-    card.addEventListener('click', event => { if (event.target.closest('button,a,summary,details.ws-message-audit')) return; select(cardMessageId(card)); });
-    card.addEventListener('keydown', event => { if ((event.key === 'Enter' || event.key === ' ') && event.target === card) { event.preventDefault(); select(cardMessageId(card)); } });
-  }
+  middle.onkeydown = event => {
+    const card = event.target.closest?.('.comment-item');
+    if (!card || event.target !== card || (event.key !== 'Enter' && event.key !== ' ')) return;
+    event.preventDefault(); selectComment(event.currentTarget.closest('.v2-inbox'), cardMessageId(card));
+  };
   const fallback = messages.find(m => commentCategory(m) === 'pending') || messages[0];
-  const initial = selectedCommentId && byId.has(String(selectedCommentId)) ? selectedCommentId : fallback?.id;
-  apply();
-  select(initial ?? null);
+  const initial = selectedCommentId && latestComments.has(String(selectedCommentId)) ? selectedCommentId : fallback?.id;
+  applyCommentFilter(inbox);
+  selectComment(inbox, initial ?? null);
 }
 
 function presentMessages(root, options) {

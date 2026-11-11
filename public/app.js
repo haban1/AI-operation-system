@@ -2,8 +2,8 @@ import { browserStatusModel, browserStatusMarkup, bindBrowserStatus } from './br
 import { renderKnowledgeFiles, cleanupKnowledgeFiles } from './knowledge-files.js?v=20261111-v2c';
 import { renderAnswerProfile, renderRagPlayground, cleanupKnowledgeTools, resetKnowledgeTools } from './knowledge-tools.js?v=20261111-v2c';
 import { patchBackgroundContent } from './background-dom.js?v=20261112-refresh';
-import { applyWorkspacePresentation, refreshDashboardOrb } from './workspace-presentation.js?v=20261111-v2b';
-import { applyInteractionPresentation } from './workspace-interactions.js?v=20261111-v2c';
+import { applyWorkspacePresentation, refreshDashboardOrb } from './workspace-presentation.js?v=20261112-controls';
+import { applyInteractionPresentation } from './workspace-interactions.js?v=20261112-inbox-merge';
 import { platformLogo } from './platform-icons.js?v=20261111-v2';
 import { aiConnectionPresentation, bindAiModelSettings } from './ai-model-settings.js';
 import { renderWechatAdmin, cleanupWechatAdmin } from './wechat-admin.js';
@@ -1962,8 +1962,8 @@ function aiTimeoutAlert(m){
   return `<div class="ai-timeout-alert"><span class="ai-timeout-alert-icon">!</span><div><b>AI回复超时</b><span>需要人工处理 · ${esc(aiTimeoutNoticeStatus(m))}</span></div></div>`;
 }
 function messageDecisionDetail(m){const platformReply=m.reply_status?.platform?.replied;const platformNote='已检测到平台回复，发送方式未确认；为避免重复，未再次发送。';return `${aiTimeoutAlert(m)}<div class="message-decision-detail"><span>处理结果：${esc(platformReply?'平台已有回复':statusName(m.decision||m.status))}</span><span>置信度：${m.confidence??'—'}</span><span>知识：${m.knowledge_id?'#'+m.knowledge_id:'—'}</span>${m.reason?`<span class="wide">原因：${esc(platformReply?platformNote:m.decision==='AI_REPLY_TIMEOUT'?'AI回复超时':statusName(m.reason))}</span>`:''}${m.reply_text?`<span class="wide">${platformReply?'平台回复内容':'AI回复内容'}：${esc(m.reply_text)}</span>`:''}${m.handler_note?`<span class="wide">${platformReply?'同步记录':'人工处理记录'}：${esc(platformReply?platformNote:m.handler_note)}</span>`:''}</div>`}
-function commentMessageCard(m){return `<article class="interaction-card comment-item"><div class="interaction-head"><div><span class="user-avatar">${esc(String(m.user_name||'?').trim().slice(0,1)||'?')}</span><b>${esc(cleanText(m.user_name)||'未知用户')}</b></div><time>${fmt(m.collected_at||m.created_at)}</time></div><div class="message-content"><span class="content-label">评论内容</span><p>${esc(m.content)}</p></div><div class="reply-status-row">${replyStatusChip('ai',m.reply_status?.ai)}${replyStatusChip('manual',m.reply_status?.manual)}${badge(m.status)}${messageSourceBadge(m)}</div>${messageDecisionDetail(m)}${messageActions(m)}</article>`}
-function privateMessageCard(m){return `<article class="interaction-card private-item"><div class="interaction-head"><div><span class="user-avatar private">${esc(String(m.user_name||'?').trim().slice(0,1)||'?')}</span><span><b>${esc(cleanText(m.user_name)||'未知用户')}</b><small>${esc(m.platform_name)} · ${esc(m.account_name)}</small></span></div><time>${fmt(m.collected_at||m.created_at)}</time></div><div class="message-content private-content"><span class="content-label">私信内容</span><p>${esc(m.content)}</p></div><div class="reply-status-row">${messageReplyBadges(m)}${messageSourceBadge(m)}</div>${messageDecisionDetail(m)}${messageActions(m)}</article>`}
+function commentMessageCard(m){return `<article class="interaction-card comment-item" data-refresh-key="message:${m.id}"><div class="interaction-head"><div><span class="user-avatar">${esc(String(m.user_name||'?').trim().slice(0,1)||'?')}</span><b>${esc(cleanText(m.user_name)||'未知用户')}</b></div><time>${fmt(m.collected_at||m.created_at)}</time></div><div class="message-content"><span class="content-label">评论内容</span><p>${esc(m.content)}</p></div><div class="reply-status-row">${replyStatusChip('ai',m.reply_status?.ai)}${replyStatusChip('manual',m.reply_status?.manual)}${badge(m.status)}${messageSourceBadge(m)}</div>${messageDecisionDetail(m)}${messageActions(m)}</article>`}
+function privateMessageCard(m){return `<article class="interaction-card private-item" data-refresh-key="message:${m.id}"><div class="interaction-head"><div><span class="user-avatar private">${esc(String(m.user_name||'?').trim().slice(0,1)||'?')}</span><span><b>${esc(cleanText(m.user_name)||'未知用户')}</b><small>${esc(m.platform_name)} · ${esc(m.account_name)}</small></span></div><time>${fmt(m.collected_at||m.created_at)}</time></div><div class="message-content private-content"><span class="content-label">私信内容</span><p>${esc(m.content)}</p></div><div class="reply-status-row">${messageReplyBadges(m)}${messageSourceBadge(m)}</div>${messageDecisionDetail(m)}${messageActions(m)}</article>`}
 function commentPostPublishedTimestamp(value){
   if(value===null||value===undefined||String(value).trim()==='')return null;
   const text=String(value).trim().replace(/^(?:发布于|发布时间[：:]?)\s*/,'');
@@ -2004,14 +2004,19 @@ function commentPostGroup(group){
   const pendingCount=group.items.filter(m=>['MANUAL_REQUIRED','KNOWLEDGE_GAP'].includes(m.status)&&!m.reply_status?.manual?.replied).length;
   const unread=unreadCommentCount(group);
   const published=group.publishedAtMs===null?'发布时间暂未获取':('发布于 '+fmt(group.publishedAtMs));
-  return `<details class="comment-post-group" data-comment-post="${esc(group.key)}" ${expandedCommentPosts.has(group.key)?'open':''}>
+  return `<details class="comment-post-group" data-comment-post="${esc(group.key)}" data-refresh-key="post:${esc(group.key)}" ${expandedCommentPosts.has(group.key)?'open':''}>
     <summary class="comment-post-head comment-post-toggle"><span class="post-icon" aria-hidden="true">帖</span><span class="comment-post-title" title="${esc(title)}">${esc(title)}</span><span class="comment-post-controls">${unread?`<span class="comment-unread-count" aria-live="polite">新增评论 <b>${unread}</b></span>`:''}<span class="comment-post-chevron" aria-hidden="true"></span></span></summary>
     <div class="comment-post-body"><div class="comment-post-meta"><div class="post-info"><div class="post-title-row">${post.matched?'<span class="badge success">已匹配发布记录</span>':'<span class="badge warning">待确认帖子</span>'}</div><p>${esc(group.items[0]?.platform_name||'')} · ${esc(group.items[0]?.account_name||'')} · ${esc(published)}</p><div class="post-summary"><span>评论 ${group.items.length}</span><span>AI已回复 ${aiCount}</span><span>人工已回复 ${manualCount}</span>${pendingCount?`<span class="pending">待人工 ${pendingCount}</span>`:''}</div></div>${post.url?`<button class="btn secondary open-message" data-url="${esc(post.url)}">打开帖子</button>`:''}</div><div class="comment-items">${group.items.map(commentMessageCard).join('')}</div></div>
   </details>`;
 }
+/* 每个帖子分组只绑定一次；展开时读取最新一次渲染的分组数据（后台刷新原位合并后节点不变）。 */
+const boundCommentPostGroups=new WeakSet();
+let latestCommentGroupsByKey=new Map();
 function bindCommentPostGroups(groups){
-  const byKey=new Map(groups.map(group=>[group.key,group]));
+  latestCommentGroupsByKey=new Map(groups.map(group=>[group.key,group]));
   document.querySelectorAll('details[data-comment-post]').forEach(details=>{
+    if(boundCommentPostGroups.has(details))return;
+    boundCommentPostGroups.add(details);
     let wasOpen=details.open;
     details.addEventListener('toggle',()=>{
       if(!details.isConnected||details.open===wasOpen)return;
@@ -2019,7 +2024,7 @@ function bindCommentPostGroups(groups){
       const key=details.dataset.commentPost;
       if(details.open){
         expandedCommentPosts.add(key);
-        const group=byKey.get(key);
+        const group=latestCommentGroupsByKey.get(key);
         if(group)markCommentPostRead(group);
         details.querySelector('.comment-unread-count')?.remove();
       }else expandedCommentPosts.delete(key);
@@ -2372,7 +2377,7 @@ async function renderManualHandoffs(prefetchedData=null){
   $('#refreshHandoffs').onclick=()=>renderManualHandoffs().catch(error=>toast(error.message,true));
 }
 
-async function renderMessages(prefetchedData=null){
+async function renderMessages(prefetchedData=null,{background=false}={}){
   const owner=capturePageOwner();
   const data=prefetchedData||await api('/api/messages');
   if(!ownsPageOwner(owner)||state.page!=='messages')return;
@@ -2412,7 +2417,8 @@ async function renderMessages(prefetchedData=null){
   const selectedPoll=collection.value||'4-5';
   const pollOptionsHtml=pollOptions.map(option=>`<option value="${esc(option.value)}" ${option.value===selectedPoll?'selected':''}>${esc(option.label)}</option>`).join('');
   const nextCollectionText=collection.enabled===false?'\u81ea\u52a8\u91c7\u96c6\u672a\u542f\u7528':collection.nextCollectionAt?`\u4e0b\u6b21\u9884\u8ba1\u91c7\u96c6\uff1a${fmt(collection.nextCollectionAt)}`:'\u6b63\u5728\u7b49\u5f85\u4e0a\u4e00\u8f6e\u91c7\u96c6\u5b8c\u6210\u540e\u91cd\u65b0\u6392\u7a0b';
-  $('#content').innerHTML=`
+  const messageTarget=background&&$('#content .message-ops-page')?document.createElement('div'):$('#content');
+  messageTarget.innerHTML=`
     <div class="message-ops-page ${isComment?'channel-comments':'channel-private'}">
       <section class="message-command-center">
         <div class="message-command-grid" aria-hidden="true"></div>
@@ -2461,7 +2467,11 @@ async function renderMessages(prefetchedData=null){
         <div class="interaction-list">${listHtml}</div>
       </div>
     </div>`;
-  presentInteractions({messages,privateMessages});
+  if(messageTarget!==$('#content')){
+    // 后台刷新：在离屏节点完成同样的展示层整理，再原位合并，避免整页重画
+    applyInteractionPresentation(messageTarget,{page:state.page,messageView:state.messageView,miniProgramConversationId:state.miniProgramConversationId,messageAccountId:state.messageAccountId,messages,privateMessages});
+    patchBackgroundContent($('#content'),messageTarget);
+  }else presentInteractions({messages,privateMessages});
   bindCommentPostGroups(commentGroups);
   $('#messageAccount').onchange=e=>{state.messageAccountId=Number(e.target.value);renderMessages().catch(error=>toast(error.message,true))};
   $('#exportMessages').onclick=async event=>{const selected=await chooseReplyExportPlatforms(selectedAccount?.platform_code);if(!selected?.length)return;try{await downloadReplyExport(selected,event.currentTarget)}catch(error){toast(error.message,true)}};
@@ -3167,7 +3177,7 @@ async function refreshMessagesFromTimer(){
     const data=await api(`/api/messages?t=${Date.now()}`);
     if(!ownsPageOwner(pageOwner)||messageFormHasEditingFocus()||document.querySelector('.confirm-overlay'))return;
     const signature=messageRefreshSignature(data);
-    if(signature!==messageRefreshSignatureValue)await renderMessages(data);
+    if(signature!==messageRefreshSignatureValue)await renderMessages(data,{background:true});
   }catch{}finally{messageRefreshInFlight=false}
 }
 function clearWorkspaceSession(){

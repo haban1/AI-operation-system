@@ -1,0 +1,73 @@
+/* ==========================================================================
+   控件：macOS 风格的下拉菜单、分段控件、展开箭头与系统字体
+   颜色取 theme.css 的 --tk-* 令牌；只在设置了主题时生效。
+   ========================================================================== */
+
+/* 系统字体优先：Mac 用 SF / 苹方，Windows 用 Segoe / 微软雅黑 */
+html[data-theme] body,html[data-theme] button,html[data-theme] input,html[data-theme] select,html[data-theme] textarea{
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased}
+html[data-theme] input[type=checkbox],html[data-theme] input[type=radio]{accent-color:var(--tk-acc)}
+
+/* ---------- 下拉框外观 ---------- */
+html[data-theme] .ui-select{position:relative;display:inline-flex;min-width:0;max-width:100%;vertical-align:middle}
+html[data-theme] label>.ui-select,html[data-theme] .ui-select:only-child{width:100%}
+html[data-theme] .ui-select>select{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;min-height:0!important;margin:0!important;opacity:0!important;pointer-events:none!important;appearance:none}
+html[data-theme] .ui-select-button{display:flex;align-items:center;gap:8px;width:100%;min-height:34px;padding:5px 8px 5px 11px;border:1px solid var(--tk-line-strong);border-radius:9px;background:var(--tk-surface);color:var(--tk-ink);font:inherit;font-size:13.5px;text-align:left;cursor:pointer;box-shadow:0 1px 1px rgba(15,27,45,.04),inset 0 1px 0 var(--tk-hi);transition:border-color .15s,box-shadow .15s,background-color .15s}
+html[data-theme] .ui-select-button:hover:not(:disabled){border-color:var(--tk-acc-line)}
+html[data-theme] .ui-select:focus-within .ui-select-button,html[data-theme] .ui-select-button[aria-expanded="true"]{border-color:var(--tk-acc);box-shadow:0 0 0 3px var(--tk-acc-soft)}
+html[data-theme] .ui-select-button:disabled{opacity:.55;cursor:not-allowed}
+.ui-select-icon{display:inline-flex;flex:0 0 auto}
+.ui-select-icon:empty{display:none}
+.ui-select-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ui-select-chevron{display:grid;place-items:center;flex:0 0 auto;width:18px;height:20px;border-radius:5px;background:var(--tk-acc,#2563eb);color:#fff}
+.ui-select-chevron svg{width:9px;height:13px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* 弹出菜单：毛玻璃、细边、选中项高亮 */
+.ui-select-menu{position:fixed;z-index:1200;overflow:auto;padding:5px;border-radius:12px;border:1px solid var(--tk-line,rgba(0,0,0,.12));
+  background:color-mix(in srgb,var(--tk-dialog,#fff) 86%,transparent);-webkit-backdrop-filter:blur(24px) saturate(180%);backdrop-filter:blur(24px) saturate(180%);
+  box-shadow:0 0 0 .5px rgba(0,0,0,.06),0 18px 48px -12px rgba(15,27,45,.35);font-size:13.5px;color:var(--tk-ink,#0f1b2d);
+  transform-origin:top center;animation:ui-menu-in .12s cubic-bezier(.2,.8,.2,1)}
+.ui-select-menu.is-up{transform-origin:bottom center}
+.ui-select-menu.is-closing{animation:ui-menu-out .1s ease-in forwards}
+@keyframes ui-menu-in{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+@keyframes ui-menu-out{to{opacity:0;transform:scale(.98)}}
+.ui-select-item{display:flex;align-items:center;gap:8px;min-height:30px;padding:4px 10px 4px 6px;border-radius:7px;cursor:default;white-space:nowrap;user-select:none}
+.ui-select-item.is-active{background:var(--tk-acc,#2563eb);color:#fff}
+.ui-select-item[aria-disabled="true"]{opacity:.45}
+.ui-select-check{display:inline-grid;place-items:center;width:16px;flex:0 0 auto}
+.ui-select-check svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ui-select-item .v2-logo{box-shadow:none}
+@media (prefers-reduced-motion:reduce){.ui-select-menu,.ui-select-menu.is-closing{animation:none}}
+
+/* ---------- 分段控件（例如 近 7 天 / 近 30 天） ---------- */
+.ui-segmented{position:relative;display:inline-flex;gap:2px;padding:3px;border-radius:10px;background:var(--tk-surface2,#eef2f8);border:1px solid var(--tk-line,#d8e0eb)}
+.ui-segmented>button{position:relative;z-index:1;border:0;background:none;padding:5px 14px;border-radius:7px;font:inherit;font-size:13px;color:var(--tk-muted,#536176);cursor:pointer;white-space:nowrap;transition:color .15s}
+.ui-segmented>button[aria-pressed="true"]{color:var(--tk-ink,#0f1b2d);font-weight:600;background:var(--tk-dialog,#fff);box-shadow:0 1px 3px rgba(15,27,45,.14),0 0 0 .5px rgba(15,27,45,.06)}
+.ui-segmented>button:focus-visible{outline:2px solid var(--tk-acc);outline-offset:1px}
+.ui-segmented>.ui-select,.ui-segmented>select{position:absolute!important;inset:0;opacity:0;pointer-events:none}
+
+/* ---------- 展开 / 收起：旋转的小箭头 ---------- */
+html[data-theme] #content details>summary{list-style:none;cursor:pointer}
+html[data-theme] #content details>summary::-webkit-details-marker{display:none}
+html[data-theme] #content details.preview-details>summary,html[data-theme] #content details.ws-collection-details>summary,html[data-theme] #content details.v2-detail-audit>summary,html[data-theme] #content details.ws-platform-notice>summary,html[data-theme] #content details.ws-platform-bulk>summary,html[data-theme] #content details.ws-message-audit>summary{display:inline-flex;align-items:center;gap:6px;padding:4px 8px 4px 4px;border-radius:7px;color:var(--tk-ink2);font-size:13px;font-weight:500}
+html[data-theme] #content details.preview-details>summary::before,html[data-theme] #content details.ws-collection-details>summary::before,html[data-theme] #content details.v2-detail-audit>summary::before,html[data-theme] #content details.ws-platform-notice>summary::before,html[data-theme] #content details.ws-platform-bulk>summary::before,html[data-theme] #content details.ws-message-audit>summary::before{
+  content:"";width:7px;height:7px;margin:0 4px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(-45deg);transition:transform .18s cubic-bezier(.2,.8,.2,1);opacity:.7}
+html[data-theme] #content details[open].preview-details>summary::before,html[data-theme] #content details[open].ws-collection-details>summary::before,html[data-theme] #content details[open].v2-detail-audit>summary::before,html[data-theme] #content details[open].ws-platform-notice>summary::before,html[data-theme] #content details[open].ws-platform-bulk>summary::before,html[data-theme] #content details[open].ws-message-audit>summary::before{transform:rotate(45deg)}
+html[data-theme] #content details>summary:hover{background:var(--tk-surface2)}
+/* 原生 select 改为绝对定位后不再撑开宽度，这里给出最小宽度 */
+html[data-theme] .ui-select{min-width:120px}
+html[data-theme] .message-poll-control .ui-select{min-width:230px}
+html[data-theme] .message-collection-controls .message-poll-control{min-width:0}
+/* 部分页面的旧样式会隐藏 label 里的 span（如 .message-poll-control），控件内部元素强制显示 */
+html[data-theme] .ui-select{display:inline-flex!important}
+html[data-theme] .ui-select-button{display:flex!important}
+html[data-theme] .ui-select-label{display:block!important}
+html[data-theme] .ui-select-icon{display:inline-flex!important}
+html[data-theme] .ui-select-icon:empty{display:none!important}
+html[data-theme] .ui-select-chevron{display:grid!important}
+/* 发布页“内容来源”：去掉原自定义外框与箭头，由新控件占满整行 */
+html[data-theme] .publish-origin-select-wrap{background:none!important;border:0!important;padding:0!important}
+html[data-theme] .publish-origin-chevron{display:none!important}
+html[data-theme] .publish-origin-select-wrap>.ui-select{width:100%}
+html[data-theme] .publish-origin-select-wrap .ui-select-button{min-height:44px;border-radius:11px;font-size:14px}

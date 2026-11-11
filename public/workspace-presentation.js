@@ -49,6 +49,20 @@ function dashboard(root,{data,stats={},accounts=[],localAgent={},onNavigate}){
   /* 1. 问候与今天要处理的事 */
   const title=head.querySelector('h2');title.textContent=todo?`${greeting()}，今天有 ${todo} 件事等你处理`:`${greeting()}，今天没有待处理的事`;
   const scope=head.querySelector('p');if(scope){scope.classList.add('v2-scope');scope.insertAdjacentText('afterbegin',`AI 已自动回复 ${fmtNumber(autoReplies)} 条。`)}
+  /* 周期只有两个选项：改为分段控件，点一下就切换；原 select 保留在控件里，change 逻辑不变 */
+  const range=head.querySelector('#operationsRangeFilter');
+  if(range&&!range.closest('.ui-segmented')){
+    const segmented=node('div','ui-segmented');segmented.setAttribute('role','group');segmented.setAttribute('aria-label','统计周期');
+    for(const option of range.options){
+      const b=node('button','',option.textContent.trim());b.type='button';b.dataset.value=option.value;b.setAttribute('aria-pressed',String(option.selected));
+      b.onclick=event=>{const box=event.currentTarget.closest('.ui-segmented'),select=box?.querySelector('select');if(!select||select.value===option.value)return;select.value=option.value;box.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.value===option.value)));select.dispatchEvent(new Event('change',{bubbles:true}))};
+      segmented.append(b);
+    }
+    range.dataset.native='true';range.tabIndex=-1;
+    const label=range.closest('label');
+    if(label){label.querySelector(':scope > span')?.setAttribute('hidden','');label.classList.add('v2-range');label.append(segmented)}else range.after(segmented);
+    segmented.append(range);
+  }
   const actions=node('div','v2-actions');
   for(const [count,label,key,icon,tone,cta] of [[manual,'条消息需人工回复','comments','message','warn','去处理'],[issues,'个运行问题待处理','diagnostics','issue','danger','查看'],[queued,'个发布任务排队中','publish-tasks','publish','acc','查看']]){
     const card=node('button',`v2-action v2-tone-${count?tone:'idle'}`);card.type='button';card.dataset.v2Action=key;card.dataset.refreshKey=key;
