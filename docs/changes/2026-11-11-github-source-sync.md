@@ -1,6 +1,6 @@
 # 2026-11-11：同步当前智慧驱动源码到 GitHub
 
-日期：2026-11-11（Asia/Shanghai）。用户已授权将当前系统推送到 GitHub；此记录随发布快照提交。目标 haban1/AI-operation-system 的 main，远端核验基线 bd66d8f359c377ad2cad8add5a2fe1eb33638728。提交与推送结果以 GitHub main 历史及本机私有回执核验。
+日期：2026-11-11（Asia/Shanghai）。用户已授权将当前系统推送到 GitHub；此记录随发布快照提交。目标 haban1/AI-operation-system 的 main，远端核验基线 bd66d8f359c377ad2cad8add5a2fe1eb33638728。源码提交 cad2fcd4245f837eadd68e2b100384601b92f887 已推送至 main，远端提交与树 SHA 均核验一致；本次文档补记只记录已发生的结果。
 
 ## 背景与目标
 
@@ -23,6 +23,8 @@
 - 微信前端使用独立 Node 22 容器与现有依赖卷，按原构建顺序 npm run build-types 然后 npm run build 成功；初次省略代码生成导致找不到 API 模块，补齐标准步骤后通过。产物仅留私有测试目录。
 - Signal 使用 PYTHONUTF8=1 并将项目依赖自带的 ffmpeg/ffprobe 加入测试 PATH 后，python -m unittest discover -s tests -v 的 89 项全部通过。初跑分别暴露 Windows 默认编码及缺少可执行文件，修正环境后解决，未改业务源码。未运行全量历史 RAG/Node 套件，不能据专项结果宣称所有历史测试或 GitHub CI 通过。
 
+CI 失败日志已读取确认，公开记录仅保留错误类型和测试范围；当前生产容器未受上传影响。
+
 本轮私有清单、扫描结果和日志位于 .codex-work/github-push-20261111/；未公开原始日志或业务证据。提交前运行 node scripts/check-docs-as-code.mjs --staged，提交后检查 origin/main..HEAD 的全部待推送提交记录；内容准确性另经人工审查。根 Docker 使用运行目录明确 COPY，微信构建上下文仅对应前端目录，Signal/RAG 使用自己的上下文；本轮仅推源码，不执行部署。
 
 ## 部署与回退
@@ -31,7 +33,7 @@
 
 ## 未完成与下一步
 
-提交后核验远端 main 和提交树一致，记录真实提交号与推送结果；GitHub CI 的结果须另行读取，历史测试限制不能写成成功。下一位接手者从[稳定入口](../development/handoff.md)与[开发交接](../../dev-notes/README.md)开始，先核验当前分支与部署状态；本轮不代替真实平台业务验收。
+已核验远端 main 为源码提交 cad2fcd4245f837eadd68e2b100384601b92f887，树为 511c36d1ab7f2babef5168cca1254d15be4b0c9e。GitHub Docs as Code 与 Windows launcher 已通过；Python 全量 CI 在收集阶段有 9 个旧测试导入错误，引用已移除的 DebugQueryRequest、TestCandidate、DecisionRequest、ReleaseCreate，未宣称全量 CI 通过。其余运行状态以 GitHub Actions 为准。下一步维护者应将旧测试迁移到当前文件自动生效和正式问答接口，继续覆盖证据与会话边界，不能恢复已要求删除的旧操作页面或屏蔽整套测试来消除失败。下一位接手者从[稳定入口](../development/handoff.md)与[开发交接](../../dev-notes/README.md)开始，先核验当前分支与部署状态；本轮不代替真实平台业务验收。
 
 ## 上下文与关联
 

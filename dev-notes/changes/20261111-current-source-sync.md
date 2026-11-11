@@ -4,4 +4,4 @@
 
 上游核验基线 bd66d8f，发布工作区本地基线 bfb756b。文件范围、取舍、命令、验证限制、API 对象校验与回退见[完整记录](../../docs/changes/2026-11-11-github-source-sync.md)。442 项 Node 与 163 项 RAG 专项通过，微信标准构建成功；历史接口测试仍有已知限制，未声称全套或 CI 通过。
 
-下一步核验 GitHub main 的提交/树与本地一致；平台真实收发、发布及部署不在本轮执行。当前界面以[前端入口](../../docs/frontend-workspace.md)为准。
+已推送源码 cad2fcd4245f837eadd68e2b100384601b92f887，远端提交与树一致。Docs as Code 与 Windows launcher 通过；Python 全量 CI 的 9 个旧接口导入错误已确认，待按当前接口迁移测试，未声称全量通过。平台真实收发、发布及部署不在本轮执行。当前界面以[前端入口](../../docs/frontend-workspace.md)为准。
