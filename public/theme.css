@@ -1,0 +1,126 @@
+/* ==========================================================================
+   日间 / 夜间主题层
+   - 只定义颜色令牌（--tk-*）和视觉效果，不改布局和业务逻辑。
+   - styles.css / workspace.css / workspace-interactions.css 中的颜色已改为
+     var(--tk-角色, 原色)：没有 data-theme 时仍是原来的深色界面。
+   - data-theme 由 theme.js 设置：day（晨雾，默认）或 night（夜幕）。
+   - data-fx="off" 为性能模式：关闭模糊、背景动画和倾斜。
+   ========================================================================== */
+
+html[data-theme="day"]{
+  color-scheme:light;
+  --tk-bg0:#e8edf5;
+  --tk-surface:rgba(255,255,255,.66);
+  --tk-surface2:rgba(244,247,252,.82);
+  --tk-surface3:#e2e8f1;
+  --tk-inverse:#1b2738;
+  --tk-line:#d8e0eb;
+  --tk-line-strong:#c2ccda;
+  --tk-ink:#0f1b2d;
+  --tk-ink2:#2b394d;
+  --tk-muted:#536176;
+  --tk-on-accent:#ffffff;
+  --tk-acc:#2563eb;--tk-acc2:#14b8a6;--tk-acc-mid:#3b82f6;--tk-acc-soft:rgba(37,99,235,.1);--tk-acc-line:rgba(37,99,235,.38);--tk-acc-text:#1d4fc4;
+  --tk-ok:#13834f;--tk-ok-mid:#1f9d62;--tk-ok-soft:#e3f4ea;--tk-ok-line:rgba(19,131,79,.35);--tk-ok-text:#13834f;
+  --tk-danger:#d93a3a;--tk-danger-mid:#e25555;--tk-danger-soft:#fde8e8;--tk-danger-line:rgba(217,58,58,.35);--tk-danger-text:#c02f2f;
+  --tk-warn:#c46a00;--tk-warn-mid:#d98a1c;--tk-warn-soft:#fdf0dc;--tk-warn-line:rgba(196,106,0,.35);--tk-warn-text:#a85a00;
+  --tk-purple:#6d4fd8;--tk-purple-mid:#8166e6;--tk-purple-soft:#efeafd;--tk-purple-line:rgba(109,79,216,.35);--tk-purple-text:#5b3fc4;
+  /* 效果 */
+  --tk-glass:rgba(255,255,255,.5);--tk-glass-solid:#f7f9fc;--tk-glass-edge:rgba(255,255,255,.78);--tk-hi:rgba(255,255,255,.9);
+  --tk-card-edge:rgba(196,210,230,.7);--tk-card-shadow:0 1px 2px rgba(30,50,90,.05),0 14px 32px -16px rgba(40,70,140,.28);
+  --tk-glow:rgba(37,99,235,.45);--tk-glow-soft:rgba(37,99,235,.08);--tk-glare:rgba(255,255,255,.75);
+  --tk-blob1:#9cc7ff;--tk-blob2:#b9f0dd;--tk-blob3:#d8c6ff;--tk-blob-o:.85;--tk-grid:rgba(30,60,120,.045);
+}
+
+html[data-theme="night"]{
+  color-scheme:dark;
+  --tk-bg0:#08090c;
+  --tk-surface:rgba(20,21,30,.66);
+  --tk-surface2:rgba(30,32,43,.72);
+  --tk-surface3:#262836;
+  --tk-inverse:#e9e9f2;
+  --tk-line:rgba(255,255,255,.08);
+  --tk-line-strong:rgba(255,255,255,.15);
+  --tk-ink:#f2f2f7;
+  --tk-ink2:#c9cbd8;
+  --tk-muted:#8d90a5;
+  --tk-on-accent:#ffffff;
+  --tk-acc:#7c6cf6;--tk-acc2:#5e8bff;--tk-acc-mid:#6a5ae6;--tk-acc-soft:rgba(124,108,246,.15);--tk-acc-line:rgba(139,123,255,.42);--tk-acc-text:#b6acff;
+  --tk-ok:#4cd6a0;--tk-ok-mid:#38b884;--tk-ok-soft:rgba(76,214,160,.12);--tk-ok-line:rgba(76,214,160,.35);--tk-ok-text:#5fe0ad;
+  --tk-danger:#f07178;--tk-danger-mid:#e05a62;--tk-danger-soft:rgba(240,113,120,.13);--tk-danger-line:rgba(240,113,120,.38);--tk-danger-text:#ff9ea4;
+  --tk-warn:#f5b454;--tk-warn-mid:#e09a35;--tk-warn-soft:rgba(245,180,84,.12);--tk-warn-line:rgba(245,180,84,.38);--tk-warn-text:#f7c26f;
+  --tk-purple:#b39dff;--tk-purple-mid:#9a82f0;--tk-purple-soft:rgba(179,157,255,.13);--tk-purple-line:rgba(179,157,255,.38);--tk-purple-text:#c6b6ff;
+  --tk-glass:rgba(17,18,24,.72);--tk-glass-solid:#111218;--tk-glass-edge:rgba(255,255,255,.08);--tk-hi:rgba(255,255,255,.06);
+  --tk-card-edge:rgba(255,255,255,.09);--tk-card-shadow:0 14px 34px -18px rgba(0,0,0,.85);
+  --tk-glow:rgba(139,123,255,.5);--tk-glow-soft:rgba(139,123,255,.12);--tk-glare:rgba(255,255,255,.12);
+  --tk-blob1:#4c3fd8;--tk-blob2:#1b3a8b;--tk-blob3:#6b2a9a;--tk-blob-o:.42;--tk-grid:rgba(255,255,255,.03);
+}
+
+/* ---------- 背景：缓慢流动的雾面 + 细网格 ---------- */
+html[data-theme]{background:var(--tk-bg0)}
+html[data-theme] body{background:transparent}
+html[data-theme] body::before{content:"";position:fixed;inset:-15%;z-index:-1;pointer-events:none;opacity:var(--tk-blob-o);
+  background:radial-gradient(38% 42% at 12% 10%,var(--tk-blob1),transparent 70%),radial-gradient(40% 40% at 88% 35%,var(--tk-blob2),transparent 70%),radial-gradient(36% 40% at 45% 100%,var(--tk-blob3),transparent 70%);
+  filter:blur(30px);animation:tk-drift 36s ease-in-out infinite alternate}
+html[data-theme] body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background-image:linear-gradient(var(--tk-grid) 1px,transparent 1px),linear-gradient(90deg,var(--tk-grid) 1px,transparent 1px);background-size:36px 36px;
+  -webkit-mask:radial-gradient(ellipse 70% 60% at 65% 25%,#000,transparent);mask:radial-gradient(ellipse 70% 60% at 65% 25%,#000,transparent)}
+@keyframes tk-drift{0%{transform:translate(0,0) scale(1)}50%{transform:translate(3%,2%) scale(1.06)}100%{transform:translate(-2%,4%) scale(.97)}}
+html[data-theme] main,html[data-theme] .shell,html[data-theme] .content{background:transparent}
+
+/* ---------- 外框：毛玻璃 ---------- */
+html[data-theme] body .sidebar,
+html[data-theme] body .topbar,
+html[data-theme] body .workspace-subnav{
+  background:var(--tk-glass);-webkit-backdrop-filter:blur(22px) saturate(170%);backdrop-filter:blur(22px) saturate(170%);
+  border-color:var(--tk-glass-edge);box-shadow:inset 0 1px 0 var(--tk-hi)}
+html[data-theme] body .topbar,html[data-theme] body .workspace-subnav{position:sticky;z-index:4}
+
+/* ---------- 卡片：磨砂玻璃 + 光标光晕 + 发光边 + 反光 ---------- */
+html[data-theme] :is(.panel,.operations-surface,.operations-ai-panel,.preview-stat,.metric,.dashboard-device-card,.platform-login-item,.publish-queue-board,.task-command-center,.task-stream,.message-command-center,.message-channel-poll-card,.mini-link-card,.mini-program-summary,.mini-program-workbench,.platform-runtime-card,.settings-status-card,.settings-mini-card,.ai-visual-card,.browser-device-card,.task-card,.interaction-card,.publish-action-card,.ai-status-card,.knowledge-category-card,.account-card,.message-card,.check-card){
+  -webkit-backdrop-filter:blur(16px) saturate(160%);backdrop-filter:blur(16px) saturate(160%);
+  border-color:var(--tk-card-edge);
+  box-shadow:inset 0 1px 0 var(--tk-hi),var(--tk-card-shadow);
+  background-image:radial-gradient(280px circle at var(--mx,-600px) var(--my,-600px),var(--tk-glow-soft),transparent 65%),linear-gradient(115deg,transparent 42%,var(--tk-glare-on,transparent) 50%,transparent 58%);
+  background-size:100% 100%,260% 100%;background-position:0 0,var(--gx,130%) 0;background-repeat:no-repeat;
+  transition:box-shadow .25s cubic-bezier(.2,.8,.2,1),border-color .25s cubic-bezier(.2,.8,.2,1),transform .5s cubic-bezier(.2,.8,.2,1)}
+@media (hover:hover) and (pointer:fine){
+  html[data-theme] :is(.panel,.operations-surface,.operations-ai-panel,.preview-stat,.metric,.dashboard-device-card,.platform-login-item,.publish-queue-board,.task-command-center,.task-stream,.message-command-center,.message-channel-poll-card,.mini-link-card,.mini-program-summary,.mini-program-workbench,.platform-runtime-card,.settings-status-card,.settings-mini-card,.ai-visual-card,.browser-device-card,.task-card,.interaction-card,.publish-action-card,.ai-status-card,.knowledge-category-card,.account-card,.message-card,.check-card):hover{
+    --tk-glare-on:var(--tk-glare);border-color:var(--tk-acc-line);
+    box-shadow:inset 0 1px 0 var(--tk-hi),0 0 0 1px var(--tk-acc-line),0 18px 40px -18px var(--tk-glow)}
+  /* 大面板只要光晕和光边，不要反光，避免整屏闪 */
+  html[data-theme] :is(.panel,.operations-surface,.task-stream,.mini-program-workbench,.message-command-center,.publish-queue-board,.task-command-center):hover{--tk-glare-on:transparent}
+}
+html[data-theme] .tk-tilt.tk-live{transition:transform 80ms linear,box-shadow .25s,border-color .25s}
+
+/* ---------- 按钮：主按钮渐变 + 扫光，所有按钮有按压反馈 ---------- */
+html[data-theme] .btn:not(.secondary):not(.danger):not(.ghost):not(.success):not(:disabled){
+  color:#fff;border-color:transparent;
+  background-image:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.42) 50%,transparent 70%),linear-gradient(135deg,var(--tk-acc),var(--tk-acc2));
+  background-size:250% 100%,100% 100%;background-position:150% 0,0 0;background-repeat:no-repeat;
+  box-shadow:0 8px 22px -10px var(--tk-glow),inset 0 1px 0 rgba(255,255,255,.3);
+  transition:background-position .7s cubic-bezier(.2,.8,.2,1),transform .15s cubic-bezier(.2,.8,.2,1),box-shadow .2s}
+@media (hover:hover) and (pointer:fine){
+  html[data-theme] .btn:not(.secondary):not(.danger):not(.ghost):not(.success):not(:disabled):hover{background-position:-50% 0,0 0;box-shadow:0 10px 28px -8px var(--tk-glow),inset 0 1px 0 rgba(255,255,255,.4)}
+  html[data-theme] :is(.btn,.ghost,button.secondary):not(:disabled):hover{transform:translateY(-1px)}
+}
+html[data-theme] :is(.btn,.ghost):not(:disabled):active{transform:translateY(1px) scale(.985);transition-duration:90ms}
+html[data-theme] :is(button,a,input,select,textarea,summary,[tabindex]):focus-visible{outline:2px solid var(--tk-acc);outline-offset:2px}
+
+/* ---------- 侧边栏选中项 ---------- */
+html[data-theme] body.workspace-nav-v2 #nav .ws-primary.active{background:var(--tk-surface);color:var(--tk-acc-text);border-color:var(--tk-card-edge);box-shadow:inset 0 1px 0 var(--tk-hi),0 4px 14px -6px var(--tk-glow)}
+
+/* ---------- 主题切换按钮（theme.js 插入到侧栏底部） ---------- */
+.tk-theme-tools{display:flex;gap:6px}
+.tk-theme-toggle,.tk-fx-toggle{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--tk-line,#233038);background:var(--tk-surface,#10191f);color:var(--tk-ink2,#b9ccd4);border-radius:9px;padding:6px 10px;font:inherit;font-size:12px;cursor:pointer}
+.tk-fx-toggle{padding:6px 8px}
+.tk-theme-toggle svg,.tk-fx-toggle svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tk-fx-toggle[aria-pressed="false"]{opacity:.55}
+
+/* ---------- 性能模式与减少动态效果 ---------- */
+html[data-fx="off"][data-theme] *{animation:none!important}
+html[data-fx="off"][data-theme] body::before{display:none}
+html[data-fx="off"][data-theme] *,html[data-fx="off"][data-theme] *::before,html[data-fx="off"][data-theme] *::after{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+html[data-fx="off"][data-theme="day"]{--tk-surface:#ffffff;--tk-glass:#f7f9fc}
+html[data-fx="off"][data-theme="night"]{--tk-surface:#14151c;--tk-glass:#111218}
+@media (prefers-reduced-motion:reduce){html[data-theme] body::before{animation:none}html[data-theme] .tk-tilt{transform:none!important}}
