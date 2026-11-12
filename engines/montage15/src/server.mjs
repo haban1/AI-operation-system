@@ -67,6 +67,7 @@ export async function createWorkbench({ dataDir = process.env.VIDEO_WORKBENCH_DA
     ['/app.js', ['public/app.js', 'text/javascript; charset=utf-8']], ['/styles.css', ['public/styles.css', 'text/css; charset=utf-8']],
     ['/workflow.js', ['public/workflow.js', 'text/javascript; charset=utf-8']], ['/workflow.css', ['public/workflow.css', 'text/css; charset=utf-8']],
     ['/production.js', ['public/production.js', 'text/javascript; charset=utf-8']],
+    ['/captions.js', ['public/captions.js', 'text/javascript; charset=utf-8']], ['/ai-tune.js', ['public/ai-tune.js', 'text/javascript; charset=utf-8']],
     ['/workspace.js', ['public/workspace.js', 'text/javascript; charset=utf-8']], ['/workspace.css', ['public/workspace.css', 'text/css; charset=utf-8']],
     ['/integration-theme.css', ['public/integration-theme.css', 'text/css; charset=utf-8']],
     ['/vendor/gsap.min.js', ['vendor/gsap.min.js', 'text/javascript; charset=utf-8']]]);

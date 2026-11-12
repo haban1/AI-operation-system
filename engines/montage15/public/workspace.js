@@ -32,6 +32,13 @@
       this.renderHome();
     }
 
+    loadTemplatePreview(url) {
+      const frame = $('template-preview-frame');
+      this.previewLooping = true;
+      $('template-preview-timeline').value = 0;
+      frame.onload = () => { if (frame.getAttribute('src') !== 'about:blank') frame.contentWindow?.postMessage({ type: 'workbench:play' }, location.origin); };
+      frame.src = url;
+    }
     renderHome() {
       const query = $('project-search').value.trim().toLowerCase();
       $('home-templates').innerHTML = this.state.templates.map(template => `<article class="home-template"><div class="home-template-art"><img src="${esc(this.resource('/posters/' + template.id + '.jpg'))}" alt="${esc(template.name)}模板封面"><button class="home-template-preview" data-preview-template="${esc(template.id)}" aria-label="预览${esc(template.name)}"><span>▶</span></button></div><div class="home-template-body"><div><h3>${esc(template.name.replace(/^\d+ · /,''))}</h3><p>${template.slots.length} 个镜头 · 15 秒 · 原配乐与转场</p></div><button class="button button-secondary" data-create-template="${esc(template.id)}">使用模板 ＋</button></div></article>`).join('');
@@ -39,9 +46,11 @@
       $('home-templates').querySelectorAll('[data-preview-template]').forEach(button => button.onclick = () => {
         this.previewTemplate = button.dataset.previewTemplate;
         $('template-preview-title').textContent = this.state.templates.find(template => template.id === this.previewTemplate).name;
-        $('template-preview-frame').src = this.resource('/api/templates/' + this.previewTemplate + '/preview');
+        this.loadTemplatePreview(this.resource('/api/templates/' + this.previewTemplate + '/preview'));
         $('template-preview-dialog').showModal();
       });
+      // 点模板封面任意位置都能预览
+      $('home-templates').querySelectorAll('.home-template-art img').forEach(image => image.onclick = () => image.parentElement.querySelector('[data-preview-template]')?.click());
       const projects = [...this.state.projects].sort((a,b) => new Date(b.updatedAt)-new Date(a.updatedAt));
       $('home-project-count').textContent = this.state.projects.length;
       $('home-projects').innerHTML = projects.filter(project => project.name.toLowerCase().includes(query)).map(project => {
@@ -257,6 +266,22 @@
       $('template-preview-close').onclick=()=>{$('template-preview-dialog').close();$('template-preview-frame').src='about:blank'};
       $('template-preview-use').onclick=()=>{$('template-preview-close').click();this.newFromTemplate(this.previewTemplate)};
       $('template-preview-dialog').addEventListener('close',()=>{$('template-preview-frame').src='about:blank'});
+      // 模板预览：载入后自动播放，播完从头循环；可暂停和拖动进度
+      const previewControl=(type,extra={})=>$('template-preview-frame').contentWindow?.postMessage({type:'workbench:'+type,...extra},location.origin);
+      $('template-preview-play').onclick=()=>{const playing=$('template-preview-play').dataset.playing==='true';previewControl(playing?'pause':'play');};
+      $('template-preview-timeline').oninput=()=>{previewControl('pause');previewControl('seek',{frame:Number($('template-preview-timeline').value)});};
+      window.addEventListener('message',event=>{
+        if(event.origin!==location.origin||event.source!==$('template-preview-frame').contentWindow||event.data?.type!=='workbench:time')return;
+        const frame=Math.max(0,Math.min(450,Number(event.data.frame)||0)),playing=!!event.data.playing;
+        $('template-preview-timeline').value=frame;
+        $('template-preview-time').textContent=`00:${String(Math.floor(frame/30)).padStart(2,'0')} / 00:15`;
+        $('template-preview-play').dataset.playing=String(playing);
+        $('template-preview-play').textContent=playing?'Ⅱ':'▶';
+        $('template-preview-play').setAttribute('aria-label',playing?'暂停模板预览':'播放模板预览');
+        if(!playing&&frame>=449&&this.previewLooping&&$('template-preview-dialog').open){previewControl('seek',{frame:0});previewControl('play');}
+      });
+      $('template-preview-timeline').addEventListener('pointerdown',()=>{this.previewLooping=false;});
+      $('template-preview-play').addEventListener('click',()=>{this.previewLooping=true;});
       for(const id of ['media-preview-close','media-preview-cancel']) $(id).onclick=()=>this.closePreview();
       $('media-preview-dialog').addEventListener('close',()=>{++this.previewEpoch;$('media-preview-stage').querySelector('video')?.pause()});
       $('media-preview-start').oninput=()=>this.updatePreviewRange();

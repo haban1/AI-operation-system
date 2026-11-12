@@ -201,3 +201,79 @@ html[data-theme] .topic-card .rank{background:var(--tk-acc-soft)!important;color
 
 /* 创作设置页（由系统设置进入）：顶栏与热点栏目保持隐藏 */
 html[data-theme] body.studio-embedded[data-studio-view=settings] .studio-topbar,html[data-theme] body[data-signal-view=settings]>aside{display:none!important}
+
+/* ======================================================================
+   智能混剪：文字间距放宽（原 9–11px 小字与负外边距导致拥挤）
+   ====================================================================== */
+html[data-theme] .workspace .section-help{font-size:12px!important;line-height:1.6!important;margin:6px 0 10px!important;color:var(--tk-muted)!important}
+html[data-theme] .workspace .section-label{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+html[data-theme] .workspace .section-label>.section-help{margin:0 0 0 auto!important;font-size:11.5px!important}
+html[data-theme] .workspace .field-label{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:12px 0 6px!important;font-size:12.5px!important;font-weight:600;color:var(--tk-ink2)!important}
+html[data-theme] .workspace :is(textarea,input:not([type=checkbox]):not([type=range])){font-size:13px!important;line-height:1.6!important;padding:8px 10px!important}
+html[data-theme] .workspace .lock-control{font-size:12px!important;gap:7px;margin:10px 0!important;color:var(--tk-muted)}
+html[data-theme] .workspace .lock-control:has(input:checked){color:var(--tk-acc-text)!important}
+html[data-theme] .workspace .full-width{width:100%;margin-top:10px!important}
+html[data-theme] .ai-workflow textarea{font-size:13px!important}
+html[data-theme] .ai-workflow .ai-data-note{font-size:11.5px!important}
+html[data-theme] #ai-candidate-summary,html[data-theme] #creation-music{margin:8px 0 4px!important}
+html[data-theme] .workspace details>summary{padding:6px 0}
+html[data-theme] #shot-inspector-description,html[data-theme] #shot-used-range{font-size:12px!important}
+html[data-theme] #shot-inspector-name{display:block;margin-top:10px;font-size:13px}
+/* 预览框：去掉粗白边，播放控制统一 */
+html[data-theme] .preview-shell{border:0!important;border-radius:10px!important;box-shadow:0 0 0 1px rgba(255,255,255,.14),0 14px 34px -12px rgba(0,0,0,.55)!important}
+html[data-theme] :is(.play-button,.restart-button){width:32px!important;height:32px!important;border-radius:50%!important;display:grid;place-items:center;font-size:12px!important;padding:0!important;
+  background:var(--tk-surface)!important;color:var(--tk-ink2)!important;border:1px solid var(--tk-line-strong)!important}
+html[data-theme] .play-button{background:linear-gradient(135deg,var(--tk-acc),var(--tk-acc2))!important;color:#fff!important;border-color:transparent!important}
+html[data-theme] .restart-button{font-size:15px!important}
+html[data-theme] .player-controls{gap:10px!important;align-items:center}
+html[data-theme] .time-code{font-variant-numeric:tabular-nums;font-size:12px;color:var(--tk-muted)}
+
+/* ---------- 文案时间轴 ---------- */
+html[data-theme] .caption-track{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:10px;margin-top:8px}
+html[data-theme] .caption-track[hidden]{display:none}
+html[data-theme] .caption-track-label{font-size:11.5px;font-weight:600;color:var(--tk-muted);white-space:nowrap}
+html[data-theme] .caption-lane{position:relative;height:46px;border-radius:10px;background:var(--tk-surface2);border:1px dashed var(--tk-line-strong)}
+html[data-theme] .caption-track.is-off .caption-lane{opacity:.55}
+html[data-theme] .caption-chip{position:absolute;top:4px;bottom:4px;min-width:64px;display:flex;flex-direction:column;justify-content:center;gap:1px;padding:3px 8px;overflow:hidden;
+  border-radius:8px;border:1px solid var(--tk-acc-line);background:var(--tk-acc-soft);color:var(--tk-ink);text-align:left;cursor:pointer;transition:transform .15s,box-shadow .15s,border-color .15s}
+html[data-theme] .caption-chip small{font-size:10.5px;color:var(--tk-acc-text);font-weight:600;white-space:nowrap}
+html[data-theme] .caption-chip span{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+html[data-theme] .caption-chip:hover{transform:translateY(-1px);box-shadow:0 6px 16px -8px var(--tk-glow)}
+html[data-theme] .caption-chip.selected{border-color:var(--tk-acc);background:var(--tk-dialog);box-shadow:0 0 0 2px var(--tk-acc-soft)}
+html[data-theme] .timeline-shot.selected.dimmed{border-color:var(--tk-line)!important;background:var(--tk-surface2)!important}
+/* 右栏文案编辑 */
+html[data-theme] .caption-panel .caption-field textarea{width:100%;resize:vertical}
+html[data-theme] .caption-panel .caption-count{font-weight:400;font-size:11.5px;color:var(--tk-muted);font-variant-numeric:tabular-nums}
+html[data-theme] .caption-ai{margin-top:14px;padding:12px;border-radius:12px;background:var(--tk-surface2);border:1px solid var(--tk-line)}
+html[data-theme] .caption-ai .field-label{margin-top:0!important}
+html[data-theme] .caption-ai textarea{width:100%;margin-top:8px}
+html[data-theme] .caption-ai-quick{display:flex;flex-wrap:wrap;gap:6px}
+html[data-theme] .caption-quick{padding:4px 10px;border-radius:999px;border:1px solid var(--tk-line-strong);background:var(--tk-surface);color:var(--tk-ink2);font-size:12px;cursor:pointer}
+html[data-theme] .caption-quick:hover:not(:disabled){border-color:var(--tk-acc-line);color:var(--tk-acc-text)}
+html[data-theme] #caption-back{margin-top:4px}
+/* 模板预览弹窗：播放控制 */
+html[data-theme] #template-preview-dialog{width:min(860px,92vw)!important;padding:20px 22px!important}
+html[data-theme] #template-preview-frame{border-radius:12px!important;background:#070c12!important}
+html[data-theme] .template-preview-controls{display:flex;align-items:center;gap:12px;margin-top:12px}
+html[data-theme] .template-preview-controls input[type=range]{flex:1}
+html[data-theme] .template-preview-note{margin:10px 0 4px!important;font-size:12.5px;color:var(--tk-muted)}
+html[data-theme] .home-template-art img{cursor:pointer}
+
+/* ---------- AI 调整（重新生成 + 按描述修改 合一，默认收起） ---------- */
+html[data-theme] .ai-tune{margin-top:12px;border:1px solid var(--tk-line);border-radius:12px;background:var(--tk-surface2)}
+html[data-theme] .ai-tune>summary{display:flex;align-items:center;gap:10px;padding:10px 14px!important;font-size:13.5px}
+html[data-theme] .ai-tune>summary::before{order:3;margin:0 2px 0 auto!important}
+html[data-theme] .ai-tune-title{font-weight:600;color:var(--tk-ink)}
+html[data-theme] .ai-tune-title::before{content:"✦";margin-right:6px;color:var(--tk-acc)}
+html[data-theme] .ai-tune-sub{font-size:12px;color:var(--tk-muted)}
+html[data-theme] .ai-tune[open]{background:var(--tk-glass-solid);border-color:var(--tk-acc-line)}
+html[data-theme] .ai-tune-body{padding:2px 14px 14px}
+html[data-theme] .ai-tune-row{display:flex;align-items:center;gap:10px}
+html[data-theme] .ai-tune-row label{font-size:12.5px;font-weight:600;color:var(--tk-ink2);white-space:nowrap}
+html[data-theme] .ai-tune-row select{flex:1;min-width:0}
+html[data-theme] .ai-tune textarea{width:100%}
+html[data-theme] .ai-tune-optional{font-weight:400;font-size:11.5px;color:var(--tk-muted)}
+html[data-theme] .ai-tune .ai-actions{display:flex;gap:8px;align-items:center}
+html[data-theme] .ai-tune #ai-tune-run{min-width:120px}
+html[data-theme] .caption-chip{min-width:13%}
+@media(min-width:1101px){html[data-theme] .workspace{grid-template-columns:250px minmax(320px,1fr) 264px!important}}
