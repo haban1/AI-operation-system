@@ -460,7 +460,10 @@
     $('render-message').textContent = status === 'failed' ? job.error || job.message || '请检查素材与本机渲染服务后重试。' : status === 'succeeded' ? '成片已保存在本机。请下载后检查画面、文字与声音。' : job.message || '正在本机生成视频，完成后可下载成片。';
     const download = localUrl(job.downloadUrl);
     $('download-button').hidden = status !== 'succeeded' || !download;
-    $('receive-library-button').hidden = true;
+    // 嵌入主系统时：导出完成后可直接“加入成片库”（确认入库后在发布管理中使用）
+    const libraryButton = $('receive-library-button');
+    libraryButton.hidden = status !== 'succeeded' || window.parent === window;
+    if (state.libraryJob !== job.id) { state.libraryJob = job.id; libraryButton.disabled = false; libraryButton.textContent = '加入成片库'; }
     if (status === 'succeeded' && download) $('download-button').href = download;
     else $('download-button').removeAttribute('href');
     $('render-cancel').hidden = !state.rendering;
@@ -571,6 +574,20 @@
   async function receiveCurrentOutput(){
     if(!state.job || state.job.status!=='succeeded')return;
     const button=$('receive-library-button');button.disabled=true;
+    if(window.parent!==window){
+      // 由外层创作工作台确认这条成片入库，结果通过消息返回
+      const id='montage-'+state.job.id;
+      button.textContent='正在加入…';
+      const result=await new Promise(resolve=>{
+        const timer=setTimeout(()=>{window.removeEventListener('message',listen);resolve({ok:false,error:'成片库暂时没有响应，请稍后在成片库确认入库。'});},30000);
+        function listen(event){if(event.origin!==location.origin||event.source!==window.parent||event.data?.type!=='content-workbench:confirm-result'||event.data.id!==id)return;clearTimeout(timer);window.removeEventListener('message',listen);resolve(event.data);}
+        window.addEventListener('message',listen);
+        window.parent.postMessage({type:'content-workbench:confirm-output',id},location.origin);
+      });
+      if(result.ok){button.textContent='已加入成片库 ✓';toast('已加入成片库，可在“发布管理”中使用');}
+      else{button.disabled=false;button.textContent='加入成片库';toast(result.error||'未能加入成片库');}
+      return;
+    }
     try{await api(`/api/jobs/${encodeURIComponent(state.job.id)}/library`,{method:'POST',body:'{}'});toast('已加入成片库，等待确认入库');}finally{button.disabled=false;}
   }
 

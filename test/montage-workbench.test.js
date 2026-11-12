@@ -48,7 +48,7 @@ test('main-system montage keeps auth, revision recovery, library references and 
   });
   await t.test('latest main shell retains Signal settings and the shared library beside montage',async()=>{
     const html=await(await fetch(base+'/video-workbench/index.html',{headers:{Cookie:cookie}})).text();
-    assert.match(html,/id="montageFrame"/);assert.match(html,/AI 热点自动生成/);assert.match(html,/成片与素材/);
+    assert.match(html,/id="montageFrame"/);assert.match(html,/AI 热点自动生成/);assert.match(html,/成片库/);
     const legacy=await request('/video-workbench/api/studio/bootstrap');
     assert.equal(legacy.automaticUrl,'/integrations/ai-signal/');assert.ok(Array.isArray(legacy.collections));
     assert.ok(Array.isArray((await request('/video-workbench/api/studio/materials')).items));

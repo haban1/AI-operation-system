@@ -120,9 +120,9 @@
     all.indeterminate = selectedVisible.length > 0 && selectedVisible.length < pending.length;
     all.disabled = !pending.length || state.confirmingOutputs;
     const selected = selectedVisible.length;
-    $('selectionSummary').textContent = selected ? `已选 ${selected} 条待确认素材` : '成片自动同步到素材库，确认后可用于发布';
+    $('selectionSummary').textContent = selected ? `已选 ${selected} 条待确认素材` : '新成片先放在“待确认”，确认入库后可在发布管理中使用';
     $('confirmSelected').disabled = !selected || state.confirmingOutputs;
-    $('confirmSelected').innerHTML = `${icon(state.confirmingOutputs ? 'loader-circle' : 'check-check')}${state.confirmingOutputs ? '正在确认…' : `确认可发布${selected ? ` (${selected})` : ''}`}`;
+    $('confirmSelected').innerHTML = `${icon(state.confirmingOutputs ? 'loader-circle' : 'check-check')}${state.confirmingOutputs ? '正在确认…' : `确认入库${selected ? ` (${selected})` : ''}`}`;
   }
   async function confirmOutputs(ids) {
     if (pickerMode || state.confirmingOutputs) return;
@@ -143,7 +143,7 @@
         if (result?.ok === true && materialId) {
           state.videos = state.videos.map((v) => v.id === id ? normalizeOutput({ ...v, ...returned, status: 'approved', materialId }) : v);
           state.selectedOutputs.delete(id);
-        } else if (result?.ok !== true) state.confirmErrors.set(id, typeof result?.error === 'string' ? result.error : result?.error?.message || '未能确认可发布，请重试。');
+        } else if (result?.ok !== true) state.confirmErrors.set(id, typeof result?.error === 'string' ? result.error : result?.error?.message || '未能确认入库，请重试。');
       }
       await loadOutputs({ reportError: false });
       let succeeded = 0;
@@ -155,8 +155,8 @@
         } else if (!state.confirmErrors.has(id)) state.confirmErrors.set(id, '尚未取得发布确认记录，请刷新核对后重试。');
       }
       const failed = pending.length - succeeded;
-      if (failed) outputError(`${failed} 条成片未能确认可发布，已保留选择。请查看卡片提示后重试。`);
-      if (succeeded) toast(`${succeeded} 条素材已确认可发布${failed ? `，${failed} 条未完成` : ''}`);
+      if (failed) outputError(`${failed} 条成片未能确认入库，已保留选择。请查看卡片提示后重试。`);
+      if (succeeded) toast(`${succeeded} 条成片已加入成片库，可在发布管理中使用${failed ? `，${failed} 条未完成` : ''}`);
     } catch (err) {
       pending.forEach((id) => state.confirmErrors.set(id, err.message));
       outputError(`确认未完成：${err.message}`);
@@ -254,7 +254,7 @@
       if (state.method === 'materials') { $('panel-library').removeAttribute('aria-labelledby'); $('panel-library').setAttribute('aria-label', '公共素材库'); }
       else { $('panel-library').removeAttribute('aria-label'); $('panel-library').setAttribute('aria-labelledby', 'tab-library'); }
       $('videoSearch').setAttribute('aria-label', state.method === 'materials' ? '搜索素材' : '搜索成片');
-      $('libraryHeading').textContent = pickerMode ? '从素材库选择' : state.method === 'materials' ? '素材库' : automaticLibrary ? '热点成片' : '混剪成片';
+      $('libraryHeading').textContent = pickerMode ? '从素材库选择' : state.method === 'materials' ? '成片库' : automaticLibrary ? '热点成片' : '混剪成片';
       $('headingActions').hidden = state.tab === 'create';
       document.title = `${{ library: '成片库', create: '视频制作', assets: '素材库' }[state.tab]} · 混剪工作台`;
       if (automaticLibrary) document.title = '成片库 · 自动热点工作台';
@@ -274,14 +274,14 @@
     state.previewVideo = video;
     const approved = video.status === 'approved';
     $('videoDialogStatus').hidden = pickerMode;
-    $('videoDialogStatus').textContent = approved ? '可发布' : '待确认';
+    $('videoDialogStatus').textContent = approved ? '已入库' : '待确认';
     $('videoDialogStatus').className = `output-status ${approved ? 'approved' : 'pending'}`;
     $('confirmPreviewOutput').hidden = pickerMode || approved;
     $('confirmPreviewOutput').disabled = state.confirmingOutputs;
     $('publishPreviewOutput').hidden = !video.materialId;
-    $('publishPreviewOutput').innerHTML = `${icon('send')}${approved ? (pickerMode ? '选择用于发布' : '去发布') : '确认并用于发布'}`;
+    $('publishPreviewOutput').innerHTML = `${icon('send')}${approved ? (pickerMode ? '选择用于发布' : '去发布') : '入库并去发布'}`;
     $('publishPreviewOutput').disabled = state.confirmingOutputs;
-    $('useVideoStyle').hidden = pickerMode || (!video.sourceSkill && !skillForVideo(video));
+    $('useVideoStyle').hidden = pickerMode || state.method === 'materials' || (!video.sourceSkill && !skillForVideo(video));
   }
   function renderVideos() {
     const query = $('videoSearch').value.trim();
@@ -289,20 +289,29 @@
     const ownVideos = libraryVideos();
     const pendingCount = ownVideos.filter((v) => v.status !== 'approved').length;
     $('videoCount').textContent = state.videos.filter((v) => v.source === (state.method === 'automatic' ? 'automatic' : 'mix')).length;
-    $('librarySummary').textContent = state.method === 'materials' || pickerMode ? `${ownVideos.length} 条 · ${pendingCount} 待确认 · ${ownVideos.length - pendingCount} 可发布` : `${ownVideos.length} 条 · 成片自动同步到素材库`;
+    $('librarySummary').textContent = pickerMode ? `${ownVideos.length} 条 · ${pendingCount} 待确认 · ${ownVideos.length - pendingCount} 已入库` : state.method === 'materials' ? `共 ${ownVideos.length} 条` : `${ownVideos.length} 条 · 成片自动同步到素材库`;
+    document.querySelectorAll('.status-switch [data-status-value]').forEach((button) => {
+      const value = button.dataset.statusValue;
+      button.classList.toggle('active', $('outputStatusFilter').value === value);
+      button.setAttribute('aria-pressed', String($('outputStatusFilter').value === value));
+      const source = state.method === 'materials' && !pickerMode ? $('outputSourceFilter').value : '';
+      const scoped = ownVideos.filter((v) => !source || v.source === source);
+      const count = value === 'approved' ? scoped.filter((v) => v.status === 'approved').length : value === 'pending' ? scoped.filter((v) => v.status !== 'approved').length : scoped.length;
+      button.querySelector('.status-count').textContent = count;
+    });
     const videoCards = (items) => items.map((v, i) => {
       const approved = v.status === 'approved';
       const mediaUrl = v.libraryItem ? v.mediaUrl : bundledPath(v.videoPath || v.url);
       const posterUrl = bundledPath(v.posterPath || v.posterUrl);
       const preview = v.libraryItem && v.mediaType === 'image' ? `<img src="${esc(mediaUrl)}" alt="${esc(v.title)}画面" loading="lazy">` : posterUrl ? `<img src="${esc(posterUrl)}" alt="${esc(v.title)}画面" loading="lazy">` : `<video src="${esc(mediaUrl)}" preload="metadata" muted playsinline aria-hidden="true"></video>`;
       const hasWorkflow = Boolean(v.sourceSkill || skillForVideo(v));
-      const workflow = hasWorkflow ? `<button class="text-button" data-style-video="${esc(v.id)}">${icon('wand-sparkles')}使用工作流</button>` : `<span class="video-source">${icon(v.source === 'automatic' ? 'radio' : v.source === 'legacy' ? 'folder-open' : 'film')}${v.source === 'automatic' ? '自动热点' : v.source === 'legacy' ? '历史素材' : '混剪'}</span>`;
-      const confirm = approved ? (v.materialId ? `<button class="text-button publish-output" data-publish-video="${esc(v.id)}">${icon('send')}去发布</button>` : '<span class="muted">发布确认记录待核对</span>') : `<button class="text-button confirm-output" data-confirm-output="${esc(v.id)}"${state.confirmingOutputs ? ' disabled' : ''}>${icon('check')}确认可发布</button>`;
-      return `<article class="video-card${!pickerMode && !approved ? ' has-selection' : ''}${state.selectedOutputs.has(v.id) ? ' selected-output' : ''}">${!pickerMode && !approved ? `<label class="output-select" title="选择${esc(v.title)}"><input type="checkbox" data-select-output="${esc(v.id)}" aria-label="选择${esc(v.title)}"${state.selectedOutputs.has(v.id) ? ' checked' : ''}${state.confirmingOutputs ? ' disabled' : ''}></label>` : ''}<button class="video-cover" data-play-video="${esc(v.id)}" aria-label="预览${esc(v.title)}">${preview}<span class="style-chip">${esc(v.styleLabel || v.style || (v.source === 'automatic' ? '自动热点' : '混剪'))}</span><span class="play-button"><span>${icon(v.mediaType === 'image' ? 'expand' : 'play')}</span></span>${v.durationSeconds || v.duration ? `<span class="duration-chip">${seconds(v.durationSeconds || v.duration)}</span>` : ''}</button><div class="video-info"><div class="video-title-row"><h3>${esc(v.title)}</h3>${pickerMode ? '' : `<span class="output-status ${approved ? 'approved' : 'pending'}">${approved ? '可发布' : '待确认'}</span>`}</div><div class="video-subtitle"><span class="video-meta">${icon('layers-2')}${esc(v.width && v.height ? `${v.width} × ${v.height}` : v.mediaType === 'image' ? '图片素材' : '视频成片')}</span><span>${esc(v.createdLabel || (v.bundled || hasWorkflow ? '工作流样片' : v.source === 'automatic' ? '自动热点' : '制作导出'))}</span></div>${v.syncError ? `<p class="output-card-error" role="alert">${esc(v.syncError)}</p>` : ''}${state.confirmErrors.has(v.id) ? `<p class="output-card-error" role="alert">${esc(state.confirmErrors.get(v.id))}</p>` : ''}</div><div class="video-card-footer">${pickerMode ? `<button class="text-button" data-publish-video="${esc(v.id)}"${state.confirmingOutputs ? ' disabled' : ''}>${icon('check')}${approved ? '选择用于发布' : '确认并用于发布'}</button>` : workflow}<div class="video-footer-actions">${pickerMode ? '' : confirm}<a class="icon-button" href="${esc(mediaUrl)}" download title="下载${esc(v.title)}" aria-label="下载${esc(v.title)}">${icon('download')}</a></div></div></article>`;
+      const workflow = hasWorkflow && (pickerMode || state.method !== 'materials') ? `<button class="text-button" data-style-video="${esc(v.id)}">${icon('wand-sparkles')}使用工作流</button>` : `<span class="video-source">${icon(v.source === 'automatic' ? 'radio' : v.source === 'legacy' ? 'folder-open' : 'film')}${v.source === 'automatic' ? '自动热点' : v.source === 'legacy' ? '历史素材' : '混剪'}</span>`;
+      const confirm = approved ? (v.materialId ? `<button class="text-button publish-output" data-publish-video="${esc(v.id)}">${icon('send')}去发布</button>` : '<span class="muted">发布确认记录待核对</span>') : `<button class="text-button confirm-output" data-confirm-output="${esc(v.id)}"${state.confirmingOutputs ? ' disabled' : ''}>${icon('check')}确认入库</button>`;
+      return `<article class="video-card${!pickerMode && !approved ? ' has-selection' : ''}${state.selectedOutputs.has(v.id) ? ' selected-output' : ''}">${!pickerMode && !approved ? `<label class="output-select" title="选择${esc(v.title)}"><input type="checkbox" data-select-output="${esc(v.id)}" aria-label="选择${esc(v.title)}"${state.selectedOutputs.has(v.id) ? ' checked' : ''}${state.confirmingOutputs ? ' disabled' : ''}></label>` : ''}<button class="video-cover" data-play-video="${esc(v.id)}" aria-label="预览${esc(v.title)}">${preview}<span class="style-chip">${esc(v.styleLabel || v.style || (v.source === 'automatic' ? '自动热点' : '混剪'))}</span><span class="play-button"><span>${icon(v.mediaType === 'image' ? 'expand' : 'play')}</span></span>${v.durationSeconds || v.duration ? `<span class="duration-chip">${seconds(v.durationSeconds || v.duration)}</span>` : ''}</button><div class="video-info"><div class="video-title-row"><h3>${esc(v.title)}</h3>${pickerMode ? '' : `<span class="output-status ${approved ? 'approved' : 'pending'}">${approved ? '已入库' : '待确认'}</span>`}</div><div class="video-subtitle"><span class="video-meta">${icon('layers-2')}${esc(v.width && v.height ? `${v.width} × ${v.height}` : v.mediaType === 'image' ? '图片素材' : '视频成片')}</span><span>${esc(v.createdLabel || (v.bundled || hasWorkflow ? '工作流样片' : v.source === 'automatic' ? '自动热点' : '制作导出'))}</span></div>${v.syncError ? `<p class="output-card-error" role="alert">${esc(v.syncError)}</p>` : ''}${state.confirmErrors.has(v.id) ? `<p class="output-card-error" role="alert">${esc(state.confirmErrors.get(v.id))}</p>` : ''}</div><div class="video-card-footer">${pickerMode ? `<button class="text-button" data-publish-video="${esc(v.id)}"${state.confirmingOutputs ? ' disabled' : ''}>${icon('check')}${approved ? '选择用于发布' : '入库并去发布'}</button>` : workflow}<div class="video-footer-actions">${pickerMode ? '' : confirm}<a class="icon-button" href="${esc(mediaUrl)}" download title="下载${esc(v.title)}" aria-label="下载${esc(v.title)}">${icon('download')}</a></div></div></article>`;
     }).join('');
     const hotEmpty = !videos.length && !pickerMode && state.method === 'materials' && $('outputSourceFilter').value === 'automatic' && !query && !$('outputStatusFilter').value;
-    if (hotEmpty) $('videoGrid').innerHTML = `<div class="empty-state">${icon('radio')}<strong>还没有热点成片</strong><p>在“AI 热点自动生成”里选题并生成，完成后会自动出现在这里，确认后即可发布。</p><a class="button primary" href="#automatic/create">${icon('arrow-left')}去生成热点</a></div>`;
-    else $('videoGrid').innerHTML = videos.length ? videoCards(videos) : empty('search', query || $('outputStatusFilter').value || $('outputSourceFilter').value ? '没有找到匹配的成片' : '暂无成片', pickerMode ? '先在内容生成工作台完成导出，再刷新素材库。' : '完成视频导出后会自动同步到素材库。');
+    if (hotEmpty) $('videoGrid').innerHTML = `<div class="empty-state">${icon('radio')}<strong>还没有热点成片</strong><p>在“AI 热点自动生成”里选题并生成，完成后会出现在这里；确认入库后即可在发布管理中使用。</p><a class="button primary" href="#automatic/create">${icon('arrow-left')}去生成热点</a></div>`;
+    else $('videoGrid').innerHTML = videos.length ? videoCards(videos) : empty('search', query || $('outputStatusFilter').value || $('outputSourceFilter').value ? '没有找到匹配的成片' : '暂无成片', pickerMode ? '先在内容生成工作台完成导出，再刷新素材库。' : '在智能混剪导出，或在 AI 热点生成后，成片会出现在“待确认”里。');
     $('recentOutputs').innerHTML = state.videos.length ? videoCards(state.videos.slice(0, 3)) : empty('film', '暂无成片', '完成创作后，视频会显示在这里。');
     $('recentOutputs').querySelectorAll('.output-select').forEach((el) => el.remove());
     $('recentOutputs').querySelectorAll('.video-card').forEach((el) => el.classList.remove('has-selection', 'selected-output'));
@@ -572,6 +581,21 @@
   $('videoSearch').addEventListener('input', renderVideos);
   $('outputStatusFilter').addEventListener('change', renderVideos);
   $('outputSourceFilter').addEventListener('change', renderVideos);
+  // 状态改为分段切换（全部 / 待确认 / 已入库），原下拉框保留为取值来源
+  (() => {
+    const select = $('outputStatusFilter');
+    if (!select || pickerMode) return;
+    const group = document.createElement('div');
+    group.className = 'segmented-control status-switch'; group.setAttribute('role', 'group'); group.setAttribute('aria-label', '按入库状态筛选');
+    [...select.options].forEach((option) => {
+      const button = document.createElement('button'); button.type = 'button'; button.dataset.statusValue = option.value;
+      button.innerHTML = `<span>${esc(option.value ? option.textContent : '全部')}</span><b class="status-count"></b>`;
+      button.addEventListener('click', () => { select.value = option.value; select.dispatchEvent(new Event('change')); });
+      group.append(button);
+    });
+    select.hidden = true; select.classList.add('status-select-hidden');
+    select.before(group);
+  })();
   $('videoGrid').addEventListener('change', (event) => { const input = event.target.closest('[data-select-output]'); if (!input || state.confirmingOutputs) return; const id = input.dataset.selectOutput; if (input.checked) state.selectedOutputs.add(id); else state.selectedOutputs.delete(id); saveOutputSelection(); input.closest('.video-card')?.classList.toggle('selected-output', input.checked); renderOutputSelection(); renderIcons(); });
   $('selectAllOutputs').addEventListener('change', () => { const checked = $('selectAllOutputs').checked; visibleVideos().filter((v) => v.status !== 'approved').forEach((v) => checked ? state.selectedOutputs.add(v.id) : state.selectedOutputs.delete(v.id)); saveOutputSelection(); renderVideos(); });
   $('confirmSelected').addEventListener('click', () => confirmOutputs(visibleVideos().filter((v) => state.selectedOutputs.has(v.id)).map((v) => v.id)));
@@ -613,7 +637,7 @@
       return;
     }
     if (pickerMode || event.origin !== location.origin || event.source !== $('automaticFrame').contentWindow) return;
-    if (event.data?.type === 'content-workbench:open-library' && event.data.source === 'automatic') { $('outputSourceFilter').value = 'automatic'; location.hash = 'materials'; await loadOutputs(); return; }
+    if (event.data?.type === 'content-workbench:open-library' && event.data.source === 'automatic') { $('outputSourceFilter').value = 'automatic'; $('outputStatusFilter').value = event.data.status === 'pending' ? 'pending' : ''; location.hash = 'materials'; await loadOutputs(); return; }
     if (event.data?.type === 'content-workbench:view-changed' && event.source === $('automaticFrame').contentWindow) {
       if ($('automaticWorkspace').hidden) return;
       const view = event.data.view === 'settings' ? 'settings' : 'automatic';
@@ -629,8 +653,22 @@
     if (event.origin !== location.origin || event.source !== $('montageFrame').contentWindow) return;
     if (['content-library:publish', 'content-workbench:unauthorized'].includes(event.data?.type)) window.parent.postMessage(event.data, location.origin);
     if (event.data?.type === 'content-workbench:open-library') location.hash = 'materials';
+    // 智能混剪导出完成后“加入成片库”：直接确认这条成片入库，结果回传给混剪页
+    if (event.data?.type === 'content-workbench:confirm-output' && typeof event.data.id === 'string' && /^montage-[A-Za-z0-9-]{8,100}$/.test(event.data.id)) {
+      const id = event.data.id, reply = (payload) => $('montageFrame').contentWindow?.postMessage({ type: 'content-workbench:confirm-result', id, ...payload }, location.origin);
+      (async () => {
+        try {
+          await loadOutputs({ reportError: false });
+          const before = state.videos.find((v) => v.id === id);
+          if (!before) return reply({ ok: false, error: '成片还在同步，请稍后在成片库确认入库。' });
+          if (before.status !== 'approved') await confirmOutputs([id]);
+          const after = state.videos.find((v) => v.id === id);
+          reply(after?.status === 'approved' ? { ok: true } : { ok: false, error: state.confirmErrors.get(id) || '未能确认入库，请到成片库重试。' });
+        } catch (error) { reply({ ok: false, error: error.message || '未能确认入库，请到成片库重试。' }); }
+      })();
+    }
   });
-  document.querySelector('.content-library-link')?.addEventListener('click', () => { $('outputSourceFilter').value = ''; });
+  document.querySelector('.content-library-link')?.addEventListener('click', () => { $('outputSourceFilter').value = ''; $('outputStatusFilter').value = ''; });
   window.addEventListener('hashchange', route);
   $('videoGrid').innerHTML = Array.from({length:6}, () => '<div class="skeleton-card" aria-hidden="true"></div>').join('');
   renderMessages(); renderTools(); renderCollections(); route(); renderIcons();

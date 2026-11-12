@@ -8,7 +8,7 @@ import { platformLogo } from './platform-icons.js?v=20261111-v2';
 import { aiConnectionPresentation, bindAiModelSettings } from './ai-model-settings.js';
 import { renderWechatAdmin, cleanupWechatAdmin } from './wechat-admin.js';
 import { renderHotTopicStudio, hideHotTopicStudio } from './hot-topic-studio.js?v=20261112-creation-skin2';
-import { openContentLibraryPicker, closeContentLibraryPicker } from './content-library-picker.js';
+import { openContentLibraryPicker, closeContentLibraryPicker } from './content-library-picker.js?v=20261112-library';
 const navItems = [
   ['dashboard','dashboard','运营总览','推广、内容、活动转化与 AI 运营建议'],
   ['create','create','内容生成','自动热点与混剪：成片库、视频制作和素材库'],
@@ -962,7 +962,7 @@ async function renderPublish({pageGeneration=pageRenderGeneration}={}){
       <div class="publish-column publish-main-column">
         <div class="panel" style="margin-top:0">
         <div class="panel-head"><div><h2>素材与文案</h2><p>选择素材后自动预检。</p></div></div>
-        <div class="section-actions library-publish-actions"><button type="button" class="btn secondary" id="pickFromContentLibrary">从素材库选择</button></div>
+        <div class="section-actions library-publish-actions"><button type="button" class="btn secondary" id="pickFromContentLibrary">从成片库选择</button></div>
         <label>本地素材</label>
         <input id="materialFile" type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.mov" aria-label="选择图片或视频" hidden>
         <label class="field full local-material-path-field"><span>素材路径</span><input id="materialPath" name="materialPath" type="text" placeholder="选择文件或填写本机路径" autocomplete="off" required></label>

@@ -281,3 +281,18 @@ html[data-theme] .job{position:relative;padding-right:44px!important}
 html[data-theme] .job-dismiss{position:absolute;top:8px;right:10px;width:26px;height:26px;border:0;border-radius:50%;background:transparent;color:var(--tk-warn-text);font-size:17px;line-height:1;cursor:pointer}
 html[data-theme] .job-dismiss:hover{background:var(--tk-warn-line)}
 html[data-theme] .job.running .job-dismiss{display:none}
+
+/* ---------- 成片库流程 ---------- */
+/* 热点页：“成片详情”只在打开某条成片时出现，避免空白页签 */
+html[data-theme] body>aside nav [data-tab=editor]:not(.active){display:none!important}
+/* 成片库状态切换：全部 / 待确认 / 已入库，带数量 */
+html[data-theme] .status-switch>button{gap:6px!important}
+html[data-theme] .status-switch .status-count{font-weight:600;font-size:11px;min-width:18px;padding:0 6px;border-radius:999px;background:var(--tk-surface3);color:var(--tk-muted);line-height:18px;text-align:center}
+html[data-theme] .status-switch>button.active .status-count{background:var(--tk-acc-soft);color:var(--tk-acc-text)}
+html[data-theme] .status-switch>button[data-status-value=pending] .status-count:not(:empty){background:var(--tk-warn-soft);color:var(--tk-warn-text)}
+html[data-theme] .status-switch>button.active{color:var(--tk-ink)!important;font-weight:600!important;background:var(--tk-dialog)!important;box-shadow:0 1px 3px rgba(15,27,45,.14),0 0 0 .5px rgba(15,27,45,.06)!important}
+html[data-theme] .status-select-hidden{display:none!important}
+/* 混剪导出完成：加入成片库为主操作 */
+html[data-theme] .render-panel{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+html[data-theme] .render-panel>.render-heading,html[data-theme] .render-panel>.progress-track,html[data-theme] .render-panel>#render-message{flex-basis:100%}
+html[data-theme] .render-panel[hidden]{display:none!important}
