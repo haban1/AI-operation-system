@@ -468,7 +468,7 @@ export async function testAiConnection() {
     const response = await fetch(`${settings.baseUrl}/chat/completions`, {
       method: 'POST', redirect: 'error',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.apiKey}` },
-      body: JSON.stringify({ model: settings.model, temperature: 0, max_tokens: 8, messages: [{ role: 'user', content: '仅回复 OK' }] }),
+      body: JSON.stringify({ model: settings.model, temperature: 0, max_tokens: 128, messages: [{ role: 'user', content: '仅回复 OK' }] }),
       signal: controller.signal
     });
     if (!response.ok) throw new Error(`AI API 返回 HTTP ${response.status}，请检查 Key、地址和模型权限`);
