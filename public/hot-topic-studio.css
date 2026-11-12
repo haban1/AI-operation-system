@@ -2,6 +2,7 @@
 .studio-active .shell>main>.topbar,.studio-active #workspaceSubnav{display:none!important}
 .studio-active .shell>main{height:100dvh;min-height:0;overflow:hidden}
 .signal-workspace{display:flex;flex-direction:column;width:100%;height:100%;min-width:0;min-height:0;background:var(--bg,#080e13)}
+html[data-theme] .signal-workspace,html[data-theme] .signal-workbench-frame{background:transparent!important}
 .signal-workbench-frame{display:block;flex:1;width:100%;height:100%;min-height:0;border:0;background:var(--bg,#080e13)}
 .studio-settings-active .shell>main{height:100dvh;display:flex;flex-direction:column;min-height:0;overflow:hidden}
 .studio-settings-active .shell>main>:is(.topbar,#workspaceSubnav){flex:none}

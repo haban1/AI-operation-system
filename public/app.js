@@ -7,7 +7,7 @@ import { applyInteractionPresentation } from './workspace-interactions.js?v=2026
 import { platformLogo } from './platform-icons.js?v=20261111-v2';
 import { aiConnectionPresentation, bindAiModelSettings } from './ai-model-settings.js';
 import { renderWechatAdmin, cleanupWechatAdmin } from './wechat-admin.js';
-import { renderHotTopicStudio, hideHotTopicStudio } from './hot-topic-studio.js?v=20261111-creation-nav';
+import { renderHotTopicStudio, hideHotTopicStudio } from './hot-topic-studio.js?v=20261112-creation-skin2';
 import { openContentLibraryPicker, closeContentLibraryPicker } from './content-library-picker.js';
 const navItems = [
   ['dashboard','dashboard','运营总览','推广、内容、活动转化与 AI 运营建议'],

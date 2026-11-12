@@ -12,7 +12,7 @@
     <script src="./production.js" defer></script>
     <script src="./workspace.js" defer></script>
     <script src="./app.js" defer></script>
-  <link rel="stylesheet" href="./integration-theme.css?v=20261112-final2"><script src="/creation-theme.js" defer></script></head>
+  <link rel="stylesheet" href="./integration-theme.css?v=20261112-final2"><link rel="stylesheet" href="/theme.css?v=20261112-creation"><link rel="stylesheet" href="/creation-skin.css?v=20261112-5"><script src="/creation-theme.js" defer></script></head>
   <body class="is-home">
     <section id="project-home" class="project-home" hidden>
       <header class="home-heading"><div><span class="eyebrow">用你的素材，剪出好故事</span><h1>智能混剪</h1><p>选一套模板开始，或继续之前的工程。</p></div><span class="home-tag">AI 选片 · 15 秒成片</span></header>
@@ -20,16 +20,6 @@
       <section class="home-section"><div class="home-section-title"><h2>最近工程 <span id="home-project-count"></span></h2><input id="project-search" type="search" placeholder="搜索工程" aria-label="搜索工程"></div><div id="home-projects" class="home-projects"></div></section>
       <div class="home-source-note"><span>▧</span><div><strong>素材文件夹会一直保留</strong><p>新工程可复用已连接的素材集，AI 自动选材，你也可以预览后拖拽替换。</p></div><span id="home-source-summary"></span></div>
     </section>
-    <header class="app-header editor-chrome">
-      <a class="brand" href="./" aria-label="视频工作台首页"><span class="brand-mark" aria-hidden="true">◧</span><span>内容创作<span class="brand-divider">/</span><strong>智能混剪</strong></span></a>
-      <a class="stage-label" hidden href="../index.html#materials" target="_parent">查看系统素材库 ↗</a>
-      <div class="header-actions">
-        <span class="local-status"><i></i>本机处理</span>
-        <span id="save-status" class="save-status" role="status">正在连接…</span>
-        <button id="save-button" class="button button-quiet" disabled>保存工程</button>
-        <button id="render-button" class="button button-primary" disabled><span aria-hidden="true">↗</span> 导出视频</button>
-      </div>
-    </header>
 
     <div class="project-toolbar editor-chrome">
       <button id="back-to-projects" class="text-button" type="button">← 工程首页</button><span class="toolbar-divider"></span>
@@ -40,6 +30,13 @@
       <span class="toolbar-spacer"></span>
       <span id="project-revision" class="revision-badge">先选一套模板，看看效果</span>
       <button id="undo-button" class="text-button" disabled>撤销</button><button id="redo-button" class="text-button" disabled>重做</button><span id="format-label" class="format-label">竖屏 9:16 <span>·</span> 15 秒</span>
+      <a class="stage-label" hidden href="../index.html#materials" target="_parent">查看系统素材库 ↗</a>
+      <div class="header-actions">
+        <span class="local-status"><i></i>本机处理</span>
+        <span id="save-status" class="save-status" role="status">正在连接…</span>
+        <button id="save-button" class="button button-quiet" disabled>保存工程</button>
+        <button id="render-button" class="button button-primary" disabled><span aria-hidden="true">↗</span> 导出视频</button>
+      </div>
     </div>
 
     <div id="global-error" class="global-error" role="alert" hidden><span id="global-error-text"></span><button id="dismiss-error" aria-label="关闭错误提示">×</button></div>

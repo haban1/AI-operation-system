@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN"><head><base href="__SIGNAL_BASE_PATH__"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Signal · 视频工作台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="style.css?v=20261111-creation-nav"><script src="./creation-theme.js" defer></script><link rel="stylesheet" href="./integration-theme.css?v=20261112"></head>
+<html lang="zh-CN"><head><base href="__SIGNAL_BASE_PATH__"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Signal · 视频工作台</title><link rel="icon" href="data:,"><link rel="stylesheet" href="style.css?v=20261111-creation-nav"><script src="./creation-theme.js" defer></script><link rel="stylesheet" href="./integration-theme.css?v=20261112"><link rel="stylesheet" href="/theme.css?v=20261112-creation"><link rel="stylesheet" href="/creation-skin.css?v=20261112-5"></head>
 <body>
 <aside><a class="logo" href="./"><span class="mark">◈</span> 自动成片</a><nav aria-label="自动成片"><button id="mode-trending" class="active" data-tab="topics" aria-pressed="true">热点选题</button><button id="mode-custom" aria-pressed="false">自主选题</button><button data-tab="studio">成片对比</button><button data-tab="editor">成片详情</button><span class="signal-nav-spacer"></span><button class="signal-secondary" data-tab="library">成片库</button><button class="signal-secondary" data-tab="settings">创作设置</button></nav></aside>
 <main><header><div><h1 id="page-title">热点选题</h1></div></header>
@@ -16,10 +16,9 @@
 <details class="research-options"><summary>搜索方式</summary><label for="research-mode">资料搜索<select id="research-mode"><option value="auto">自动选择（推荐）</option><option value="public">公开搜索 · 无需额外 Token</option><option value="model">模型联网搜索 · 服务需支持</option></select></label><p>自动模式会尝试当前 Responses 服务的联网搜索；不支持时使用公开搜索。提供参考链接有助于找到原始资料。</p></details>
 
 <p class="note">搜索不到足够的相关正文时会停止并说明原因。研究、写稿和配音会调用已配置的服务。</p>
-</form></div><div class="pick-panel"><h2>创作设置</h2><h3 id="pick-title">选一个话题，开始创作</h3><details class="topic-evidence"><summary>选题资料</summary><p id="pick-description">选择题材后生成视频。</p><div id="pick-metrics"></div><a id="pick-source" target="_blank" rel="noreferrer">查看项目原始资料 ↗</a></details><hr><label for="style-select">单条风格</label><select id="style-select" aria-label="视频风格"></select><p id="style-hint" class="note"></p>
-<button id="compare" class="primary" disabled>生成三版对比</button>
-<details class="creation-help"><summary>生成方式</summary><p id="creation-route">资料核实、文稿、配音与成片自动完成。</p><small>三版独立创作并评审，可多选入库、反馈重做。上方风格仅用于单条生成。</small></details>
-<button id="build" class="secondary wide" disabled>生成单条</button>
+</form></div><div class="pick-panel"><h2>创作设置</h2><h3 id="pick-title">选一个话题，开始创作</h3><details class="topic-evidence"><summary>选题资料</summary><p id="pick-description">选择题材后生成视频。</p><div id="pick-metrics"></div><a id="pick-source" target="_blank" rel="noreferrer">查看项目原始资料 ↗</a></details><hr><button id="compare" class="primary" disabled>生成三版对比</button>
+<details class="creation-help"><summary>生成方式</summary><p id="creation-route">资料核实、文稿、配音与成片自动完成。</p><small>三版独立创作并评审，可多选入库、反馈重做。风格只用于下方的单条生成。</small></details>
+<div class="pick-single"><label class="pick-single-title" for="style-select">只要一条？选个风格直接生成</label><div class="pick-single-row"><select id="style-select" aria-label="视频风格"></select><button id="build" class="secondary wide" disabled>生成单条</button></div><p id="style-hint" class="note"></p></div>
 <div id="generation-status" class="generation-status" role="status"></div>
 <button id="configure-model" class="secondary wide" hidden>去模型设置</button><div id="source-controls"><details class="source-settings"><summary>管理来源与状态</summary><p id="capture-time">读取已保存的候选话题…</p><div id="source-status" class="source-status"></div><form id="sources-form">
 <div class="source-switches"><label><input type="checkbox" id="source-github">GitHub 周榜</label><label><input type="checkbox" id="source-weibo">微博热搜</label><label><input type="checkbox" id="source-xiaohongshu">小红书搜索</label><label><input type="checkbox" id="source-hackernews">Hacker News 线索</label><label><input type="checkbox" id="source-reddit">Reddit 线索</label></div>

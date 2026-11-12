@@ -45,7 +45,7 @@ export function renderHotTopicStudio(container, { view, onUnauthorized, onPublis
     frame.referrerPolicy = 'no-referrer';
     frame.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups allow-downloads allow-modals');
     frame.onload = () => frame?.contentWindow?.postMessage({type:'content-workbench:navigate',view:currentMode === 'settings' ? 'settings' : contentRoute},location.origin);
-    frame.src = '/video-workbench/index.html?v=20261112-main-montage' + (mode === 'settings' ? '#settings' : '');
+    frame.src = '/video-workbench/index.html?v=20261112-creation-skin2' + (mode === 'settings' ? '#settings' : '');
     workspace.append(frame);
     content.after(workspace);
     receiveMessage = event => {

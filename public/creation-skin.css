@@ -1,0 +1,203 @@
+/* ==========================================================================
+   内容创作三层页面（创作外框 / 智能混剪 / AI 热点）统一外观
+   - 颜色取主系统 theme.css 的 --tk-* 令牌（三层页面都先引入 /theme.css）。
+   - 只改外观：按钮、输入、卡片、标签、提示条、弹窗与顶栏；不改元素 ID 与事件。
+   - 视频画面、模板海报等内容区保持原色。
+   ========================================================================== */
+
+/* ---------- 基础：透明底，透出主系统背景；系统字体 ---------- */
+html[data-theme]{background:transparent!important}
+html[data-theme=day]{color-scheme:light}
+html[data-theme=night]{color-scheme:dark}
+html[data-theme] body{background:transparent!important;color:var(--tk-ink)!important;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Segoe UI","Microsoft YaHei",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+html[data-theme] body::before{display:none!important}
+html[data-theme] :is(button,input,select,textarea){font-family:inherit}
+html[data-theme] :is(.app-shell,.workspace-shell,main,.workspace,.project-home,.system-embedded){background:transparent!important}
+html[data-theme] iframe{color-scheme:normal}
+
+/* 主系统令牌映射到各页面原有变量，让原样式自动跟随 */
+html[data-theme]{--bg:transparent;--page:transparent;--panel:var(--tk-glass-solid);--paper:var(--tk-glass-solid);--soft:var(--tk-surface2);
+  --line:var(--tk-line);--ink:var(--tk-ink);--text:var(--tk-ink);--muted:var(--tk-muted);
+  --accent:var(--tk-acc);--mint:var(--tk-acc-text);--green:var(--tk-acc);--lime:var(--tk-acc)}
+
+/* ---------- 卡片：主系统的玻璃卡片 ---------- */
+html[data-theme] :is(.panel,.resource-panel,.preview-panel,.shot-inspector,.video-card,.home-template,.home-project,.home-source-note,
+  .library-batchbar,.pick-panel,.topic-card,.custom-topic,.settings-group,.settings-card,.asset-folders,.asset-browser,.creation-config,.chat-workspace,.run,.runs>*){
+  background:var(--tk-glass-solid)!important;color:var(--tk-ink)!important;border:1px solid var(--tk-card-edge)!important;border-radius:14px!important;
+  box-shadow:var(--tk-card-shadow)!important}
+html[data-theme] :is(.video-info,.video-card-footer){background:transparent!important;color:var(--tk-ink)!important;border-color:var(--tk-line)!important}
+html[data-theme] :is(.media-card,.inspector-section,.field-group,.source-card,.shot-card,.timeline-shot){background:var(--tk-surface2)!important;color:var(--tk-ink)!important;border-color:var(--tk-line)!important}
+html[data-theme] :is(.timeline-shot.is-active,.timeline-shot.selected,.shot-card.is-active,.topic-card.selected,.topic-card:hover,.media-card:hover){border-color:var(--tk-acc-line)!important;background:var(--tk-acc-soft)!important}
+html[data-theme] :is(.muted,.section-help,.note,.small-label,.librarySummary,.video-meta,.cardDescription){color:var(--tk-muted)!important}
+html[data-theme] :is(h1,h2,h3,strong,.topic-title){color:var(--tk-ink)}
+
+/* ---------- 按钮：主按钮渐变，次按钮白底描边，文字按钮主色 ---------- */
+html[data-theme] :is(.button,.primary,.secondary,.button-primary,.button-secondary,.button-quiet,.routeButton){
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:7px 14px!important;border-radius:10px!important;
+  font-size:13px!important;font-weight:500!important;line-height:1.2;cursor:pointer;
+  transition:transform .15s cubic-bezier(.2,.8,.2,1),box-shadow .2s,background-position .7s cubic-bezier(.2,.8,.2,1),border-color .15s}
+html[data-theme] :is(.button.primary,button.primary,.button-primary,#ai-generate):not(:disabled){
+  color:#fff!important;border:1px solid transparent!important;background-color:var(--tk-acc)!important;
+  background-image:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.42) 50%,transparent 70%),linear-gradient(135deg,var(--tk-acc),var(--tk-acc2))!important;
+  background-size:250% 100%,100% 100%!important;background-position:150% 0,0 0!important;background-repeat:no-repeat!important;
+  box-shadow:0 8px 22px -10px var(--tk-glow),inset 0 1px 0 rgba(255,255,255,.3)!important}
+@media (hover:hover){html[data-theme] :is(.button.primary,button.primary,.button-primary,#ai-generate):not(:disabled):hover{background-position:-50% 0,0 0!important}}
+html[data-theme] :is(.button:not(.primary),button.secondary,.button-secondary,.button-quiet,.librarySecondaryAction){
+  background:var(--tk-surface)!important;color:var(--tk-ink2)!important;border:1px solid var(--tk-line-strong)!important;box-shadow:inset 0 1px 0 var(--tk-hi)!important}
+html[data-theme] :is(.button:not(.primary),button.secondary,.button-secondary,.button-quiet):not(:disabled):hover{border-color:var(--tk-acc-line)!important;color:var(--tk-acc-text)!important}
+html[data-theme] :is(.button,button.primary,button.secondary,.button-primary,.button-secondary,.button-quiet):not(:disabled):active{transform:translateY(1px) scale(.985)}
+html[data-theme] :is(.button,.primary,.secondary,.button-primary,.button-secondary,.button-quiet,#ai-generate):disabled{
+  background:var(--tk-surface3)!important;background-image:none!important;color:var(--tk-muted)!important;border:1px solid var(--tk-line)!important;box-shadow:none!important;opacity:.75;cursor:not-allowed}
+html[data-theme] .text-button{color:var(--tk-acc-text)!important;background:none!important;border:0!important;font-size:12.5px;border-radius:7px;padding:4px 6px}
+html[data-theme] .text-button:not(:disabled):hover{background:var(--tk-acc-soft)!important}
+html[data-theme] .text-button:disabled{color:var(--tk-muted)!important;opacity:.6}
+html[data-theme] :is(.icon-button,.dialog-close){border-radius:9px!important;background:var(--tk-surface)!important;color:var(--tk-ink2)!important;border:1px solid var(--tk-line)!important}
+html[data-theme] .danger-outline{color:var(--tk-danger-text)!important;border-color:var(--tk-danger-line)!important}
+
+/* ---------- 输入框、下拉框 ---------- */
+html[data-theme] :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),textarea,select){
+  background:var(--tk-surface)!important;color:var(--tk-ink)!important;border:1px solid var(--tk-line-strong)!important;border-radius:9px!important;
+  box-shadow:inset 0 1px 0 var(--tk-hi);font-size:13px}
+html[data-theme] :is(input,textarea,select):focus{outline:none!important;border-color:var(--tk-acc)!important;box-shadow:0 0 0 3px var(--tk-acc-soft)!important}
+html[data-theme] :is(input,textarea)::placeholder{color:var(--tk-muted);opacity:.8}
+html[data-theme] :is(input[type=checkbox],input[type=radio],input[type=range]){accent-color:var(--tk-acc)}
+html[data-theme] .search-field{background:var(--tk-surface)!important;border:1px solid var(--tk-line-strong)!important;border-radius:9px!important}
+html[data-theme] .search-field input{border:0!important;box-shadow:none!important;background:transparent!important}
+
+/* ---------- 状态标签与提示条 ---------- */
+html[data-theme] :is(.output-status,.statusBadge,.badge,.home-tag,.count-badge,.revision-badge){border-radius:999px!important;padding:2px 9px!important;font-size:11.5px!important;font-weight:600;border:1px solid transparent}
+html[data-theme] :is(.output-status.pending,.badge-neutral){background:var(--tk-warn-soft)!important;color:var(--tk-warn-text)!important;border-color:var(--tk-warn-line)!important}
+html[data-theme] .output-status.approved{background:var(--tk-ok-soft)!important;color:var(--tk-ok-text)!important;border-color:var(--tk-ok-line)!important}
+html[data-theme] :is(.home-tag,.count-badge,.revision-badge){background:var(--tk-acc-soft)!important;color:var(--tk-acc-text)!important;border-color:var(--tk-acc-line)!important}
+html[data-theme] :is(.job,.global-error,.inline-error,.render-panel.failed){background:var(--tk-warn-soft)!important;color:var(--tk-warn-text)!important;border:1px solid var(--tk-warn-line)!important;border-radius:12px!important}
+html[data-theme] .job a,html[data-theme] .job :is(#job-links a){color:var(--tk-warn-text)!important;text-decoration:underline;text-underline-offset:2px}
+html[data-theme] :is(.render-panel,.preview-notice,.lab-note){background:var(--tk-acc-soft)!important;color:var(--tk-ink2)!important;border:1px solid var(--tk-acc-line)!important;border-radius:12px!important}
+html[data-theme] .toast{background:var(--tk-inverse)!important;color:var(--tk-bg0)!important;border-radius:12px!important;border:0!important;box-shadow:0 12px 30px -10px rgba(0,0,0,.4)!important}
+
+/* ---------- 弹窗 ---------- */
+html[data-theme] dialog{background:var(--tk-dialog)!important;color:var(--tk-ink)!important;border:1px solid var(--tk-card-edge)!important;border-radius:16px!important;
+  box-shadow:0 30px 80px -20px rgba(15,27,45,.45)!important}
+html[data-theme] dialog::backdrop{background:var(--tk-scrim)!important;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+html[data-theme] :is(.dialog-header,.dialog-footer,.dialog-heading){border-color:var(--tk-line)!important;background:transparent!important}
+
+/* ---------- 折叠区：统一旋转箭头 ---------- */
+html[data-theme] details>summary{list-style:none;cursor:pointer;color:var(--tk-ink2);font-size:13px}
+html[data-theme] details>summary::-webkit-details-marker{display:none}
+html[data-theme] details>summary::before{content:"";display:inline-block;width:6px;height:6px;margin:0 9px 2px 2px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(-45deg);transition:transform .18s;opacity:.7}
+html[data-theme] details[open]>summary::before{transform:rotate(45deg);margin-bottom:4px}
+
+/* ---------- 分段控件（顶部栏目、热点页栏目、素材筛选） ---------- */
+html[data-theme] :is(.creation-switch,.segmented-control,.libraryFilters,.workspace-tabs){display:inline-flex;align-items:center;gap:2px;padding:3px;border-radius:10px;background:var(--tk-surface2)!important;border:1px solid var(--tk-line)!important}
+html[data-theme] .creation-switch>.method-nav{display:contents!important}
+html[data-theme] :is(.creation-switch,.creation-switch>.method-nav,.segmented-control,.libraryFilters,.workspace-tabs)>:is(a,button){display:inline-flex;align-items:center;gap:6px;height:auto!important;min-height:0;padding:5px 13px!important;border:0!important;border-radius:7px!important;background:none!important;color:var(--tk-muted)!important;font-size:13px!important;font-weight:500;white-space:nowrap;text-decoration:none}
+html[data-theme] :is(.creation-switch,.creation-switch>.method-nav,.segmented-control,.libraryFilters,.workspace-tabs)>:is(a,button):hover{color:var(--tk-ink)!important}
+html[data-theme] :is(.creation-switch a.active,.segmented-control>button.active,.libraryFilters>[aria-pressed=true],.workspace-tabs>[aria-selected=true]){
+  color:var(--tk-ink)!important;font-weight:600!important;background:var(--tk-dialog)!important;box-shadow:0 1px 3px rgba(15,27,45,.14),0 0 0 .5px rgba(15,27,45,.06)!important}
+html[data-theme] :is(.creation-switch a,.workspace-tabs>a)::after{display:none!important}
+html[data-theme] :is(.creation-switch,.workspace-tabs) svg{width:14px;height:14px}
+
+/* ======================================================================
+   第一层：创作外框（engines/video-studio/dist）—— 顶栏与主系统一致
+   ====================================================================== */
+html[data-theme] .studio-topbar{position:relative;z-index:5;height:auto!important;min-height:56px;flex:none;display:flex;align-items:center;gap:14px!important;
+  margin:12px 12px 0 2px;padding:9px 12px 9px 18px!important;border:1px solid var(--tk-glass-edge)!important;border-radius:18px;
+  background:var(--tk-glass)!important;-webkit-backdrop-filter:blur(22px) saturate(1.4);backdrop-filter:blur(22px) saturate(1.4);box-shadow:var(--tk-card-shadow)}
+html[data-theme] .studio-topbar .brand{display:flex;align-items:baseline;gap:10px;padding:0;font-size:19px!important;font-weight:700;color:var(--tk-ink)!important;white-space:nowrap;text-decoration:none}
+html[data-theme] .studio-topbar .brand-icon{display:none!important}
+html[data-theme] .studio-topbar .creation-switch{margin:0 0 0 4px!important;height:auto}
+html[data-theme] .studio-topbar .content-library-link{margin:0!important;font-size:13px!important}
+html[data-theme] .studio-topbar .content-library-link.active{color:var(--tk-ink)!important}
+html[data-theme] .studio-topbar .studio-connection{margin-left:auto!important;display:inline-flex;align-items:center;gap:8px;padding:4px 6px 4px 11px;border-radius:999px;background:var(--tk-surface2);border:1px solid var(--tk-line);font-size:12px;color:var(--tk-muted)}
+html[data-theme] .studio-topbar .studio-connection .icon-button{width:26px;height:26px;border:0!important;background:transparent!important}
+html[data-theme] .studio-topbar .connection-dot{width:7px;height:7px;border-radius:50%}
+html[data-theme] body.studio-embedded main{padding:12px 12px 12px 2px!important}
+html[data-theme] body.studio-embedded :is(#montageWorkspace,#automaticWorkspace){margin:-12px -12px -12px -2px!important}
+html[data-theme] .automatic-frame{background:transparent!important;border:0!important;border-radius:0!important}
+html[data-theme] :is(.video-cover,.asset-thumbnail){background:var(--tk-surface3)!important}
+html[data-theme] .library-batchbar{padding:8px 12px!important;border-radius:12px!important;box-shadow:none!important}
+html[data-theme] .library-batchbar .muted{color:var(--tk-muted)!important}
+html[data-theme] .video-card{overflow:hidden}
+html[data-theme] .mix-toolbar{background:transparent!important;border:0!important}
+@media(max-width:760px){html[data-theme] .studio-topbar{flex-wrap:wrap;margin:8px;gap:8px!important;padding:8px 10px!important}
+  html[data-theme] .studio-topbar .creation-switch{order:3;width:100%;overflow-x:auto;scrollbar-width:none}
+  html[data-theme] body.studio-embedded main{padding:8px!important}html[data-theme] body.studio-embedded :is(#montageWorkspace,#automaticWorkspace){margin:-8px!important}}
+
+/* ======================================================================
+   第二层：智能混剪（engines/montage15）
+   ====================================================================== */
+/* 首页 */
+html[data-theme] .project-home{padding:16px 12px 24px 2px!important}
+html[data-theme] .home-heading .eyebrow{color:var(--tk-acc-text)!important;letter-spacing:0;font-weight:600}
+html[data-theme] .home-heading h1{font-size:24px;letter-spacing:0;color:var(--tk-ink)}
+html[data-theme] :is(.home-template,.home-project){overflow:hidden;transition:transform .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s,border-color .2s}
+html[data-theme] :is(.home-template,.home-project):hover{transform:translateY(-2px);border-color:var(--tk-acc-line)!important}
+html[data-theme] .home-section-title h2{font-size:15px}
+html[data-theme] .home-section-title span{color:var(--tk-muted)}
+/* 编辑器：工程栏（原来的“品牌栏 + 工程栏”合成一行） */
+html[data-theme] .app-header{display:none!important}
+html[data-theme] .project-toolbar{margin:12px 12px 0 2px;padding:7px 10px 7px 8px!important;min-height:50px;border:1px solid var(--tk-glass-edge)!important;border-radius:14px;
+  background:var(--tk-glass)!important;-webkit-backdrop-filter:blur(22px) saturate(1.4);backdrop-filter:blur(22px) saturate(1.4);box-shadow:var(--tk-card-shadow);gap:8px!important}
+html[data-theme] .project-toolbar #current-project-name{font-size:14.5px;color:var(--tk-ink)}
+html[data-theme] .project-toolbar .toolbar-divider{background:var(--tk-line)!important}
+html[data-theme] .project-toolbar .format-label{color:var(--tk-muted)!important;font-size:12px;padding:3px 9px;border-radius:999px;background:var(--tk-surface2);border:1px solid var(--tk-line)}
+html[data-theme] .project-toolbar .header-actions{display:flex;align-items:center;gap:8px;margin-left:6px;padding-left:10px;border-left:1px solid var(--tk-line)}
+html[data-theme] .project-toolbar .local-status{display:none}
+html[data-theme] .project-toolbar .save-status{font-size:12px;color:var(--tk-muted)!important;white-space:nowrap}
+html[data-theme] .workspace{padding:10px 12px 12px 2px;gap:10px}
+html[data-theme] :is(.resource-panel,.preview-panel,.shot-inspector){border-radius:14px!important}
+/* 左栏：按步骤编号 —— ① 素材来源 ② 制作要求 → 生成 */
+html[data-theme] .resource-heading h2{font-size:14px}
+html[data-theme] :is(.source-setup,.ai-workflow,.media-browser)>.section-label h3{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--tk-ink)}
+html[data-theme] :is(.source-setup,.ai-workflow)>.section-label h3::before{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;
+  background:linear-gradient(135deg,var(--tk-acc),var(--tk-acc2));color:#fff;font-size:11.5px;font-weight:700;flex:none}
+html[data-theme] .source-setup>.section-label h3::before{content:"1"}
+html[data-theme] .ai-workflow>.section-label h3::before{content:"2"}
+html[data-theme] .ai-workflow>label[for=ai-brief]{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+html[data-theme] :is(.source-setup,.ai-workflow,.media-browser){border-top:1px solid var(--tk-line)!important;padding-top:12px}
+html[data-theme] #ai-provider-status{font-size:11.5px;color:var(--tk-ok-text)!important}
+html[data-theme] #ai-generate{min-height:40px;font-size:14px!important;font-weight:600!important;margin-top:4px}
+html[data-theme] .preview-stage{border-radius:12px;overflow:hidden}
+
+/* ======================================================================
+   第三层：AI 热点（engines/ai-signal-studio）
+   ====================================================================== */
+html[data-theme] .system-embedded aside,html[data-theme] body>aside{background:transparent!important;border:0!important;padding:12px 12px 0 2px!important;gap:12px!important;-webkit-backdrop-filter:none;backdrop-filter:none}
+html[data-theme] body>aside .logo{display:none!important}
+html[data-theme] body>aside nav{display:inline-flex!important;flex-direction:row!important;align-items:center;gap:2px!important;padding:3px;margin:0!important;border-radius:10px;background:var(--tk-surface2)!important;border:1px solid var(--tk-line)}
+html[data-theme] body>aside nav button{padding:5px 13px!important;border:0!important;border-radius:7px!important;background:none!important;color:var(--tk-muted)!important;font-size:13px!important;font-weight:500}
+html[data-theme] body>aside nav button:hover{color:var(--tk-ink)!important}
+html[data-theme] body>aside nav button:is(.active,[aria-pressed=true]){color:var(--tk-ink)!important;font-weight:600;background:var(--tk-dialog)!important;box-shadow:0 1px 3px rgba(15,27,45,.14),0 0 0 .5px rgba(15,27,45,.06)}
+html[data-theme] body:not([data-signal-view=settings])>aside{display:flex!important;flex-direction:row!important;align-items:center}
+html[data-theme] body>aside nav{flex:none!important;width:auto!important;max-width:100%;overflow-x:auto;scrollbar-width:none}
+html[data-theme] body>aside nav .signal-nav-spacer{flex:none!important;width:1px;height:16px;margin:0 6px;background:var(--tk-line-strong)}
+html[data-theme] body>main{padding:12px 12px 28px 2px!important}
+html[data-theme] body>main>header{display:none}
+html[data-theme] .tab{margin-top:12px!important}
+html[data-theme] .pick-panel{background:var(--tk-glass-solid)!important;border-radius:16px!important;padding:20px!important}
+html[data-theme] .pick-panel h2{font-size:12px;color:var(--tk-muted);font-weight:600;margin:0 0 6px}
+html[data-theme] .pick-panel h3{font-size:15.5px;line-height:1.45;color:var(--tk-ink)}
+html[data-theme] .pick-panel label{color:var(--tk-ink2)!important;font-size:12.5px!important;font-weight:600}
+html[data-theme] .pick-panel hr{border:0;border-top:1px solid var(--tk-line);margin:14px 0}
+html[data-theme] .pick-panel #compare{width:100%;min-height:40px;font-size:14px!important;font-weight:600!important;margin-top:4px}
+html[data-theme] .pick-single{margin-top:14px;padding:12px;border-radius:12px;background:var(--tk-surface2);border:1px solid var(--tk-line)}
+html[data-theme] .pick-single-title{display:block;margin:0 0 8px;font-size:12.5px;font-weight:600;color:var(--tk-ink2)}
+html[data-theme] .pick-single-row{display:flex;gap:8px;align-items:center}
+html[data-theme] .pick-single-row select{flex:1;min-width:0}
+html[data-theme] .pick-single-row #build{width:auto!important;margin:0!important;flex:none}
+html[data-theme] .pick-single #style-hint{margin:6px 0 0}
+html[data-theme] .topic-card{box-shadow:none!important;border-radius:12px!important}
+html[data-theme] .topic-card .topic-desc{color:var(--tk-muted)!important}
+html[data-theme] .topic-card .mark,html[data-theme] .topic-card>span:first-child{background:var(--tk-acc-soft)!important;color:var(--tk-acc-text)!important}
+html[data-theme] .gain,html[data-theme] .topic-card .gain{color:var(--tk-ok-text)!important}
+
+/* ---------- 原生下拉框：与主系统一致的上下箭头外观（不替换控件，取值逻辑不变） ---------- */
+html[data-theme] body select:not([multiple]){-webkit-appearance:none!important;appearance:none!important;min-height:32px;padding:5px 30px 5px 11px!important;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 16'%3E%3Cpath d='M3 6l3-3 3 3M3 10l3 3 3-3' fill='none' stroke='%238a96a8' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")!important;
+  background-repeat:no-repeat!important;background-position:right 10px center!important;background-size:10px 14px!important;cursor:pointer}
+html[data-theme] body select:disabled{opacity:.6;cursor:not-allowed}
+/* 热点卡片序号 */
+html[data-theme] .topic-card .rank{background:var(--tk-acc-soft)!important;color:var(--tk-acc-text)!important;border-color:var(--tk-acc-line)!important}
+
+/* 创作设置页（由系统设置进入）：顶栏与热点栏目保持隐藏 */
+html[data-theme] body.studio-embedded[data-studio-view=settings] .studio-topbar,html[data-theme] body[data-signal-view=settings]>aside{display:none!important}
