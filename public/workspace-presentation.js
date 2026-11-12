@@ -146,6 +146,13 @@ function dashboard(root,{data,stats={},accounts=[],localAgent={},onNavigate}){
   const runtimeMetrics=root.querySelector('.metric-grid');if(runtimeMetrics){area.append(fold('回复与调用统计',[runtimeMetrics]));}
   const runtimePanels=[...root.querySelectorAll('.dashboard-layout,.dashboard-bottom')].filter(element=>!element.closest('.preview-details'));
   if(runtimePanels.length)area.after(fold('运行详情',runtimePanels));
+  /* 次要内容合成一组：收起时叠成一张卡片的几行，展开哪一行就只撑开哪一行 */
+  const group=node('div','v2-fold-group');group.dataset.refreshKey='dashboard-folds';
+  const folds=[...root.querySelectorAll('details.preview-details')].filter(item=>!item.closest('.v2-fold-group'));
+  const foldOrder=['更多分析','回复与调用统计','运行详情','设备与登录状态'];
+  folds.sort((a,b)=>foldOrder.indexOf(a.querySelector('summary')?.textContent)-foldOrder.indexOf(b.querySelector('summary')?.textContent));
+  for(const item of folds){item.dataset.refreshKey='fold:'+(item.querySelector('summary')?.textContent||'');group.append(item)}
+  if(folds.length)area.after(group);
   root.querySelectorAll(':scope > .section-title').forEach(element=>element.remove());
 }
 function publishing(root,{view,onNavigate}){

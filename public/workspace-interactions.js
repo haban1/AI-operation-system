@@ -292,6 +292,72 @@ function presentCommentInbox(root, options) {
   selectComment(inbox, initial ?? null);
 }
 
+/* 问题记录：标题下只显示一句可读的原因，原始报错、关联对象与阻断信息收进“技术详情”；
+   “人工已处理”为主按钮。只调整展示，按钮与接口不变。 */
+function issueSummary(raw) {
+  const text = String(raw || '').replace(/\s+/g, ' ').trim();
+  const cut = text.search(/\s+at\s+(?:[\w$.<>]+\s+\(|file:|async\s|node:)/);
+  let summary = (cut > 0 ? text.slice(0, cut) : text).replace(/^(?:Error|TypeError|RangeError):\s*/, '').trim();
+  if (summary.length > 160) summary = `${summary.slice(0, 160)}…`;
+  return summary;
+}
+function presentIssues(root) {
+  for (const card of root.querySelectorAll('.issue-card')) {
+    if (card.dataset.v2Issue) continue;
+    card.dataset.v2Issue = 'true';
+    const paragraphs = [...card.querySelectorAll(':scope > p')];
+    const title = paragraphs[0], raw = paragraphs[1], extra = card.querySelector(':scope > .muted');
+    const tech = disclosure('v2-issue-tech', '技术详情');
+    const summary = element('p', 'v2-issue-summary', issueSummary(raw?.textContent) || '查看技术详情了解原因。');
+    if (raw) { raw.classList.add('v2-issue-raw'); tech.append(raw); }
+    if (extra) { extra.classList.add('v2-issue-extra'); tech.append(extra); }
+    (title || card.querySelector(':scope > .meta'))?.after(summary);
+    summary.after(tech);
+    const bar = card.querySelector('.section-actions');
+    const resolve = bar?.querySelector('.manual-resolve-issue');
+    if (resolve) { resolve.classList.remove('secondary'); bar.prepend(resolve); }
+  }
+}
+
+/* 转人工记录：与评论/私信一致的“状态列 + 明细”结构。左侧计数取自原统计卡片，
+   点击只在页面上筛选已加载的行，不请求接口。 */
+let handoffFilter = 'all';
+function handoffRowState(row) {
+  const text = row.lastElementChild?.textContent || '';
+  return /成功/.test(text) ? 'sent' : 'retry';
+}
+function applyHandoffFilter(page) {
+  for (const row of page.querySelectorAll('.handoff-table-wrap tbody tr')) row.hidden = handoffFilter !== 'all' && handoffRowState(row) !== handoffFilter;
+  for (const b of page.querySelectorAll('.v2-handoff-filter .v2-filter')) { const on = b.dataset.filter === handoffFilter; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }
+}
+function presentHandoffs(root) {
+  const page = root.querySelector('.handoff-page');
+  if (!page || page.classList.contains('v2-handoffs')) return;
+  page.classList.add('v2-handoffs');
+  const summary = page.querySelector('.handoff-summary'), table = page.querySelector('.handoff-table-panel');
+  const metrics = [...(summary?.querySelectorAll('.handoff-metrics article') || [])].map(item => Number(item.querySelector('b')?.textContent || 0));
+  const toolbar = element('div', 'v2-page-toolbar');
+  const note = summary?.querySelector('.panel-head p');
+  if (note) toolbar.append(element('p', 'v2-page-note', note.textContent));
+  const refresh = summary?.querySelector('#refreshHandoffs');
+  if (refresh) toolbar.append(refresh);
+  const layout = element('div', 'v2-split');
+  const aside = element('aside', 'v2-inbox-filter v2-handoff-filter');
+  aside.setAttribute('aria-label', '转人工记录筛选');
+  aside.append(element('div', 'v2-filter-caption', '企业微信通知'));
+  for (const [key, label, tone, value] of [['retry', '通知重试中', 'warn', metrics[2]], ['sent', '已成功通知', 'ok', metrics[1]], ['all', '全部', 'all', metrics[0]]]) {
+    const b = element('button', `v2-filter v2-filter-${tone}`); b.type = 'button'; b.dataset.filter = key;
+    b.append(element('i'), element('span', '', label), element('em', 'v2-num', String(value ?? 0)));
+    b.onclick = event => { handoffFilter = key; applyHandoffFilter(event.currentTarget.closest('.handoff-page')); };
+    aside.append(b);
+  }
+  if (table) { table.classList.add('v2-split-main'); table.querySelector('.panel-head p')?.remove(); }
+  layout.append(aside); if (table) layout.append(table);
+  summary?.remove();
+  page.prepend(toolbar, layout);
+  applyHandoffFilter(page);
+}
+
 function presentMessages(root, options) {
   const page = root.querySelector('.message-ops-page');
   if (!page) return;
@@ -334,7 +400,17 @@ function presentTasks(root, options) {
     const subject = element('span', 'ws-task-subject');
     if (title) subject.append(title);
     subject.append(element('small', '', id ? `任务 #${id}` : ''));
-    summary.append(subject, element('span', 'ws-task-platform', names.join('、') || '—'));
+    const platformCell = element('span', 'ws-task-platform');
+    const codes = [...new Set((task?.targets || []).map(target => target.platform_code).filter(Boolean))];
+    if (codes.length) {
+      for (const code of codes) {
+        const chip = element('span', 'v2-platform-chip');
+        chip.innerHTML = platformLogo(code, 20);
+        chip.append(element('span', '', platformNames[code] || code));
+        platformCell.append(chip);
+      }
+    } else platformCell.textContent = names.join('、') || '—';
+    summary.append(subject, platformCell);
     if (time) summary.append(time);
     const state = element('span', 'ws-task-state');
     if (status) state.append(status);
@@ -347,13 +423,54 @@ function presentPlatforms(root) {
   const grid = root.querySelector('.platform-runtime-grid');
   if (!grid) return;
   root.classList.add('ws-platforms');
-  for (const notice of root.querySelectorAll(':scope > .notice')) {
-    if (notice.closest('details')) continue;
-    const details = disclosure('ws-platform-notice', notice.querySelector('b')?.textContent || '运行说明');
-    notice.before(details); details.append(notice);
+  /* 顶部状态条：用一句话说清运行模式、采集服务和平台数；批量按钮直接显示。
+     沿用原 .platform-runtime-page-head 与按钮 ID，按钮只改显示文字，事件不变。 */
+  const head = root.querySelector('.platform-runtime-page-head');
+  const notices = [...root.querySelectorAll(':scope > .notice')];
+  const modeNotice = notices.find(n => /模拟模式|真实账号模式/.test(n.querySelector('b')?.textContent || ''));
+  const safetyNotice = notices.find(n => n !== modeNotice);
+  if (head && !head.dataset.v2Bar) {
+    head.dataset.v2Bar = 'true';
+    const modeText = modeNotice?.textContent || '';
+    const real = /真实账号模式/.test(modeText), online = /已连接/.test(modeText);
+    const status = element('div', 'v2-runtime-status');
+    const mode = element('span', `v2-pill v2-pill-${real ? 'ok' : 'warn'}`, real ? '真实账号模式' : '模拟模式');
+    mode.title = real ? '会在运营电脑的专用 Chrome 中操作真实平台账号。' : '只用于测试和演示，不会登录或操作真实平台账号。';
+    const agent = element('span', `v2-pill v2-pill-${online ? 'ok' : 'warn'}`, online ? '采集服务已连接' : '采集服务未连接');
+    agent.title = online ? '运营电脑上的本机采集服务在线，可以打开浏览器登录、采集和发布。' : '运营电脑上的本机采集服务未运行，登录、采集和发布暂时不会执行。';
+    status.append(mode, agent);
+    const summary = head.querySelector('.runtime-summary');
+    const match = summary?.textContent.match(/(\d+)\s*\/\s*(\d+)\s*可执行\s*·\s*(\d+)\s*\/\s*(\d+)\s*已开启/);
+    if (summary && match) {
+      summary.textContent = `${match[3]} 个平台已开启 · ${match[1]} 个可以执行任务`;
+      summary.title = `共 ${match[2]} 个平台。“可以执行任务”指平台已开启且账号已登录。`;
+      status.append(summary);
+    }
+    const actions = root.querySelector('.platform-runtime-panel > .panel-head .button-row');
+    if (actions) {
+      actions.classList.add('v2-runtime-actions');
+      const labels = { enableAllPlatforms: '全部开启', openSelectedPlatforms: '批量打开登录窗口', stopAllPlatforms: '全部停止' };
+      for (const button of actions.querySelectorAll('button')) {
+        if (labels[button.id]) button.textContent = labels[button.id];
+        if (button.dataset.go === 'issues') button.textContent = '查看问题';
+      }
+      const stop = actions.querySelector('#stopAllPlatforms');
+      if (stop) { stop.classList.remove('danger'); stop.classList.add('secondary', 'v2-danger-ghost'); }
+    }
+    head.replaceChildren(status);
+    if (actions) head.append(actions);
+    root.querySelector('.platform-runtime-panel > .panel-head')?.setAttribute('hidden', '');
   }
-  const panel = root.querySelector('.platform-runtime-panel');
-  if (panel) retainDetails(panel, ':scope > .panel-head', '批量管理', 'ws-platform-bulk');
+  if ((modeNotice || safetyNotice) && !root.querySelector('.ws-platform-help')) {
+    const help = disclosure('ws-platform-help', '使用说明');
+    const list = element('div', 'v2-help');
+    const loginText = modeNotice?.querySelector('p')?.textContent;
+    if (loginText) list.append(element('b', '', '如何登录平台账号'), element('p', '', loginText));
+    if (safetyNotice) list.append(element('b', '', '停止平台后会怎样'), element('p', '', '平台停止后不再接任务，不检查登录、不采集，也不会打开浏览器；已经打开的平台浏览器会被关闭。账号停用时同样如此。'));
+    help.append(list);
+    (head || root.firstElementChild)?.after(help);
+    modeNotice?.remove(); safetyNotice?.remove();
+  }
   for (const card of grid.querySelectorAll(':scope > .platform-runtime-card')) {
     const head = card.querySelector('.platform-runtime-heading > div');
     const code = card.querySelector('[data-platform]')?.dataset.platform;
@@ -401,6 +518,16 @@ function presentMiniProgram(root) {
   const settings = disclosure('ws-mini-settings', '连接与运行设置');
   for (const node of [page.querySelector('.mini-link-card'), page.querySelector('.mini-program-summary')]) if (node) settings.append(node);
   page.prepend(toolbar, settings);
+  // 与评论收件箱一致：左侧“状态”列 / 中间会话列表 / 右侧详情
+  const workbench = page.querySelector('.mini-program-workbench');
+  const filters = page.querySelector('.mini-program-filters');
+  if (workbench && filters) {
+    const aside = element('aside', 'v2-inbox-filter ws-mini-filter-column');
+    aside.setAttribute('aria-label', '会话筛选');
+    aside.append(element('div', 'v2-filter-caption', '状态'), filters);
+    workbench.prepend(aside);
+    workbench.classList.add('v2-mini-inbox');
+  }
   const conversationId = page.querySelector('.mini-program-detail-head .mini-program-id');
   if (conversationId) {
     const details = disclosure('ws-mini-conversation-meta', '会话详情');
@@ -445,4 +572,6 @@ export function applyInteractionPresentation(root, options = {}) {
   if (options.page === 'platforms') presentPlatforms(root);
   if (options.page === 'miniProgram') presentMiniProgram(root);
   if (options.page === 'xiaozhi') presentReplyTest(root);
+  if (options.page === 'issues') presentIssues(root);
+  if (options.page === 'handoffs') presentHandoffs(root);
 }
