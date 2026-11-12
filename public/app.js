@@ -2,8 +2,8 @@ import { browserStatusModel, browserStatusMarkup, bindBrowserStatus } from './br
 import { renderKnowledgeFiles, cleanupKnowledgeFiles } from './knowledge-files.js?v=20261111-v2c';
 import { renderAnswerProfile, renderRagPlayground, cleanupKnowledgeTools, resetKnowledgeTools } from './knowledge-tools.js?v=20261111-v2c';
 import { patchBackgroundContent } from './background-dom.js?v=20261112-refresh';
-import { applyWorkspacePresentation, refreshDashboardOrb } from './workspace-presentation.js?v=20261112-controls';
-import { applyInteractionPresentation } from './workspace-interactions.js?v=20261112-inbox-merge';
+import { applyWorkspacePresentation, refreshDashboardOrb } from './workspace-presentation.js?v=20261112-fix1';
+import { applyInteractionPresentation } from './workspace-interactions.js?v=20261112-fix8';
 import { platformLogo } from './platform-icons.js?v=20261111-v2';
 import { aiConnectionPresentation, bindAiModelSettings } from './ai-model-settings.js';
 import { renderWechatAdmin, cleanupWechatAdmin } from './wechat-admin.js';
@@ -437,7 +437,7 @@ async function toggleMasterSwitch(){
   }catch(error){syncMasterSwitch();toast(error.message,true)}finally{button.disabled=false;button.classList.remove('is-loading')}
 }
 async function fetchBootstrap(){return api('/api/bootstrap')}
-function commitBootstrap(bootstrap){state.bootstrap=bootstrap;$('#qwenMode').textContent=`AI：${state.bootstrap.config.qwenMode==='mock'?'模拟模式':'在线模式'}`;syncMasterSwitch();const online=isLocalAgentOnline();setStatus('#cloudDot','#cloudStatus',true,'\u6b63\u5e38');setStatus('#agentDot','#agentStatus',online,online?'\u5728\u7ebf':'\u672a\u8fde\u63a5')}
+function commitBootstrap(bootstrap){state.bootstrap=bootstrap;window.__appBootstrap=bootstrap;window.dispatchEvent(new CustomEvent('app:bootstrap',{detail:bootstrap}));$('#qwenMode').textContent=`AI：${state.bootstrap.config.qwenMode==='mock'?'模拟模式':'在线模式'}`;syncMasterSwitch();const online=isLocalAgentOnline();setStatus('#cloudDot','#cloudStatus',true,'\u6b63\u5e38');setStatus('#agentDot','#agentStatus',online,online?'\u5728\u7ebf':'\u672a\u8fde\u63a5')}
 function capturePageOwner(){return {page:state.page,pageGeneration:pageRenderGeneration}}
 function ownsPageOwner(owner){return Boolean(owner)&&owner.page===state.page&&owner.pageGeneration===pageRenderGeneration}
 function beginBootstrapRequest(pageOwner){
@@ -695,7 +695,7 @@ function operationsAnalyticsMarkup(analytics={}){
   }).join('');
   const pending=Array.isArray(coverage.missing)?coverage.missing:[];
   const reasons={ACCOUNT_NOT_READY:'账号未登录',PLATFORM_PAUSED:'平台已停止',IDENTITY_CHANGED:'账号身份待核对',ACCOUNT_IDENTITY_CHANGED:'登录账号与绑定账号不一致',NEVER_COLLECTED:'等待首次采集',COLLECTION_QUEUED:'等待业务空闲采集',COLLECTION_RUNNING:'正在采集',DATA_PAGE_TIMEOUT:'数据页加载超时，稍后重试',DATA_PAGE_NOT_READY:'暂未读取到平台指标'};
-  return `<section class="operations-surface operations-analytics-panel"><header><div><h2>平台运营数据</h2><p>平台最新读数，累计值不计入周期新增。</p></div><button type="button" class="btn secondary" id="collectOperationsAnalytics">采集平台数据</button></header>${cards?`<div class="operations-analytics-grid">${cards}</div>`:'<p class="operations-analytics-empty">等待首次采集，可手动采集平台数据。</p>'}${pending.length?`<p class="operations-analytics-coverage">${pending.map(item=>`${esc(names[item.platformCode]||item.platformCode)}：${esc(reasons[item.reason]||'等待有效数据')}`).join('；')}</p>`:''}<p class="operations-analytics-note">每 30 分钟尝试更新，业务任务优先；未接入指标保留空缺。</p></section>`;
+  return `<section class="operations-surface operations-analytics-panel"><header><div><h2>平台运营数据</h2><p>平台最新读数，累计值不计入周期新增。</p></div><button type="button" class="btn secondary" id="collectOperationsAnalytics">采集平台数据</button></header>${cards?`<div class="operations-analytics-grid">${cards}</div>`:`<div class="operations-analytics-empty"><b>还没有平台数据</b><p>系统每 30 分钟自动读取一次<strong>已登录</strong>账号的平台数据，由本机采集服务执行；账号登录后会自动开始，也可以点右上角立即采集。</p></div>`}${pending.length?`<ul class="operations-analytics-coverage">${pending.map(item=>`<li class="is-${item.reason==='ACCOUNT_NOT_READY'||item.reason==='PLATFORM_PAUSED'?'warn':'wait'}">${platformLogo(item.platformCode,22)}<b>${esc(names[item.platformCode]||item.platformCode)}</b><span>${esc(reasons[item.reason]||'等待有效数据')}</span></li>`).join('')}</ul>${pending.some(item=>item.reason==='ACCOUNT_NOT_READY')?'<p class="operations-analytics-next"><a href="#accounts">去“平台账号”登录</a>，登录后下一轮自动采集。</p>':''}`:''}${cards?'<p class="operations-analytics-note">每 30 分钟自动更新，业务任务优先；未接入的指标留空。</p>':''}</section>`;
 }
 function operationsTrendChart(items){
   if(!items.length)return `<div class="operations-chart-empty">${operationsPending('曝光、关注、引流需要平台数据源')}<p>接入平台曝光与粉丝数据后，这里会显示每日趋势曲线。</p></div>`;
@@ -2359,9 +2359,9 @@ async function renderManualHandoffs(prefetchedData=null){
   const pending=items.length-succeeded;
   const platformName=code=>state.bootstrap?.platforms?.find(item=>item.code===code)?.name||state.bootstrap?.accounts?.find(item=>item.platform_code===code)?.platform_name||code||'未知平台';
   const rowsHtml=items.map(item=>`<tr>
-    <td><b>${esc(platformName(item.platform_code))}</b><small>通知 #${item.id}</small></td>
+    <td class="handoff-platform-cell">${platformLogo(item.platform_code,26)}<span><b>${esc(platformName(item.platform_code))}</b><small>通知 #${item.id}</small></span></td>
     <td><b>${esc(item.user_name||'未知用户')}</b></td>
-    <td><code>${esc(item.user_id||'未识别')}</code></td>
+    <td><code class="handoff-user-id" title="${esc(item.user_id||'未识别')}">${esc(item.user_id||'未识别')}</code></td>
     <td><span class="handoff-reason">${esc(cleanText(item.handoff_reason||'人工处理'))}</span></td>
     <td><div class="handoff-content">${esc(cleanText(item.conversation_content||''))}</div></td>
     <td><span class="handoff-delivery ${item.handoff_succeeded?'success':'pending'}">${item.handoff_succeeded?'已成功通知':'通知重试中'}</span><small>${fmt(item.confirmed_at||item.created_at)}</small></td>
@@ -2699,6 +2699,7 @@ async function renderIssues(){
     </article>`;
   }).join('');
   $('#content').innerHTML=`<div class="panel" style="margin-top:0"><div class="panel-head"><div><h2>问题汇总</h2><p>发布、采集、回复、登录、RPA、AI 与知识库异常在此统一查看和处理。</p></div></div><div class="notice warn"><b>处理说明：</b>请核对问题关联的平台、账号与页面证据，并使用“人工已处理”或“误判”完成确认。</div><div class="card-list">${cards||'<div class="empty">当前没有系统异常。</div>'}</div></div>`;
+  presentInteractions();
   document.querySelectorAll('.manual-resolve-issue').forEach(button=>button.onclick=async()=>{const pageOwner=capturePageOwner();const resolution=await uiPrompt('处理结果','已人工核对并处理，软件恢复正常运行逻辑',{title:'标记问题已人工处理',confirmLabel:'确认已处理'});if(resolution===null)return;try{await api(`/api/issues/${button.dataset.id}/manual-resolve`,{method:'POST',body:JSON.stringify({resolution,resolvedBy:state.auth?.username||'管理员'})});if(!await refreshBootstrap(pageOwner))return;toast('已标记人工处理并释放本问题阻断');renderIssues()}catch(error){if(ownsPageOwner(pageOwner))toast(error.message,true)}});
   document.querySelectorAll('.false-positive-issue').forEach(button=>button.onclick=async()=>{const pageOwner=capturePageOwner();const answer=await falsePositiveDialog(button.dataset.type);if(!answer)return;const {resolution,actualOutcome,platformUrl,platformPostId}=answer;try{await api(`/api/issues/${button.dataset.id}/false-positive`,{method:'POST',body:JSON.stringify({resolution,resolvedBy:state.auth?.username||'管理员',actualOutcome,platformUrl,platformPostId})});if(!await refreshBootstrap(pageOwner))return;toast('已标记误判并恢复本问题关联运行逻辑');renderIssues()}catch(error){if(ownsPageOwner(pageOwner))toast(error.message,true)}});
 }
