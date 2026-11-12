@@ -71,8 +71,3 @@ html[data-theme] .publish-origin-select-wrap{background:none!important;border:0!
 html[data-theme] .publish-origin-chevron{display:none!important}
 html[data-theme] .publish-origin-select-wrap>.ui-select{width:100%}
 html[data-theme] .publish-origin-select-wrap .ui-select-button{min-height:44px;border-radius:11px;font-size:14px}
-/* 问题记录“技术详情”同样使用旋转箭头 */
-html[data-theme] #content details.v2-issue-tech>summary{display:inline-flex;align-items:center;gap:6px;padding:4px 8px 4px 4px;border-radius:7px;color:var(--tk-muted);font-weight:500;cursor:pointer;list-style:none}
-html[data-theme] #content details.v2-issue-tech>summary::-webkit-details-marker{display:none}
-html[data-theme] #content details.v2-issue-tech>summary::before{content:"";width:7px;height:7px;margin:0 4px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(-45deg);transition:transform .18s cubic-bezier(.2,.8,.2,1);opacity:.7}
-html[data-theme] #content details[open].v2-issue-tech>summary::before{transform:rotate(45deg)}
