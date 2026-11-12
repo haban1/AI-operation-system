@@ -2,6 +2,18 @@ let activeRequest;
 let revision = 0;
 const chat = { turns: [], draft: '', platform: 'DOUYIN', channelType: 'DIRECT_MESSAGE', sessionId: null };
 const noAnswerText = '当前知识不足以可靠回答，可检查知识资料或换一种问法。';
+let sessionSequence = 0;
+
+function createTestSessionId() {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  // LAN HTTP can expose getRandomValues without the secure-context-only randomUUID.
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+  // This identifies a local test conversation; it is never an authentication token.
+  return `rag-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${++sessionSequence}`;
+}
 
 export function cleanupKnowledgeTools() {
   revision++;
@@ -62,7 +74,7 @@ export async function renderAnswerProfile(root, { api, esc, isCurrent }) {
 export function renderRagPlayground(root, options) {
   const { api, esc, isCurrent } = options;
   const generation = ++revision;
-  chat.sessionId ||= crypto.randomUUID();
+  chat.sessionId ||= createTestSessionId();
   root.innerHTML = `<section class="knowledge-tools-page knowledge-playground"><section class="panel"><div class="panel-head"><h2>RAG 问答测试</h2><button class="btn secondary" id="ragTestClear">清空对话</button></div>
     <p class="muted">使用当前生效的知识与已保存的人设，仅在此测试，不向平台发送消息。私信支持最近三轮连续追问，评论按单轮测试。</p>
     <div class="knowledge-test-settings"><label>平台<select id="ragTestPlatform"><option value="DOUYIN">抖音</option><option value="WEIBO">微博</option><option value="BILIBILI">B站</option><option value="WECHAT_CHANNELS">视频号</option></select></label><label>问答场景<select id="ragTestChannel"><option value="DIRECT_MESSAGE">私信 · 连续对话</option><option value="COMMENT">评论 · 单轮问答</option></select></label></div>
@@ -85,7 +97,7 @@ export function renderRagPlayground(root, options) {
   platform.value = chat.platform; channel.value = chat.channelType; question.value = chat.draft;
   question.oninput = () => { chat.draft = question.value; };
   const reset = () => {
-    cleanupKnowledgeTools(); chat.turns = []; chat.draft = ''; chat.sessionId = crypto.randomUUID();
+    cleanupKnowledgeTools(); chat.turns = []; chat.draft = ''; chat.sessionId = createTestSessionId();
     renderRagPlayground(root, options);
   };
   root.querySelector('#ragTestClear').onclick = reset;

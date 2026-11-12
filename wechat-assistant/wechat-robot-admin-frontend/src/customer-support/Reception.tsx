@@ -1,11 +1,14 @@
 import { useMemoizedFn } from 'ahooks';
 import { Alert, App, Avatar, Button, Drawer, Empty, Form, Input, Select, Space, Tag } from 'antd';
-import React, { useState } from 'react';
-import type { Snapshot } from './types';
+import React, { useRef, useState } from 'react';
+import type { ChatDraft, ChatRobot } from '@/chat/conversation/types';
+import ReceptionConversation from './ReceptionConversation';
+import type { Reception as ReceptionItem, Snapshot } from './types';
 import { friendName, timestamp } from './types';
 
 interface IProps {
 	robotId: number;
+	robot: ChatRobot;
 	data: Snapshot;
 	onRefresh: () => void;
 }
@@ -17,10 +20,28 @@ const Reception = (props: IProps) => {
 	const [selectedKey, setSelectedKey] = useState<string>();
 	const [keyword, setKeyword] = useState('');
 	const [settingsOpen, setSettingsOpen] = useState(false);
+	const [drafts, setDrafts] = useState<Record<string, ChatDraft>>({});
+	const [sendingReception, setSendingReception] = useState<ReceptionItem>();
+	const [transitioning, setTransitioning] = useState(false);
+	const sending = useRef(false);
 	const options = props.data.friends.map(f => ({ value: f.wechat_id, label: friendName(f) }));
 	const name = (id: string) => friendName(props.data.friends.find(f => f.wechat_id === id) || { wechat_id: id });
 	const queue = props.data.receptions.filter(item => `${name(item.peer)} ${item.last_message}`.includes(keyword));
-	const selected = queue.find(item => item.key === selectedKey) || queue[0];
+	const selected = sendingReception || queue.find(item => item.key === selectedKey) || queue[0];
+	const onBusyChange = useMemoizedFn((value: boolean) => {
+		sending.current = value;
+		setSendingReception(value ? selected : undefined);
+	});
+	const onDraftChange = useMemoizedFn((key: string, patch: Partial<ChatDraft>) => {
+		setDrafts(previous => ({ ...previous, [key]: { ...(previous[key] || { text: '' }), ...patch } }));
+	});
+	const disabledReason = transitioning
+		? '正在更新接待状态，请稍候。'
+		: props.robot.status !== 'online'
+			? '微信当前离线，请重新登录后发送。'
+			: selected && !props.data.receptions.some(item => item.key === selected.key)
+				? '该会话已结束人工接待，请重新接管后发送。'
+				: undefined;
 	const save = useMemoizedFn(async (values: { notifier?: string; knowledge_codes?: string[] }) => {
 		setBusy(true);
 		try {
@@ -37,18 +58,26 @@ const Reception = (props: IProps) => {
 		}
 	});
 	const transition = useMemoizedFn((id: string, room: string, active: boolean) => {
+		if (sending.current || transitioning) return;
 		modal.confirm({
 			title: active ? '确认由人工接待？' : '确认恢复 AI 回复？',
 			content: active
-				? '该会话的 AI 自动回复将暂停，请在微信中接待。'
+				? '该会话的 AI 自动回复将暂停，可在当前窗口发送文字和图片。'
 				: '后续新消息恢复 AI 回复，接管前未完成的回答不会补发。',
 			onOk: async () => {
-				await window.wechatRobotClient.support.receptionCreate(
-					{ id: props.robotId },
-					{ peer: id, room, active, reason: active ? '后台人工接管' : '' },
-				);
-				message.success(active ? '已进入人工接待' : '已恢复 AI');
-				props.onRefresh();
+				if (sending.current) throw new Error('消息正在发送，请稍候');
+				setTransitioning(true);
+				try {
+					const response = await window.wechatRobotClient.support.receptionCreate(
+						{ id: props.robotId },
+						{ peer: id, room, active, reason: active ? '后台人工接管' : '' },
+					);
+					if (response.data.code !== 200) throw new Error(response.data.message || '接待状态更新失败');
+					message.success(active ? '已进入人工接待' : '已恢复 AI');
+					props.onRefresh();
+				} finally {
+					setTransitioning(false);
+				}
 			},
 		});
 	});
@@ -68,6 +97,7 @@ const Reception = (props: IProps) => {
 							aria-label="搜索接待会话"
 							placeholder="搜索会话"
 							value={keyword}
+							disabled={!!sendingReception || transitioning}
 							onChange={event => setKeyword(event.target.value)}
 						/>
 					</div>
@@ -76,11 +106,19 @@ const Reception = (props: IProps) => {
 							type="button"
 							className={`wx-conversation ${item.key === selected?.key ? 'active' : ''}`}
 							key={item.key}
-							onClick={() => setSelectedKey(item.key)}
+							disabled={!!sendingReception || transitioning}
+							onClick={() => {
+								if (!sending.current) setSelectedKey(item.key);
+							}}
 						>
-							<Avatar>{name(item.peer).slice(0, 1)}</Avatar>
+							<Avatar src={props.data.friends.find(friend => friend.wechat_id === item.peer)?.avatar}>
+								{name(item.peer).slice(0, 1)}
+							</Avatar>
 							<span>
-								<strong>{name(item.peer)}</strong>
+								<strong>
+									{name(item.peer)}
+									{item.room ? ' · 群聊' : ''}
+								</strong>
 								<small>{timestamp(item.updated_at)}</small>
 								<p>{item.last_message || '暂无新消息'}</p>
 							</span>
@@ -89,18 +127,19 @@ const Reception = (props: IProps) => {
 					{!queue.length && (
 						<Empty
 							image={Empty.PRESENTED_IMAGE_SIMPLE}
-							description="暂无接待会话"
+							description="暂无人工接待会话"
 						/>
 					)}
 				</aside>
 				<section className="wx-chat-main">
 					<header className="wx-chat-heading">
-						<strong>{selected ? name(selected.peer) : '人工接待'}</strong>
+						<strong>人工接待</strong>
 						{selected && (
 							<Space>
 								<Tag>人工接待中</Tag>
 								<Button
 									type="text"
+									disabled={!!sendingReception || transitioning}
 									onClick={() => transition(selected.peer, selected.room, false)}
 								>
 									恢复 AI 回复
@@ -108,14 +147,28 @@ const Reception = (props: IProps) => {
 							</Space>
 						)}
 					</header>
-					<div className="wx-chat-history">
-						{selected ? (
+					{selected ? (
+						<ReceptionConversation
+							key={`${props.robotId}:${selected.key}`}
+							robotId={props.robotId}
+							robot={props.robot}
+							reception={selected}
+							data={props.data}
+							draft={drafts[selected.key] || { text: '' }}
+							busy={!!sendingReception || transitioning}
+							disabledReason={disabledReason}
+							onDraftChange={onDraftChange}
+							onBusyChange={onBusyChange}
+						/>
+					) : (
+						<div className="wx-chat-history">
+							<Empty description="暂无人工接待会话，好友聊天请在“联系人”中查看。" />
+						</div>
+					)}
+					<footer className="wx-chat-footer">
+						<span>在上方输入文字或添加图片发送。人工接待期间 AI 暂停回复，完成后可恢复 AI。</span>
+						{selected && (
 							<>
-								<div className="wx-chat-date">{timestamp(selected.updated_at)}</div>
-								<div className="wx-message-row">
-									<Avatar>{name(selected.peer).slice(0, 1)}</Avatar>
-									<div className="wx-message-bubble">{selected.last_message || '暂无新消息'}</div>
-								</div>
 								<details className="wx-inline-details">
 									<summary>接待详情</summary>
 									<p>{selected.reason}</p>
@@ -131,12 +184,7 @@ const Reception = (props: IProps) => {
 									/>
 								)}
 							</>
-						) : (
-							<Empty description="暂无待接待会话" />
 						)}
-					</div>
-					<footer className="wx-chat-footer">
-						<span>人工接待期间 AI 暂停回复，请在微信客户端接待。</span>
 						<details className="wx-inline-details">
 							<summary>主动接管</summary>
 							<Space wrap>
@@ -150,7 +198,7 @@ const Reception = (props: IProps) => {
 									placeholder="选择好友"
 								/>
 								<Button
-									disabled={!peer}
+									disabled={!peer || !!sendingReception || transitioning}
 									onClick={() => peer && transition(peer, '', true)}
 								>
 									人工接管

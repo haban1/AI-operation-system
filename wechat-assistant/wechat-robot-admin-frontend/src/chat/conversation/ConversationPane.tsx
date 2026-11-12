@@ -16,6 +16,8 @@ interface IProps {
 	contact: ChatContact;
 	draft: ChatDraft;
 	busy: boolean;
+	subtitle?: string;
+	disabledReason?: string;
 	onDraftChange: (patch: Partial<ChatDraft>) => void;
 	onBusyChange: (busy: boolean) => void;
 }
@@ -67,7 +69,7 @@ const ConversationPane = (props: IProps) => {
 					<Avatar src={props.contact.avatar || DefaultAvatar} />
 					<div className="contact-label">
 						<strong className="contact-name">{contactName(props.contact)}</strong>
-						<div className="contact-kind">{contactKind(props.contact)} · 消息自动更新</div>
+						<div className="contact-kind">{props.subtitle || `${contactKind(props.contact)} · 消息自动更新`}</div>
 					</div>
 				</div>
 				<Space size={4}>
@@ -182,6 +184,7 @@ const ConversationPane = (props: IProps) => {
 				robotId={props.robotId}
 				contact={props.contact}
 				draft={props.draft}
+				disabledReason={props.disabledReason}
 				onDraftChange={props.onDraftChange}
 				onBusyChange={props.onBusyChange}
 				onSent={sent}

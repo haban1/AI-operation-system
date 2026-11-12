@@ -1,5 +1,7 @@
 # 开发交接入口
 
+2026-11-12 晚的最新 main/本机集成、LAN混剪修复与重启见[接续记录](changes/20261112-main-local-integration.md)，完整验证和回退见[集成记录](../docs/changes/2026-11-12-main-local-integration.md)。
+
 2026-11-12 内容创作成片库流程统一（待确认 → 确认入库 → 发布管理，混剪导出可直接入库，热点页去掉成片库页签）见 [本轮记录](changes/20261112-content-library-flow.md)。
 
 2026-11-12 热点来源采集中断自动重试（GitHub / Hacker News 恢复）与热点成片库并入“成片与素材”见 [本轮记录](changes/20261112-hot-topic-sources-library-flow.md)；重启 3101 后需重新填写热点文稿 Token。

@@ -88,7 +88,9 @@ function dashboard(root,{data,stats={},accounts=[],localAgent={},onNavigate}){
   for(const item of rows){
     const row=node('button','v2-agent');row.dataset.refreshKey=item.code;row.type='button';row.onclick=()=>onNavigate('accounts');
     row.innerHTML=`${platformLogo(item.code,26)}<span class="v2-agent-name"></span><span class="v2-pill v2-pill-${item.state.tone}"></span>`;
-    row.querySelector('.v2-agent-name').textContent=item.account?.display_name||PLATFORM_BRANDS[item.code].name;
+    const platformName=PLATFORM_BRANDS[item.code].name;
+    const nickname=String(item.account?.login_status||'').toUpperCase()==='READY'?String(item.account.platform_user_name||'').trim():'';
+    row.querySelector('.v2-agent-name').textContent=nickname?`${nickname} · ${platformName}`:platformName;
     row.querySelector('.v2-pill').textContent=item.state.label;
     agents.append(row);
   }

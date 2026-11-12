@@ -5,11 +5,18 @@ import { chromium } from 'playwright-core';
 import { startServer, stopChild, cleanupDir } from './helpers/runtime.js';
 
 const chrome = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(fs.existsSync);
-for (const width of [1440, 390]) test(`persona and local RAG playground work at ${width}px`, { skip: !chrome }, async t => {
+for (const { width, cryptoMode } of [
+  { width: 1440, cryptoMode: 'native' }, { width: 390, cryptoMode: 'native' },
+  { width: 1440, cryptoMode: 'random-values' }, { width: 390, cryptoMode: 'unavailable' }
+]) test(`persona and local RAG playground work at ${width}px with crypto ${cryptoMode}`, { skip: !chrome }, async t => {
   const runtime = await startServer({ env: { AUTH_ENABLED: 'false', RAG_AUTO_START: 'false', RAG_ADMIN_ENABLED: 'true', RAG_BASE_URL: 'http://127.0.0.1:1', OPERATIONS_ANALYTICS_ENABLED: 'false', LOGIN_STATUS_POLL_ENABLED: 'false' } });
   t.after(async () => { await stopChild(runtime.child); cleanupDir(runtime.dir); });
   const browser = await chromium.launch({ executablePath: chrome, headless: true }); t.after(() => browser.close());
   const page = await browser.newPage({ viewport: { width, height: 1000 } });
+  await page.addInitScript(mode => {
+    if (mode === 'random-values') Object.defineProperty(crypto, 'randomUUID', { value: undefined });
+    if (mode === 'unavailable') Object.defineProperty(globalThis, 'crypto', { value: undefined });
+  }, cryptoMode);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   let profile = { assistantName: '<img src=x onerror=alert(1)>', companyName: '隔离组织', stylePrompt: '先回答再解释', greeting: '你好' };
   let failSave = true, failLoad = false, failQuery = true, waitQuery = null;
@@ -34,6 +41,7 @@ for (const width of [1440, 390]) test(`persona and local RAG playground work at 
     await route.fulfill({ json: { ok: true, ...data } }).catch(() => {});
   });
   await page.goto(runtime.base + '/#answer-style');
+  assert.equal(await page.evaluate(() => typeof globalThis.crypto?.randomUUID), cryptoMode === 'native' ? 'function' : 'undefined');
   await page.locator('#answerProfileForm').waitFor();
   assert.equal(await page.locator('#workspaceSubnav button').count(), 3);
   assert.equal(await page.locator('[name=companyName]').inputValue(), '隔离组织');
@@ -52,6 +60,7 @@ for (const width of [1440, 390]) test(`persona and local RAG playground work at 
   fs.mkdirSync('.codex-work/knowledge-playground-20261110', { recursive: true });
   await page.screenshot({ path: `.codex-work/knowledge-playground-20261110/persona-${width}.png`, fullPage: true });
   await page.locator('[data-workspace-item=reply-test]').click();
+  await page.locator('#ragTestQuestion').waitFor({ timeout: 5000 });
   await page.locator('#ragTestQuestion').fill('费用是多少');
   await page.locator('#ragTestForm [type=submit]').click();
   await page.getByText('测试失败：', { exact: false }).waitFor();
@@ -70,6 +79,9 @@ for (const width of [1440, 390]) test(`persona and local RAG playground work at 
   }
   assert.equal(queries.at(-1).context.length, 6);
   assert.equal(queries.at(-1).context[0].text, '继续追问0');
+  const sessionId = queries[0].sessionId;
+  assert.match(sessionId, /^[a-zA-Z0-9_-]{1,80}$/);
+  assert.ok(queries.every(query => query.sessionId === sessionId), 'retry and follow-ups retain one session');
   assert.equal(await page.locator('#ragTestMessages').evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop < 3), true);
   await page.screenshot({ path: `.codex-work/knowledge-playground-20261110/test-${width}.png`, fullPage: true });
   await page.locator('#ragTestQuestion').fill('没有资料');
@@ -81,6 +93,8 @@ for (const width of [1440, 390]) test(`persona and local RAG playground work at 
   await page.locator('#ragTestForm [type=submit]').click();
   await page.waitForFunction(() => document.querySelectorAll('.knowledge-test-turn').length === 1);
   assert.deepEqual(queries.at(-1).context, []);
+  const commentSessionId = queries.at(-1).sessionId;
+  assert.notEqual(commentSessionId, sessionId, 'switching scene starts a new session');
   await page.locator('#ragTestQuestion').fill('等待回答');
   await page.locator('#ragTestForm [type=submit]').click();
   await page.waitForFunction(() => document.querySelector('#ragTestStatus').textContent.includes('正在检索'));
@@ -90,6 +104,19 @@ for (const width of [1440, 390]) test(`persona and local RAG playground work at 
   waitQuery();
   await page.waitForTimeout(100);
   assert.equal(await page.locator('.knowledge-test-turn').count(), 0, 'late responses must not revive a cleared chat');
+  await page.locator('#ragTestQuestion').fill('清空后的新问题');
+  await page.locator('#ragTestForm [type=submit]').click();
+  await page.getByText('测试完成', { exact: true }).waitFor();
+  const clearedSessionId = queries.at(-1).sessionId;
+  assert.notEqual(clearedSessionId, commentSessionId, 'clearing starts a new session');
+  await page.locator('#ragTestPlatform').selectOption('WEIBO');
+  assert.equal(await page.locator('.knowledge-test-turn').count(), 0);
+  await page.locator('#ragTestQuestion').fill('切换平台后的问题');
+  await page.locator('#ragTestForm [type=submit]').click();
+  await page.getByText('测试完成', { exact: true }).waitFor();
+  assert.equal(queries.at(-1).platform, 'WEIBO');
+  assert.notEqual(queries.at(-1).sessionId, clearedSessionId, 'switching platform starts a new session');
+  assert.match(queries.at(-1).sessionId, /^[a-zA-Z0-9_-]{1,80}$/);
   await page.locator('[data-workspace-item=answer-style]').click();
   await page.locator('#answerProfileForm').waitFor();
   assert.equal(await page.locator('[name=stylePrompt]').inputValue(), '温和、简洁，先给答案');

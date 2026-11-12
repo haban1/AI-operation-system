@@ -86,6 +86,8 @@ const RobotDetail = (props: IProps) => {
 		},
 		{
 			manual: false,
+			pollingInterval: 30000,
+			pollingWhenHidden: false,
 			onError: reason => {
 				message.error(reason.message);
 			},
@@ -131,6 +133,7 @@ const RobotDetail = (props: IProps) => {
 					<CustomerSupport
 						robotId={props.robotId}
 						mode="reception"
+						robot={data}
 					/>
 				</Suspense>
 			),
@@ -144,6 +147,7 @@ const RobotDetail = (props: IProps) => {
 					<CustomerSupport
 						robotId={props.robotId}
 						mode="broadcast"
+						robot={data}
 					/>
 				</Suspense>
 			),
@@ -388,7 +392,7 @@ const RobotDetail = (props: IProps) => {
 								indicator: 'tech-tabs-indicator',
 								content: 'tech-tabs-content',
 							}}
-							styles={{ item: { borderRadius: 0 } }}
+							styles={{ item: { borderRadius: props.embedded ? 8 : 0 } }}
 						/>
 					</LeftPanel>
 				</Col>

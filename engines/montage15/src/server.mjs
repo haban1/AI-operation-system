@@ -28,22 +28,29 @@ async function body(req) {
   return value;
 }
 function matchId(value) { if (!validId(value)) fail(404, 'NOT_FOUND', '记录不存在'); return value; }
-function checkHost(req) {
+function checkHost(req, authenticatedMount = false) {
   const host = String(req.headers.host || '');
-  if (!/^(127\.0\.0\.1|localhost):\d+$/.test(host)) fail(403, 'INVALID_HOST', '仅支持本机访问');
-  return `http://${host}`;
+  const protocol = req.socket.encrypted ? 'https:' : 'http:';
+  let origin;
+  try {
+    const parsed = new URL(`${protocol}//${host}`);
+    if (!host || parsed.host !== host.toLowerCase() || parsed.username || parsed.password || parsed.pathname !== '/') throw new Error();
+    origin = parsed.origin;
+  } catch { fail(403, 'INVALID_HOST', '工作台访问地址无效'); }
+  if (!authenticatedMount && !/^(127\.0\.0\.1|localhost):\d+$/.test(host)) fail(403, 'INVALID_HOST', '仅支持本机访问');
+  return origin;
 }
-function checkWrite(req, token) {
+function checkWrite(req, token, expectedOrigin) {
   const origin = req.headers.origin;
-  const expectedOrigin = checkHost(req);
   if (origin && origin !== expectedOrigin) fail(403, 'INVALID_ORIGIN', '请从本机工作台操作');
   const supplied = Buffer.from(String(req.headers['x-workbench-token'] || ''));
   const expected = Buffer.from(token);
   if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) fail(403, 'INVALID_SESSION', '页面会话已过期，请刷新页面后重试');
 }
 
-export async function createWorkbench({ dataDir = process.env.VIDEO_WORKBENCH_DATA_DIR || path.join(ROOT, '.local'), mountPath = '', templateIds = null, catalogIds = null, assetLibrary = null, receiveOutput = null, planner = new CodexPlanner() } = {}) {
+export async function createWorkbench({ dataDir = process.env.VIDEO_WORKBENCH_DATA_DIR || path.join(ROOT, '.local'), mountPath = '', authenticatedMount = false, templateIds = null, catalogIds = null, assetLibrary = null, receiveOutput = null, planner = new CodexPlanner() } = {}) {
   if (mountPath && !/^\/[a-zA-Z0-9/_-]+$/.test(mountPath)) throw new TypeError('Invalid mount path');
+  if (authenticatedMount && !mountPath) throw new TypeError('Authenticated mount requires a mount path');
   const resource = value => mountPath + value;
   const viewAsset = asset => { const a = publicAsset(asset); return {...a, url:resource(a.url), thumbnailUrl:a.thumbnailUrl ? resource(a.thumbnailUrl) : null}; };
   const viewJob = job => { const j = publicJob(job); return {...j, downloadUrl:j.downloadUrl ? resource(j.downloadUrl) : null, videoUrl:j.videoUrl ? resource(j.videoUrl) : null}; };
@@ -87,12 +94,12 @@ export async function createWorkbench({ dataDir = process.env.VIDEO_WORKBENCH_DA
     res.setHeader('content-security-policy', CSP);
     res.setHeader('cross-origin-resource-policy', 'same-origin');
     try {
-      const origin = checkHost(req);
+      const origin = checkHost(req, authenticatedMount);
       const url = new URL(req.url, origin);
       if (mountPath && !url.pathname.startsWith(mountPath + '/')) fail(404, 'NOT_FOUND', '页面不存在');
       const pathname = mountPath ? url.pathname.slice(mountPath.length) : url.pathname;
       const read = ['GET', 'HEAD'].includes(req.method);
-      if (!read) checkWrite(req, sessionToken);
+      if (!read) checkWrite(req, sessionToken, origin);
       if (read && pathname === '/health') return json(res, { ok: true, service: 'local-video-template-workbench', version: '0.6.0', stage: 4 });
       if (read && pathname === '/api/bootstrap') return json(res, {
         sessionToken, templates: await registry.enabled(), templateCatalog: await registry.list(), musicTracks,

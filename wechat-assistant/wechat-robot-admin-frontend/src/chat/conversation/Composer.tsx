@@ -10,6 +10,7 @@ interface IProps {
 	robotId: number;
 	contact: ChatContact;
 	draft: ChatDraft;
+	disabledReason?: string;
 	onDraftChange: (patch: Partial<ChatDraft>) => void;
 	onBusyChange: (busy: boolean) => void;
 	onSent: () => void;
@@ -24,7 +25,11 @@ const Composer = (props: IProps) => {
 	const composing = useRef(false);
 	const input = useRef<TextAreaRef>(null);
 	const fileInput = useRef<HTMLInputElement>(null);
-	const unavailable = !props.contact.wechat_id || props.contact.status === -2 || props.contact.status === -10001;
+	const unavailable =
+		!!props.disabledReason ||
+		!props.contact.wechat_id ||
+		props.contact.status === -2 ||
+		props.contact.status === -10001;
 
 	useEffect(() => {
 		if (!props.draft.image) {
@@ -50,20 +55,25 @@ const Composer = (props: IProps) => {
 		const image = props.draft.image;
 		if (pending.current || composing.current || unavailable || (!text.trim() && !image)) return;
 		const recipient = props.contact.wechat_id!;
+		// Keep every completion callback bound to the conversation that started this send.
+		const robotId = props.robotId;
+		const onDraftChange = props.onDraftChange;
+		const onSent = props.onSent;
+		const onBusyChange = props.onBusyChange;
 		pending.current = true;
 		setSending(true);
 		setError('');
-		props.onBusyChange(true);
+		onBusyChange(true);
 		try {
 			if (text.trim()) {
 				const response = await window.wechatRobotClient.message.sendTextCreate(
-					{ id: props.robotId },
-					{ id: props.robotId, to_wxid: recipient, content: text, at: [] },
+					{ id: robotId },
+					{ id: robotId, to_wxid: recipient, content: text, at: [] },
 					{ timeout: 120000 },
 				);
 				if (response?.data?.code !== 200) throw new Error(response?.data?.message || '未收到发送确认');
-				props.onDraftChange({ text: '' });
-				props.onSent();
+				onDraftChange({ text: '' });
+				onSent();
 			}
 			if (image) {
 				// The existing server checks the extension case-sensitively.
@@ -73,23 +83,23 @@ const Composer = (props: IProps) => {
 					{ type: image.type },
 				);
 				const response = await window.wechatRobotClient.message.sendImageCreate(
-					{ id: props.robotId },
+					{ id: robotId },
 					{ to_wxid: recipient, image: file },
 					{ timeout: 120000 },
 				);
 				if (response?.data?.code !== 200) throw new Error(response?.data?.message || '未收到发送确认');
-				props.onDraftChange({ image: undefined });
-				props.onSent();
+				onDraftChange({ image: undefined });
+				onSent();
 			}
 		} catch (reason) {
 			setError(
 				`${reason instanceof Error ? reason.message : '发送异常'}。未确认发送的内容已保留，请核对聊天记录后再发送。`,
 			);
-			props.onSent();
+			onSent();
 		} finally {
 			pending.current = false;
 			setSending(false);
-			props.onBusyChange(false);
+			onBusyChange(false);
 			requestAnimationFrame(() => input.current?.focus());
 		}
 	});
@@ -109,7 +119,7 @@ const Composer = (props: IProps) => {
 			{unavailable && (
 				<Alert
 					type="warning"
-					title="该联系人已不可用，可以继续查看聊天记录。"
+					title={props.disabledReason || '该联系人已不可用，可以继续查看聊天记录。'}
 					style={{ marginBottom: 8 }}
 				/>
 			)}

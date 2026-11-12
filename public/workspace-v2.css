@@ -336,4 +336,8 @@ html[data-theme] .platform-runtime-page-head[data-v2-bar]>.v2-runtime-status>*{d
 html[data-theme] #content details.ws-platform-maintenance>summary{display:inline-flex;align-items:center;gap:6px;padding:4px 8px 4px 4px;border-radius:7px;color:var(--tk-ink2);font-size:13px;font-weight:500;list-style:none;cursor:pointer}
 html[data-theme] #content details.ws-platform-maintenance>summary::-webkit-details-marker{display:none}
 html[data-theme] #content details.ws-platform-maintenance>summary::before{content:"";width:7px;height:7px;margin:0 4px;border-right:1.6px solid currentColor;border-bottom:1.6px solid currentColor;transform:rotate(-45deg);transition:transform .18s;opacity:.7}
+html[data-theme] body :is(.wx-robot-panel,.wx-robot-panel:hover){background:transparent;background-image:none;border:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+html[data-theme] body .wx-robot-panel>.panel-head{margin:0 0 10px}
+html[data-theme] body .wx-robot-panel>.panel-head .btn{min-height:32px;padding:6px 12px;background:var(--tk-surface)!important;color:var(--tk-muted)!important;border:1px solid var(--tk-line)!important;border-radius:9px}
+html[data-theme] body .wx-robot-frame{margin-top:0;border:0;border-radius:0;background:transparent}
 html[data-theme] #content details[open].ws-platform-maintenance>summary::before{transform:rotate(45deg)}

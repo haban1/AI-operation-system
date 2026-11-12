@@ -31,7 +31,7 @@ export async function createMontageWorkbench({ stateDir, publicDir, library, pub
       throw new ContentLibraryError(409,'CONTENT_FILE_CHANGED','成片文件已改变，请重新导出');
     return {...describe(job),absolutePath:job.outputFile};
   }
-  app=await createWorkbench({dataDir:stateDir,mountPath:'/video-workbench/montage',templateIds:acceptedMontageTemplates,catalogIds:acceptedMontageTemplates,
+  app=await createWorkbench({dataDir:stateDir,mountPath:'/video-workbench/montage',authenticatedMount:true,templateIds:acceptedMontageTemplates,catalogIds:acceptedMontageTemplates,
     assetLibrary:{
       async list(){const snapshot=await library.list();return [...snapshot.items,...snapshot.pendingItems]
         .filter(item=>['image','video'].includes(item.mediaType) && item.sizeBytes<=512*1024**2)

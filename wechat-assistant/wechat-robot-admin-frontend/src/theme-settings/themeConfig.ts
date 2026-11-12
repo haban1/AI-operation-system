@@ -170,13 +170,19 @@ const getModeToken = (
 	};
 };
 
-export const buildThemeConfig = (preferences: ThemePreferences, resolvedThemeMode: ResolvedThemeMode): ThemeConfig => {
+export const buildThemeConfig = (preferences: ThemePreferences, resolvedThemeMode: ResolvedThemeMode, workbenchTokens?: ThemeConfig['token']): ThemeConfig => {
 	return {
 		cssVar: {
 			key: `wechat-robot-${resolvedThemeMode}`,
 		},
-		algorithm: resolvedThemeMode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-		token: getModeToken(preferences, resolvedThemeMode),
-		components: baseComponentConfig,
+		algorithm: workbenchTokens
+			? seed => ({ ...antdTheme[resolvedThemeMode === 'dark' ? 'darkAlgorithm' : 'defaultAlgorithm'](seed), ...workbenchTokens })
+			: resolvedThemeMode === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+		token: workbenchTokens || getModeToken(preferences, resolvedThemeMode),
+		components: workbenchTokens ? {
+			...baseComponentConfig,
+			Button: { ...baseComponentConfig.Button, defaultColor: 'var(--ant-color-text)', defaultBorderColor: 'var(--ant-color-border-secondary)' },
+			Card: { ...baseComponentConfig.Card, headerBg: 'transparent' },
+		} : baseComponentConfig,
 	};
 };

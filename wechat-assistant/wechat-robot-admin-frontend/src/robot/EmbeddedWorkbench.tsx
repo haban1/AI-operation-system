@@ -1,6 +1,6 @@
 import { ReloadOutlined } from '@ant-design/icons';
 import { useBoolean, useRequest } from 'ahooks';
-import { Alert, Button, Drawer, Empty, Flex, Select, Skeleton, Space } from 'antd';
+import { Alert, Button, Drawer, Empty, Flex, Select, Skeleton, Space, Tag } from 'antd';
 import React, { Suspense, useState } from 'react';
 import RobotList from './index';
 import { loadRobotAccounts } from './load-robot-accounts';
@@ -62,6 +62,15 @@ const EmbeddedWorkbench = () => {
 								localStorage.setItem(selectedRobotKey, String(value));
 							}}
 						/>
+					)}
+					{robot && (
+						<Tag
+							color={robot.status === 'online' ? 'success' : 'warning'}
+							role="status"
+							aria-label="微信连接状态"
+						>
+							{robot.status === 'online' ? '微信在线' : '微信离线'}
+						</Tag>
 					)}
 				</Space>
 				<Space>

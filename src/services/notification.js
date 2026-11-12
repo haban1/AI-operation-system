@@ -26,6 +26,34 @@ function notificationById(id) {
   return row('SELECT * FROM notifications WHERE id=?', Number(id));
 }
 
+const resolvedMessageSql = `(handled_at IS NOT NULL OR deleted_at IS NOT NULL
+  OR status IN ('AUTO_REPLIED','MANUAL_HANDLED','CLOSED','IGNORED_SELF','IGNORED_OFFICIAL','SOURCE_GONE','SUPERSEDED'))`;
+
+function isArchived(notification) {
+  try { return Boolean(JSON.parse(notification?.metadata_json || '{}').archivedAt); } catch { return false; }
+}
+
+export function archiveResolvedMessageNotifications(messageId, stamp = now()) {
+  return immediateTransaction(() => {
+    const message = row(`SELECT id,status FROM messages WHERE id=? AND ${resolvedMessageSql}`, Number(messageId));
+    if (!message) return 0;
+    return Number(run(`UPDATE notifications SET
+      metadata_json=json_set(COALESCE(metadata_json,'{}'),'$.archivedAt',?,'$.archiveReason','MESSAGE_RESOLVED','$.resolvedMessageStatus',?),
+      status=CASE WHEN status IN ('PENDING','RETRY_WAIT','SENDING','FAILED') THEN 'CANCELLED' ELSE status END,
+      claimed_at=NULL,lease_expires_at=NULL,available_at=NULL,updated_at=?
+      WHERE message_id=? AND json_extract(COALESCE(metadata_json,'{}'),'$.handoff')=1
+        AND json_extract(COALESCE(metadata_json,'{}'),'$.archivedAt') IS NULL`, stamp, message.status, stamp, message.id).changes);
+  });
+}
+
+export function reconcileResolvedHandoffNotifications() {
+  return immediateTransaction(() => rows(`SELECT id FROM messages WHERE ${resolvedMessageSql}
+    AND EXISTS (SELECT 1 FROM notifications n WHERE n.message_id=messages.id
+      AND json_extract(COALESCE(n.metadata_json,'{}'),'$.handoff')=1
+      AND json_extract(COALESCE(n.metadata_json,'{}'),'$.archivedAt') IS NULL)`)
+    .reduce((count, message) => count + archiveResolvedMessageNotifications(message.id), 0));
+}
+
 function ownsSendingClaim(claim, current) {
   return Boolean(claim?.claimed_at) && current?.status === 'SENDING'
     && current.attempt_count === claim.attempt_count && current.claimed_at === claim.claimed_at;
@@ -61,7 +89,10 @@ export function enqueueNotification({
   return immediateTransaction(() => {
     if (key) {
       const existing = row('SELECT * FROM notifications WHERE idempotency_key=?', key);
-      if (existing) return { notification: existing, created: false };
+      if (existing) {
+        if (existing.message_id) archiveResolvedMessageNotifications(existing.message_id);
+        return { notification: notificationById(existing.id), created: false };
+      }
     }
     const stamp = now();
     const info = run(`INSERT INTO notifications(channel,type,title,content,status,created_at,conversation_id,message_id,idempotency_key,
@@ -70,6 +101,7 @@ export function enqueueNotification({
       String(channel || 'WECOM').toUpperCase(), type, title, content, NOTIFICATION_STATUS.PENDING, stamp,
       conversationId ? Number(conversationId) : null, messageId ? Number(messageId) : null, key,
       Math.max(1, Number(maxAttempts) || 20), availableAt || stamp, stamp, cleanMetadata ? safeJson(cleanMetadata) : null);
+    if (messageId) archiveResolvedMessageNotifications(messageId, stamp);
     return { notification: notificationById(Number(info.lastInsertRowid)), created: true };
   });
 }
@@ -78,9 +110,11 @@ export function claimPendingNotification({ leaseMs = DEFAULT_LEASE_MS } = {}) {
   return immediateTransaction(() => {
     const stamp = now();
     run(`UPDATE notifications SET status='RETRY_WAIT',claimed_at=NULL,lease_expires_at=NULL,available_at=COALESCE(available_at,?),updated_at=?
-      WHERE status='SENDING' AND lease_expires_at IS NOT NULL AND lease_expires_at<=?`, stamp, stamp, stamp);
+      WHERE status='SENDING' AND lease_expires_at IS NOT NULL AND lease_expires_at<=?
+        AND json_extract(COALESCE(metadata_json,'{}'),'$.archivedAt') IS NULL`, stamp, stamp, stamp);
     const candidate = row(`SELECT * FROM notifications WHERE channel='WECOM'
       AND status IN ('PENDING','RETRY_WAIT') AND COALESCE(available_at,created_at)<=?
+      AND json_extract(COALESCE(metadata_json,'{}'),'$.archivedAt') IS NULL
       AND attempt_count<max_attempts ORDER BY COALESCE(available_at,created_at),id LIMIT 1`, stamp);
     if (!candidate) return null;
     const claimed = run(`UPDATE notifications SET status='SENDING',attempt_count=attempt_count+1,claimed_at=?,lease_expires_at=?,last_attempt_at=?,updated_at=?
@@ -106,6 +140,11 @@ export async function deliverNotification(notificationOrId, { fetchImpl = global
   const supplied = typeof notificationOrId === 'object' ? notificationOrId : null;
   let notification = notificationById(supplied ? supplied.id : notificationOrId);
   if (!notification) throw new Error('通知不存在');
+  if (notification.message_id) {
+    archiveResolvedMessageNotifications(notification.message_id);
+    notification = notificationById(notification.id);
+  }
+  if (isArchived(notification)) return deliveryState(notification.id);
   if (['CONFIRMED', 'SENT'].includes(String(notification.status || '').toUpperCase())) return { ...notification, delivered: true, confirmed: true };
   if (supplied?.status === 'SENDING' && !ownsSendingClaim(supplied, notification)) return deliveryState(notification.id);
   if (notification.status === 'SENDING' && !ownsSendingClaim(supplied, notification)) return deliveryState(notification.id);
@@ -169,7 +208,7 @@ export function requeueNotification(id) {
   return immediateTransaction(() => {
     const notification = notificationById(id);
     if (!notification) throw Object.assign(new Error('通知不存在'), { statusCode: 404, code: 'NOTIFICATION_NOT_FOUND' });
-    if (!['FAILED', 'RETRY_WAIT'].includes(notification.status)) {
+    if (isArchived(notification) || !['FAILED', 'RETRY_WAIT'].includes(notification.status)) {
       throw Object.assign(new Error('当前通知状态不可重试'), { statusCode: 409, code: 'NOTIFICATION_NOT_RETRYABLE' });
     }
     const stamp = now();
@@ -195,6 +234,7 @@ export function listHandoffNotifications({ limit = 200 } = {}) {
     LEFT JOIN conversations c ON c.id=n.conversation_id
     LEFT JOIN messages m ON m.id=n.message_id
     WHERE json_extract(COALESCE(n.metadata_json,'{}'),'$.handoff')=1
+      AND json_extract(COALESCE(n.metadata_json,'{}'),'$.archivedAt') IS NULL
     ORDER BY n.id DESC LIMIT ?`, Math.max(1, Math.min(1000, Number(limit) || 200))).map(item => ({
       ...item,
       handoff_succeeded: String(item.notification_status || '').toUpperCase() === 'CONFIRMED'
@@ -204,7 +244,8 @@ export function listHandoffNotifications({ limit = 200 } = {}) {
 export function countHandoffNotifications() {
   return Number(row(`SELECT COUNT(*) AS count
     FROM notifications
-    WHERE json_extract(COALESCE(metadata_json,'{}'),'$.handoff')=1`).count || 0);
+    WHERE json_extract(COALESCE(metadata_json,'{}'),'$.handoff')=1
+      AND json_extract(COALESCE(metadata_json,'{}'),'$.archivedAt') IS NULL`).count || 0);
 }
 
 export function startNotificationOutboxWorker({ intervalMs = 5_000 } = {}) {

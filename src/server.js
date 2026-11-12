@@ -2,6 +2,7 @@ import http from 'node:http';
 import { discoverAiModels } from './services/ai-model-discovery.js';
 import crypto from 'node:crypto';
 import { buildLocalRagTestRequest } from './services/rag-local-test.js';
+import { interactionOverview, visibleInteractionMessagesSql } from './services/interaction-overview.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { config, ROOT } from './config.js';
@@ -16,7 +17,7 @@ import { assessCollectedPrivatePlatformReply } from './services/private-platform
 import { assessWeiboMessagePrecision } from './services/weibo-message-precision.js';
 import { assessWeiboConversationSource } from './services/weibo-message-source.js';
 import { hasReliableWeiboReplyEvidence } from './services/weibo-reply-evidence.js';
-import { countHandoffNotifications, listHandoffNotifications, notify, startNotificationOutboxWorker, stopNotificationOutboxWorker } from './services/notification.js';
+import { archiveResolvedMessageNotifications, reconcileResolvedHandoffNotifications, countHandoffNotifications, listHandoffNotifications, notify, startNotificationOutboxWorker, stopNotificationOutboxWorker } from './services/notification.js';
 import { beginConversationHandoff, conversationAutomationDisabled, markHumanFollowupMessage } from './services/conversation-control.js';
 import { buildManualNotification, resolveRelatedNote } from './services/manual-notification.js';
 import { MINI_PROGRAM_PLATFORM_CODE, requestMiniProgramHandoff } from './services/mini-program-channel.js';
@@ -156,6 +157,7 @@ export async function processMessageWithRegistry(messageId, options = {}) {
 function syncMessageProcessingRegistry(messageId, stamp = now()) {
   const message = row('SELECT * FROM messages WHERE id=?', Number(messageId));
   if (!message) return null;
+  archiveResolvedMessageNotifications(message.id, stamp);
   return touchMessageProcessingRegistry(buildMessageProcessingIdentity(message, stamp), message, stamp, { incrementSeen: false, preferCanonical: true });
 }
 
@@ -179,6 +181,7 @@ function handledDouyinCommentStableIds(accountId, limit = 1000) {
 
 backfillMessageConversations();
 backfillMessageProcessingRegistry();
+reconcileResolvedHandoffNotifications();
 function isNonIdempotentAgentJob(jobType, payload = {}) {
   return ['PUBLISH', 'REPLY'].includes(jobType) || (jobType === 'BROWSER_COMMAND' && isBrowserCommandNonIdempotent(payload));
 }
@@ -879,6 +882,7 @@ function resolveIssueManually(issueId, { resolutionType, resolution, resolvedBy,
     }
     if (item.related_type === 'MESSAGE' && String(actualOutcome || '').toUpperCase() === 'SENT') {
       run("UPDATE messages SET status='MANUAL_HANDLED',decision='MANUAL_HANDLED',handled_at=COALESCE(handled_at,?),handled_by=?,handler_note=?,updated_at=? WHERE id=?", stamp, resolvedBy, resolution + '；已确认平台侧已发送，禁止自动补发', stamp, Number(item.related_id));
+      syncMessageProcessingRegistry(Number(item.related_id), stamp);
     }
     db.exec('COMMIT');
     return issueView(row('SELECT * FROM issues WHERE id=?', item.id));
@@ -1678,19 +1682,13 @@ function getMessageChannelRuntimeStates() {
   );
 }
 
-function getMessages() {
+function getMessages(accountId = null) {
   const messages = rows(`SELECT m.*, p.name AS platform_name, a.display_name AS account_name,
       reply_job.status AS reply_job_status, reply_job.result AS reply_job_result
     FROM messages m JOIN platforms p ON p.code=m.platform_code JOIN accounts a ON a.id=m.account_id
     LEFT JOIN agent_jobs reply_job ON reply_job.id=m.reply_job_id
-    WHERE m.deleted_at IS NULL
-      AND m.platform_code <> 'mini_program'
-      AND COALESCE(m.decision,'') <> 'SELF_MESSAGE'
-      AND COALESCE(m.status,'') <> 'IGNORED_SELF'
-      AND NOT (m.status='SUPERSEDED' AND m.decision='DUPLICATE_PROCESSED_MESSAGE')
-      AND NOT (m.decision IN ('HANDOFF_SUBMITTED','HANDOFF_NOTIFY_FAILED')
-        AND COALESCE(m.wecom_notification_status,'NOT_REQUIRED') <> 'SENT')
-    ORDER BY m.id DESC LIMIT 200`);
+    WHERE ${visibleInteractionMessagesSql}${accountId === null ? '' : ' AND m.account_id=?'}
+    ORDER BY m.id DESC LIMIT 200`, ...(accountId === null ? [] : [accountId]));
   const candidateCache = new Map();
   return messages.map(item => {
     const context = json(item.context_json, {});
@@ -1914,7 +1912,7 @@ function buildOperationsDashboard({ rangeDays = 7, platformCode = null } = {}) {
   const platformClause = selectedPlatform ? ' AND platform_code=?' : '';
   const platformParams = selectedPlatform ? [selectedPlatform] : [];
   const pendingManual = operationsSafeCount(
-    `SELECT COUNT(*) c FROM messages WHERE deleted_at IS NULL AND status IN ('MANUAL_REQUIRED','KNOWLEDGE_GAP')${platformClause}`,
+    `SELECT COUNT(*) c FROM messages WHERE deleted_at IS NULL AND handled_at IS NULL AND status IN ('MANUAL_REQUIRED','KNOWLEDGE_GAP')${platformClause}`,
     ...platformParams
   );
   const failedPublish = operationsSafeCount(
@@ -4050,7 +4048,7 @@ async function api(req, res, url) {
     return ok(res, { log: recordAiCall(data) });
   }
   if (req.method === 'GET' && pathname === '/api/bootstrap') {
-    const stats = { queuedTasks: row(`SELECT COUNT(*) c FROM publish_tasks WHERE status IN ('QUEUED','EXECUTING','SUBMITTED','REVIEWING')`).c, openIssues: row("SELECT COUNT(*) c FROM issues WHERE status='OPEN'").c, autoReplies: countAiReplies(), manualRequired: row("SELECT COUNT(*) c FROM messages WHERE status IN ('MANUAL_REQUIRED','KNOWLEDGE_GAP')").c, handoffRecords: countHandoffNotifications(), aiUsageToday: aiUsageOverview({ days: 1 }).summary };
+    const stats = { queuedTasks: row(`SELECT COUNT(*) c FROM publish_tasks WHERE status IN ('QUEUED','EXECUTING','SUBMITTED','REVIEWING')`).c, openIssues: row("SELECT COUNT(*) c FROM issues WHERE status='OPEN'").c, autoReplies: countAiReplies(), manualRequired: row("SELECT COUNT(*) c FROM messages WHERE deleted_at IS NULL AND handled_at IS NULL AND status IN ('MANUAL_REQUIRED','KNOWLEDGE_GAP')").c, handoffRecords: countHandoffNotifications(), aiUsageToday: aiUsageOverview({ days: 1 }).summary };
     const aiSettings = getAiSettingsSummary();
     const messageCollection = { ...getMessageCollectionSettings(), enabled: config.autoCollectEnabled, nextCollectionAt: nextAutomaticMessageCollectionAt };
     const localAgentHealth = await checkLocalAgentHealth();
@@ -4427,7 +4425,8 @@ async function api(req, res, url) {
     return ok(res, {
       settings: getWecomSettingsSummary(),
       notifications: rows(`SELECT id,channel,type,title,content,status,created_at,sent_at,error_message
-        FROM notifications WHERE channel='WECOM' ORDER BY id DESC LIMIT 50`)
+        FROM notifications WHERE channel='WECOM'
+          AND json_extract(COALESCE(metadata_json,'{}'),'$.archivedAt') IS NULL ORDER BY id DESC LIMIT 50`)
     });
   }
   if (req.method === 'POST' && pathname === '/api/settings/wecom') {
@@ -4742,7 +4741,11 @@ async function api(req, res, url) {
     if (result.runningReplyJobId) return fail(res, 409, '该消息正在向平台发送回复，当前不能删除；请等待发送完成或转人工确认后再操作', { jobId: result.runningReplyJobId }, 'MESSAGE_DELETE_RUNNING');
     return ok(res, { deleted: true, alreadyDeleted: result.alreadyDeleted, cancelledJobs: result.cancelledJobs, processingClosed: result.processingClosed, message: result.message });
   }
-  if (req.method === 'GET' && pathname === '/api/messages') return ok(res, { messages: getMessages(), channelRuntimeStates: getMessageChannelRuntimeStates(), replyLimits: PLATFORM_REPLY_LIMITS });
+  if (req.method === 'GET' && pathname === '/api/messages') {
+    const accountId = url.searchParams.has('accountId') ? Number(url.searchParams.get('accountId')) : null;
+    if (accountId !== null && (!Number.isSafeInteger(accountId) || accountId <= 0)) return fail(res, 400, '账号无效');
+    return ok(res, { messages: getMessages(accountId), overview: interactionOverview(), channelRuntimeStates: getMessageChannelRuntimeStates(), replyLimits: PLATFORM_REPLY_LIMITS });
+  }
   if (req.method === 'POST' && pathname === '/api/messages/simulate') {
     if (!requireOperationsEnabled(res)) return;
     const data = await body(req); data.externalId ||= `mvp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -4755,9 +4758,12 @@ async function api(req, res, url) {
   }
   if (req.method === 'POST' && /^\/api\/messages\/\d+\/handled$/.test(pathname)) {
     const id = parseId(pathname, /^\/api\/messages\/(\d+)\/handled$/); const data = await body(req); const message = row('SELECT * FROM messages WHERE id=?', id); if (!message) return fail(res, 404, '消息不存在');
-    const stamp = now(); run(`UPDATE messages SET status='MANUAL_HANDLED',decision='MANUAL_HANDLED',handled_at=?,handled_by=?,handler_note=?,updated_at=? WHERE id=?`, stamp, data.handledBy || '人工', data.note || '', stamp, id);
-    run(`UPDATE agent_jobs SET status='CANCELLED',completed_at=?,result=? WHERE id=? AND status IN ('QUEUED','RUNNING')`, stamp, JSON.stringify({ message: '人工已处理，禁止自动补发' }), message.reply_job_id || -1);
-    syncMessageProcessingRegistry(id, stamp);
+    const stamp = now();
+    immediateTransaction(() => {
+      run(`UPDATE messages SET status='MANUAL_HANDLED',decision='MANUAL_HANDLED',handled_at=COALESCE(handled_at,?),handled_by=?,handler_note=?,updated_at=? WHERE id=?`, stamp, data.handledBy || '人工', data.note || '', stamp, id);
+      run(`UPDATE agent_jobs SET status='CANCELLED',completed_at=?,result=? WHERE id=? AND status IN ('QUEUED','RUNNING')`, stamp, JSON.stringify({ message: '人工已处理，禁止自动补发' }), message.reply_job_id || -1);
+      syncMessageProcessingRegistry(id, stamp);
+    });
     return ok(res, { message: row('SELECT * FROM messages WHERE id=?', id) });
   }
   if (req.method === 'POST' && /^\/api\/messages\/\d+\/retry$/.test(pathname)) {

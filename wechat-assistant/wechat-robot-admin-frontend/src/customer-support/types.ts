@@ -2,6 +2,7 @@ export interface Friend {
 	wechat_id: string;
 	nickname?: string;
 	remark?: string;
+	avatar?: string;
 }
 export interface Reception {
 	key: string;

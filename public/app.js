@@ -1,8 +1,9 @@
 import { browserStatusModel, browserStatusMarkup, bindBrowserStatus } from './browser-status.js?v=20261110-browser-status';
 import { renderKnowledgeFiles, cleanupKnowledgeFiles } from './knowledge-files.js?v=20261111-v2c';
-import { renderAnswerProfile, renderRagPlayground, cleanupKnowledgeTools, resetKnowledgeTools } from './knowledge-tools.js?v=20261111-v2c';
+import { renderAnswerProfile, renderRagPlayground, cleanupKnowledgeTools, resetKnowledgeTools } from './knowledge-tools.js?v=20261112-rag-session';
 import { patchBackgroundContent } from './background-dom.js?v=20261112-refresh';
-import { applyWorkspacePresentation, refreshDashboardOrb } from './workspace-presentation.js?v=20261112-fix1';
+import { interactionAccountName, renderInteractionOverview } from './interaction-overview.js?v=20261112-overview';
+import { applyWorkspacePresentation, refreshDashboardOrb } from './workspace-presentation.js?v=20261112-account-name';
 import { applyInteractionPresentation } from './workspace-interactions.js?v=20261112-fix8';
 import { platformLogo } from './platform-icons.js?v=20261111-v2';
 import { aiConnectionPresentation, bindAiModelSettings } from './ai-model-settings.js';
@@ -921,6 +922,32 @@ function bindDashboardRuntime(){
 
 
 function accountOptions(code){return state.bootstrap.accounts.filter(a=>!code||a.platform_code===code).map(a=>`<option value="${a.id}">${esc(a.platform_name)} · ${esc(a.display_name)}</option>`).join('')}
+function messageAccountLabel(account){
+  return interactionAccountName(account);
+}
+let messageOverviewData=null;
+let messageRenderRequest=0;
+function messageAccounts(){
+  const activeCodes=state.bootstrap?.config?.activePlatformCodes||['xiaohongshu','douyin','wechat_channels','bilibili','weibo'];
+  return (state.bootstrap?.accounts||[]).filter(account=>activeCodes.includes(account.platform_code));
+}
+function refreshInteractionOverview(root=$('[data-interaction-overview]')){
+  renderInteractionOverview(root,{accounts:messageAccounts(),data:messageOverviewData||{},selectedId:state.messageAccountId,view:state.messageView,onSelect:(id,view)=>{
+    state.messageAccountId=Number(id);state.messageView=view;syncWorkspaceNavigation();syncNavigationHash();
+    renderMessages().then(()=>{if(view==='COMMENT')$('.v2-filter[data-filter="pending"]')?.click()}).catch(error=>toast(error.message,true));
+  }});
+}
+function refreshMessageAccountNames(){
+  const select=$('#messageAccount');if(!select)return;
+  const accounts=state.bootstrap?.accounts||[];
+  for(const option of select.options){
+    const account=accounts.find(item=>String(item.id)===option.value);if(!account)continue;
+    const label=messageAccountLabel(account);if(option.textContent!==label)option.textContent=label;
+  }
+  const caption=$('[data-message-account-name]'),account=accounts.find(item=>String(item.id)===select.value);
+  if(caption&&account)caption.textContent=messageAccountLabel(account);
+  refreshInteractionOverview();
+}
 function publishPlatformAccounts(){
   const runtimeByPlatform=new Map((state.bootstrap?.platforms||[]).map(item=>[item.code,item]));
   const activeCodes=new Set(activeLoginPlatforms.map(item=>item.code));
@@ -2049,6 +2076,7 @@ function groupCommentsByPost(comments){
 
 function messageRefreshSignature(data){
   return JSON.stringify({
+    overview:data?.overview||[],
     messages:(data?.messages||[]).map(message=>[
       message.id,message.external_id,message.content,message.collected_at,message.updated_at,
       message.platform_code,message.account_id,message.post?.key,message.post?.id,
@@ -2379,16 +2407,18 @@ async function renderManualHandoffs(prefetchedData=null){
 
 async function renderMessages(prefetchedData=null,{background=false}={}){
   const owner=capturePageOwner();
-  const data=prefetchedData||await api('/api/messages');
-  if(!ownsPageOwner(owner)||state.page!=='messages')return;
-  messageRefreshSignatureValue=messageRefreshSignature(data);
-  const allMessages=(data.messages||[]).filter(message=>!(message.status==='SUPERSEDED'&&message.decision==='DUPLICATE_PROCESSED_MESSAGE'));
-  const activeCodes=state.bootstrap?.config?.activePlatformCodes||['xiaohongshu','douyin','wechat_channels','bilibili','weibo'];
-  const accounts=state.bootstrap.accounts.filter(a=>a.enabled!==0&&activeCodes.includes(a.platform_code));
+  const requestId=++messageRenderRequest;
+  const accounts=messageAccounts();
   if(!accounts.some(a=>a.id===Number(state.messageAccountId))){
     state.messageAccountId=(accounts.find(a=>a.platform_code==='xiaohongshu')||accounts[0]||{}).id||null;
   }
   const selectedAccount=accounts.find(a=>a.id===Number(state.messageAccountId))||null;
+  const requestedId=state.messageAccountId,requestedView=state.messageView;
+  const data=prefetchedData||await api('/api/messages'+(selectedAccount?`?accountId=${selectedAccount.id}`:''));
+  if(!ownsPageOwner(owner)||requestId!==messageRenderRequest||state.page!=='messages'||requestedId!==state.messageAccountId||requestedView!==state.messageView)return;
+  messageOverviewData=data;
+  messageRefreshSignatureValue=messageRefreshSignature(data);
+  const allMessages=(data.messages||[]).filter(message=>!(message.status==='SUPERSEDED'&&message.decision==='DUPLICATE_PROCESSED_MESSAGE'));
   const messages=selectedAccount?allMessages.filter(m=>m.account_id===selectedAccount.id):allMessages;
   const comments=messages.filter(m=>m.message_type==='COMMENT');
   const privateMessages=messages.filter(m=>m.message_type==='PRIVATE_MESSAGE');
@@ -2409,7 +2439,8 @@ async function renderMessages(prefetchedData=null,{background=false}={}){
     ?(commentGroups.length?commentGroups.map(commentPostGroup).join(''):syncPresentation.empty)
     :(privateMessages.length?`<div class="private-message-list">${privateMessages.map(privateMessageCard).join('')}</div>`:syncPresentation.empty);
   const listHtml=`${syncPresentation.banner}${messageListContent}`;
-  const accountOptionsHtml=accounts.map(a=>`<option value="${a.id}" ${selectedAccount?.id===a.id?'selected':''}>${esc(a.platform_name)} · ${esc(a.display_name)}</option>`).join('');
+  const selectedTotal=(data.overview||[]).filter(item=>Number(item.account_id)===Number(selectedAccount?.id)).reduce((total,item)=>total+Number(item.total||0),0);
+  const accountOptionsHtml=accounts.map(a=>`<option value="${a.id}" ${selectedAccount?.id===a.id?'selected':''}>${esc(messageAccountLabel(a))}</option>`).join('');
   const collection=state.bootstrap?.config?.messageCollection||{};
   const pollOptions=Array.isArray(collection.options)&&collection.options.length?collection.options:[
     {value:'1-2',label:'1\uff5e2 \u5206\u949f'},{value:'2-3',label:'2\uff5e3 \u5206\u949f'},{value:'3-4',label:'3\uff5e4 \u5206\u949f'},{value:'4-5',label:'4\uff5e5 \u5206\u949f'}
@@ -2420,6 +2451,7 @@ async function renderMessages(prefetchedData=null,{background=false}={}){
   const messageTarget=background&&$('#content .message-ops-page')?document.createElement('div'):$('#content');
   messageTarget.innerHTML=`
     <div class="message-ops-page ${isComment?'channel-comments':'channel-private'}">
+      <div data-interaction-overview></div>
       <section class="message-command-center">
         <div class="message-command-grid" aria-hidden="true"></div>
         <div class="message-command-flow" aria-hidden="true"></div>
@@ -2428,7 +2460,7 @@ async function renderMessages(prefetchedData=null,{background=false}={}){
           <h2>用户互动</h2>
           <p>查看采集与回复状态</p>
           <div class="message-command-tags">
-            <span><i></i>${selectedAccount?`${esc(selectedAccount.platform_name)} · ${esc(selectedAccount.display_name)}`:'未选择平台账号'}</span>
+            <span><i></i><span data-message-account-name>${selectedAccount?esc(messageAccountLabel(selectedAccount)):'未选择平台账号'}</span></span>
             <span>${activeChannelLabel}通道</span>
             <span class="sync-${esc(syncState.toLowerCase())}">${esc(syncStateLabel)}</span>
           </div>
@@ -2453,7 +2485,7 @@ async function renderMessages(prefetchedData=null,{background=false}={}){
             <button class="btn secondary message-export-open" id="exportMessages" type="button"><span aria-hidden="true">⇩</span> 导出</button>
             <label class="message-poll-control"><span>平台账号</span><select id="messageAccount" aria-label="选择采集账号">${accountOptionsHtml}</select></label>
             <label class="message-poll-control"><span>采集间隔</span><select id="messagePollInterval" aria-label="选择采集间隔">${pollOptionsHtml}</select></label>
-            <button class="btn message-collect-button" id="collectMessages" ${selectedAccount?'':'disabled'}><i></i><span>立即采集</span></button>
+            <button class="btn message-collect-button" id="collectMessages" ${selectedAccount&&Number(selectedAccount.enabled)!==0?'':'disabled'}><i></i><span>立即采集</span></button>
           </div>
         </div>
         <div class="message-poll-meta"><b>采集间隔：${esc(collection.label||pollOptions.find(option=>option.value===selectedPoll)?.label||selectedPoll)}，随机执行</b><span>${esc(nextCollectionText)}</span><small>更改间隔不影响正在执行的采集。</small></div>
@@ -2464,9 +2496,11 @@ async function renderMessages(prefetchedData=null,{background=false}={}){
         </div>
         <details class="simulate-box" hidden><summary><span>◇</span> 添加模拟消息 <small>仅用于知识/千问决策测试</small></summary><form id="simulateForm" class="inline-form"><select name="messageType"><option value="COMMENT">评论</option><option value="PRIVATE_MESSAGE">私信</option></select><input name="userName" value="测试用户"><input name="content" placeholder="输入测试问题" required><button class="btn secondary" ${selectedAccount?'':'disabled'}>提交模拟消息</button></form></details>
         <div class="message-list-heading"><div><span class="message-list-live"><i></i> LIVE STREAM</span><b>${activeChannelLabel}消息流</b></div><small>AI 回复 ${aiReplyCount} · 人工回复 ${manualReplyCount}${platformReplyCount?` · 平台已有回复 ${platformReplyCount}`:''} · 待处理 ${manualPendingCount}</small></div>
+        ${selectedTotal>200?'<p class="interaction-overview-limit">下方显示当前账号最近 200 条消息，概览统计全部已采集记录。</p>':''}
         <div class="interaction-list">${listHtml}</div>
       </div>
     </div>`;
+  refreshInteractionOverview(messageTarget.querySelector('[data-interaction-overview]'));
   if(messageTarget!==$('#content')){
     // 后台刷新：在离屏节点完成同样的展示层整理，再原位合并，避免整页重画
     applyInteractionPresentation(messageTarget,{page:state.page,messageView:state.messageView,miniProgramConversationId:state.miniProgramConversationId,messageAccountId:state.messageAccountId,messages,privateMessages});
@@ -2488,6 +2522,7 @@ async function renderMessages(prefetchedData=null,{background=false}={}){
   };
   $('#collectMessages').onclick=async()=>{
     if(!selectedAccount)return toast('暂无可用平台账号',true);
+    if(Number(selectedAccount.enabled)===0)return toast('该账号已停用，请先在平台账号中启用',true);
     const pageOwner=capturePageOwner();
     const button=$('#collectMessages');
     if(button)button.disabled=true;
@@ -3174,9 +3209,10 @@ async function refreshMessagesFromTimer(){
   if(state.page!=='messages'||pageRenderInFlightGeneration===pageRenderGeneration||document.hidden||messageRefreshInFlight||messageFormHasEditingFocus()||document.querySelector('.confirm-overlay'))return;
   const pageOwner=capturePageOwner();
   messageRefreshInFlight=true;
+  const accountId=state.messageAccountId,view=state.messageView;
   try{
-    const data=await api(`/api/messages?t=${Date.now()}`);
-    if(!ownsPageOwner(pageOwner)||messageFormHasEditingFocus()||document.querySelector('.confirm-overlay'))return;
+    const data=await api(`/api/messages?t=${Date.now()}${accountId?`&accountId=${accountId}`:''}`);
+    if(!ownsPageOwner(pageOwner)||accountId!==state.messageAccountId||view!==state.messageView||messageFormHasEditingFocus()||document.querySelector('.confirm-overlay'))return;
     const signature=messageRefreshSignature(data);
     if(signature!==messageRefreshSignatureValue)await renderMessages(data,{background:true});
   }catch{}finally{messageRefreshInFlight=false}
@@ -3230,6 +3266,7 @@ function showLoginScreen(message=''){
   if(messageRefreshTimer){clearInterval(messageRefreshTimer);messageRefreshTimer=null}
   if(messageCountdownTimer){clearInterval(messageCountdownTimer);messageCountdownTimer=null}
   messageRefreshInFlight=false;messageRefreshSignatureValue='';
+  messageOverviewData=null;
   clearWorkspaceSession();
   state.auth={...(state.auth||{}),authenticated:false};
   document.body.classList.add('auth-locked');
@@ -3249,7 +3286,7 @@ function startWorkspace(){
   if(!state.appStarted){window.appRefresh=()=>render();$('#refreshBtn').onclick=()=>render();$('#masterSwitch').onclick=()=>toggleMasterSwitch();if(logout)logout.onclick=logoutAdmin;buildNav();state.appStarted=true}
   const initialRoute=resolveWorkspaceHash(location.hash);
   navigate(initialRoute?initialRoute.page:(state.page||'dashboard'),initialRoute?initialRoute.view||null:null,initialRoute?.presentation||null);
-  if(!refreshTimer)refreshTimer=setInterval(()=>{const page=state.page,pageGeneration=pageRenderGeneration;if(['dashboard','tasks','messages','browser','issues','wecom','platforms'].includes(page)&&pageRenderInFlightGeneration!==pageGeneration)refreshBootstrap({page,pageGeneration}).then(bootstrap=>{if(!bootstrap||state.page!==page||pageRenderGeneration!==pageGeneration)return;if(state.page==='dashboard')refreshDashboardLoginStatus();else if(state.page==='platforms')refreshPlatformLoginStatus();else if(state.page==='browser')refreshBrowserStatusPanel();else if(state.page==='issues')renderIssues()}).catch(()=>{})},5000);
+  if(!refreshTimer)refreshTimer=setInterval(()=>{const page=state.page,pageGeneration=pageRenderGeneration;if(['dashboard','tasks','messages','browser','issues','wecom','platforms'].includes(page)&&pageRenderInFlightGeneration!==pageGeneration)refreshBootstrap({page,pageGeneration}).then(bootstrap=>{if(!bootstrap||state.page!==page||pageRenderGeneration!==pageGeneration)return;if(state.page==='dashboard')refreshDashboardLoginStatus();else if(state.page==='platforms')refreshPlatformLoginStatus();else if(state.page==='messages')refreshMessageAccountNames();else if(state.page==='browser')refreshBrowserStatusPanel();else if(state.page==='issues')renderIssues()}).catch(()=>{})},5000);
   if(!taskRefreshTimer)taskRefreshTimer=setInterval(refreshTasksFromTimer,2000);
   if(!messageRefreshTimer)messageRefreshTimer=setInterval(refreshMessagesFromTimer,3000);
   if(!messageCountdownTimer)messageCountdownTimer=setInterval(updateMessageChannelCountdowns,1000);

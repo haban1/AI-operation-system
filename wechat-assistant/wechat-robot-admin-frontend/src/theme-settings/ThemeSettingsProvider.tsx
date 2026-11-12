@@ -13,6 +13,7 @@ import {
 } from './preferences';
 import type { ResolvedThemeMode, ThemePreferences } from './preferences';
 import { buildThemeConfig } from './themeConfig';
+import { readWorkbenchTheme, watchWorkbenchTheme } from './workbenchTheme';
 
 interface IProps {
 	children?: React.ReactNode;
@@ -39,7 +40,7 @@ const getSystemIsDark = () => {
 
 const getInitialPreferences = () => {
 	if (isEmbedded) {
-		return parseThemePreferences({ ...defaultThemePreferences, themeMode: 'dark', colorPreset: 'forest' });
+		return parseThemePreferences({ ...defaultThemePreferences, themeMode: 'light', colorPreset: 'default' });
 	}
 	if (typeof window === 'undefined') {
 		return defaultThemePreferences;
@@ -51,12 +52,34 @@ const getInitialPreferences = () => {
 const ThemeSettingsProvider = (props: IProps) => {
 	const [preferences, setPreferences] = useState<ThemePreferences>(getInitialPreferences);
 	const [systemIsDark, setSystemIsDark] = useState(getSystemIsDark);
+	const [workbenchTheme, setWorkbenchTheme] = useState(() => isEmbedded ? readWorkbenchTheme() : null);
 
-	const resolvedThemeMode = resolveThemeMode(preferences.themeMode, systemIsDark);
+	const resolvedThemeMode = workbenchTheme?.mode || resolveThemeMode(preferences.themeMode, systemIsDark);
 
 	const themeConfig = useMemo(() => {
-		return buildThemeConfig(preferences, resolvedThemeMode);
-	}, [preferences, resolvedThemeMode]);
+		return buildThemeConfig(preferences, resolvedThemeMode, workbenchTheme?.tokens);
+	}, [preferences, resolvedThemeMode, workbenchTheme]);
+
+	useEffect(() => {
+		if (!isEmbedded) return;
+		const sync = () => {
+			const next = readWorkbenchTheme();
+			setWorkbenchTheme(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+		};
+		sync();
+		return watchWorkbenchTheme(sync);
+	}, []);
+
+	useEffect(() => {
+		if (!workbenchTheme) return;
+		const root = document.documentElement;
+		root.dataset.workbenchTheme = workbenchTheme.mode;
+		for (const [key, value] of Object.entries(workbenchTheme.variables)) root.style.setProperty(key, value);
+		return () => {
+			delete root.dataset.workbenchTheme;
+			for (const key of Object.keys(workbenchTheme.variables)) root.style.removeProperty(key);
+		};
+	}, [workbenchTheme]);
 
 	const componentSize = useMemo(() => {
 		return getComponentSizeByDensity(preferences.density);

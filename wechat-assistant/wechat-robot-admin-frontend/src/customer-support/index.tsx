@@ -1,12 +1,14 @@
 import { useRequest } from 'ahooks';
 import { Alert, Spin } from 'antd';
 import React from 'react';
+import type { ChatRobot } from '@/chat/conversation/types';
 import Broadcast from './Broadcast';
 import Reception from './Reception';
 import type { Snapshot } from './types';
 
 interface IProps {
 	robotId: number;
+	robot: ChatRobot;
 	mode: 'reception' | 'broadcast';
 }
 const CustomerSupport = (props: IProps) => {
@@ -42,7 +44,9 @@ const CustomerSupport = (props: IProps) => {
 			)}
 			{props.mode === 'reception' ? (
 				<Reception
+					key={props.robotId}
 					robotId={props.robotId}
+					robot={props.robot}
 					data={data}
 					onRefresh={refresh}
 				/>
