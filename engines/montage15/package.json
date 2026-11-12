@@ -1,0 +1,25 @@
+{
+  "name": "operations-montage15",
+  "version": "0.6.0",
+  "private": true,
+  "type": "module",
+  "description": "Local 15-second montage engine embedded in the operations system",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.mjs"
+  },
+  "files": [
+    "src/",
+    "public/",
+    "templates/",
+    "vendor/",
+    "README.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "dependencies": {
+    "hyperframes": "0.9.27",
+    "gsap": "3.14.2"
+  }
+}

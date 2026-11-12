@@ -1,0 +1,7 @@
+html[data-theme=day]{color-scheme:light;--bg:#f2f5f8;--panel:#fff;--line:#dce5eb;--ink:#293c50;--text:#293c50;--muted:#708295;--mint:#218268;--accent:#218268}
+html[data-theme=day] body,html[data-theme=day] .system-embedded,html[data-theme=day] main{background:#f2f5f8;color:#293c50}
+html[data-theme=day] aside,html[data-theme=day] .topic-card,html[data-theme=day] .custom-topic,html[data-theme=day] .settings-group,html[data-theme=day] .pick-panel{background:#fff;color:#293c50;border-color:#dce5eb}
+html[data-theme=day] input,html[data-theme=day] textarea,html[data-theme=day] select{background:#fff!important;color:#293c50!important;border-color:#dce5eb!important}
+html[data-theme=day] .topic-title,html[data-theme=day] .pick-panel label,html[data-theme=day] .empty-state{color:#536b80}
+html[data-theme=day] nav button{color:#6f8192}
+html[data-theme=day] nav button.active{background:#e7f3ed;color:#19765d}

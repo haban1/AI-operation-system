@@ -304,7 +304,7 @@ const workspaceGroups=[
   {id:'overview',label:'运营总览',icon:'dashboard',section:'work',description:'推广、内容、活动转化与 AI 运营建议。',items:[
     {key:'overview',label:'运营总览',page:'dashboard'}]},
   {id:'content',label:'内容创作',icon:'create',section:'work',description:'自动热点与混剪：统一管理成片、视频制作和素材。',items:[
-    {key:'studio',label:'创作方式',page:'create'}]},
+    {key:'studio',label:'内容创作',page:'create'}]},
   {id:'publishing',label:'发布管理',icon:'publish',section:'work',description:'素材预检、审核、发布排期与任务状态，继续使用运营系统的发布流程。',items:[
     {key:'publishing',label:'发布内容',page:'publish',presentation:'content'},
     {key:'schedule',label:'发布排期',page:'publish',presentation:'schedule'},

@@ -43,6 +43,9 @@ reports/
 
 # Local temporary/tool state
 .tmp/
+.local/
+artifacts/
+engines/ai-signal-studio/.venv-voice/
 tmp/
 .codex-work/
 .env.robot-*

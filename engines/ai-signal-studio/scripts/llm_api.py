@@ -3,7 +3,12 @@ import json
 import os
 import urllib.error
 import urllib.request
+from http.client import IncompleteRead
 from urllib.parse import urlsplit, urlunsplit
+
+
+class IncompleteModelResponse(ValueError):
+    """The transport ended before the provider confirmed a complete result."""
 
 
 def normalize_settings(values, previous=None):
@@ -99,7 +104,7 @@ def read_responses(response):
             completed = event.get('response')
             break
     if completed is None:
-        raise ValueError('模型连接提前结束，没有收到完整结果，请重试')
+        raise IncompleteModelResponse('模型连接提前结束，没有收到完整结果，请重试')
     return response_text(completed)
 
 
@@ -143,27 +148,33 @@ def generate(settings, instructions, prompt, timeout=240, schema=None, images=No
     if provider != 'ollama':
         headers['Authorization'] = 'Bearer '+api_token(settings)
     request = urllib.request.Request(endpoint, data=json.dumps(body).encode(), headers=headers)
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            if provider == 'responses':
-                return read_responses(response)
-            result = json.load(response)
-        if provider == 'ollama':
-            text = result.get('message', {}).get('content')
-        else:
-            choices = result.get('choices') or []
-            if not choices or choices[0].get('finish_reason') in {'length','content_filter'}:
-                raise ValueError('模型没有完整生成文稿，请检查输出限制或重试')
-            text = choices[0].get('message', {}).get('content')
-        if not isinstance(text, str) or not text.strip():
-            raise ValueError('模型没有返回正文，请检查模型和接口协议')
-        return text
-    except urllib.error.HTTPError as error:
-        descriptions = {401:'Token无效或已过期',403:'Token没有该模型的访问权限',404:'模型或接口路径不存在，请检查协议、地址与模型名',
-                        429:'调用额度不足或请求过快，请检查账户额度后重试'}
-        raise ValueError(f'模型服务 HTTP {error.code}：'+descriptions.get(error.code,'请求失败，请检查服务是否支持所选协议')) from None
-    except (urllib.error.URLError, TimeoutError):
-        raise ValueError('无法连接模型服务或请求超时，请检查地址和网络') from None
+    # Writing is read-only with store=False. Retry one interrupted transport;
+    # never combine partial attempts or retry explicit refusals/provider failures.
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                if provider == 'responses':
+                    return read_responses(response)
+                result = json.load(response)
+            if provider == 'ollama':
+                text = result.get('message', {}).get('content')
+            else:
+                choices = result.get('choices') or []
+                if not choices or choices[0].get('finish_reason') in {'length','content_filter'}:
+                    raise ValueError('模型没有完整生成文稿，请检查输出限制或重试')
+                text = choices[0].get('message', {}).get('content')
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError('模型没有返回正文，请检查模型和接口协议')
+            return text
+        except (IncompleteModelResponse, IncompleteRead, ConnectionError, UnicodeDecodeError, json.JSONDecodeError):
+            if attempt:
+                raise ValueError('模型响应传输中断，自动重试后仍未收到完整结果，请稍后重试') from None
+        except urllib.error.HTTPError as error:
+            descriptions = {401:'Token无效或已过期',403:'Token没有该模型的访问权限',404:'模型或接口路径不存在，请检查协议、地址与模型名',
+                            429:'调用额度不足或请求过快，请检查账户额度后重试'}
+            raise ValueError(f'模型服务 HTTP {error.code}：'+descriptions.get(error.code,'请求失败，请检查服务是否支持所选协议')) from None
+        except (urllib.error.URLError, TimeoutError):
+            raise ValueError('无法连接模型服务或请求超时，请检查地址和网络') from None
 
 
 def test_connection(settings):

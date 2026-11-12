@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 import urllib.error
+from http.client import RemoteDisconnected
 from pathlib import Path
 from unittest.mock import patch
 
@@ -69,6 +70,37 @@ class ResponsesTests(unittest.TestCase):
         response=io.BytesIO(b'data: {"type":"response.failed","response":{"error":{"message":"upstream error"}}}\n\n')
         response.headers={'Content-Type':'text/event-stream'}
         with self.assertRaisesRegex(ValueError,'未完成'):read_responses(response)
+
+    def test_transport_retry_discards_partial_utf8_or_missing_completion(self):
+        for partial in [b'data: {"delta":"\xe5\xbc',
+                        b'data: {"type":"response.output_text.delta","delta":"partial"}\n\n']:
+            with self.subTest(partial=partial):
+                broken=io.BytesIO(partial);broken.headers={'Content-Type':'text/event-stream'}
+                with patch('llm_api.urllib.request.urlopen',side_effect=[broken,reply(completed('{"ok":true}'),True)]) as send:
+                    self.assertEqual(generate(self.settings,'JSON','test'),'{"ok":true}')
+                    self.assertEqual(send.call_count,2)
+
+    def test_repeated_truncated_transport_stops_after_one_retry(self):
+        broken=[]
+        for _ in range(2):
+            response=io.BytesIO(b'data: {"delta":"\xe5\xbc')
+            response.headers={'Content-Type':'text/event-stream'};broken.append(response)
+        with patch('llm_api.urllib.request.urlopen',side_effect=broken) as send:
+            with self.assertRaisesRegex(ValueError,'自动重试后仍未收到完整结果'):
+                generate(self.settings,'JSON','test')
+            self.assertEqual(send.call_count,2)
+
+    def test_explicit_failure_does_not_retry(self):
+        response=io.BytesIO(b'data: {"type":"response.failed"}\n\n')
+        response.headers={'Content-Type':'text/event-stream'}
+        with patch('llm_api.urllib.request.urlopen',return_value=response) as send:
+            with self.assertRaisesRegex(ValueError,'未完成'):generate(self.settings,'JSON','test')
+            self.assertEqual(send.call_count,1)
+
+    def test_disconnected_response_can_retry_without_returning_partial_data(self):
+        with patch('llm_api.urllib.request.urlopen',side_effect=[RemoteDisconnected('fixture disconnect'),reply(completed('{"ok":true}'))]) as send:
+            self.assertEqual(generate(self.settings,'JSON','test'),'{"ok":true}')
+            self.assertEqual(send.call_count,2)
 
     def test_token_readiness_and_http_errors(self):
         settings={k:v for k,v in self.settings.items() if k!='api_key'}

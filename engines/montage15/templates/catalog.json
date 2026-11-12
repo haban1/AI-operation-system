@@ -1,0 +1,48 @@
+[
+  {
+    "id": "play-mode",
+    "name": "轻快亮相",
+    "description": "蓝白配色、圆角画框和轻快入场，适合开箱、好物展示与活动片段。基于 Play Mode 重新适配的竖屏三镜头候选。",
+    "sourceUrl": "https://github.com/heygen-com/hyperframes/tree/main/registry/examples/play-mode",
+    "license": "Apache-2.0",
+    "status": "candidate",
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "durationFrames": 450,
+    "slots": [
+      { "id": "shot-1", "name": "开场亮相", "startFrame": 0, "durationFrames": 150, "kind": "visual" },
+      { "id": "shot-2", "name": "细节特写", "startFrame": 150, "durationFrames": 150, "kind": "visual" },
+      { "id": "shot-3", "name": "完整展示", "startFrame": 300, "durationFrames": 150, "kind": "visual" }
+    ],
+    "defaults": {
+      "title": "好物登场\n心意正好",
+      "subtitle": "用三个镜头，分享你想记录的美好。",
+      "brand": "品牌名称",
+      "accent": "#0057FF"
+    }
+  },
+  {
+    "id": "warm-grain",
+    "name": "暖调留白",
+    "description": "奶油纸色、柔和画框和舒缓运动，适合生活方式、礼物与实拍故事。基于 Warm Grain 重新适配的竖屏三镜头候选。",
+    "sourceUrl": "https://github.com/heygen-com/hyperframes/tree/main/registry/examples/warm-grain",
+    "license": "Apache-2.0",
+    "status": "candidate",
+    "width": 1080,
+    "height": 1920,
+    "fps": 30,
+    "durationFrames": 450,
+    "slots": [
+      { "id": "shot-1", "name": "氛围开场", "startFrame": 0, "durationFrames": 150, "kind": "visual" },
+      { "id": "shot-2", "name": "细节记录", "startFrame": 150, "durationFrames": 150, "kind": "visual" },
+      { "id": "shot-3", "name": "心意定格", "startFrame": 300, "durationFrames": 150, "kind": "visual" }
+    ],
+    "defaults": {
+      "title": "把日常\n装进心意里",
+      "subtitle": "留住细节，也留住这一刻的温度。",
+      "brand": "品牌名称",
+      "accent": "#617452"
+    }
+  }
+]

@@ -3836,14 +3836,16 @@ const videoStudioSource = videoStudioUpstreamUrl ? createStudioOutputSource({ up
 };
 const studioOutputLibrary = createStudioOutputLibrary({ library: contentLibrary, source: videoStudioSource });
 async function getEmbeddedVideoStudio() {
-  if (!embeddedVideoStudio) {
-    const { createVideoStudio } = await import('../engines/video-studio/server.mjs');
-    embeddedVideoStudio = createVideoStudio({
+  if (!embeddedVideoStudio) embeddedVideoStudio = (async () => {
+    const { createContentWorkbench } = await import('./services/content-workbench.js');
+    return await createContentWorkbench({
       stateDir: process.env.VIDEO_STUDIO_DATA_DIR || path.join(ROOT, 'runtime', 'video-studio'),
-      automaticUrl: '/integrations/ai-signal/',
+      montageDir: process.env.MONTAGE15_DATA_DIR,
+      publicDir: path.join(ROOT, 'public', 'video-workbench'),
+      library: contentLibrary,
       publishingLibrary: studioOutputLibrary.publishingLibrary,
     });
-  }
+  })().catch(error => { embeddedVideoStudio = null; throw error; });
   return embeddedVideoStudio;
 }
 const proxyVideoStudio = createVideoStudioProxy({ upstreamUrl: videoStudioUpstreamUrl, authorize: requireAdminSession, allowedOrigins: config.allowedOrigins });
@@ -3923,7 +3925,16 @@ async function api(req, res, url) {
   if (req.method === 'GET' && pathname === '/api/integrations/ai-signal') {
     return ok(res, { data: await getAiSignalIntegration({ url: config.aiSignalStudioUrl, healthUrl: config.aiSignalStudioHealthUrl }) });
   }
-  if (req.method === 'GET' && pathname === '/api/creative-workbench/status') return ok(res, await getCreativeWorkbenchStatus(config));
+  if (req.method === 'GET' && pathname === '/api/creative-workbench/status') {
+    const status = await getCreativeWorkbenchStatus(config);
+    if (!videoStudioUpstreamUrl) {
+      const editing = status.services.find(item => item.id === 'editing');
+      const capabilities = (await getEmbeddedVideoStudio()).capabilities;
+      Object.assign(editing, { title: '智能混剪', product: '15 秒模板', url: '/video-workbench/montage/',
+        online: ['ffmpegAvailable', 'ffprobeAvailable', 'browserAvailable'].every(key => capabilities[key]) });
+    }
+    return ok(res, status);
+  }
   if (pathname === '/api/content-library' || pathname.startsWith('/api/content-library/')) {
     try {
       await contentLibrarySeedReady;
@@ -5954,7 +5965,15 @@ async function shutdownServer(signal) {
   await hotTopicKnowledge.stop();
   platformAnalyticsScheduler.stop();
   await stopMiniProgramWorkers();
-  await new Promise(resolve => server.close(resolve));
+  if (embeddedVideoStudio) await (await embeddedVideoStudio).close?.();
+  await new Promise(resolve => {
+    // A paused video may keep its media response open after shutdown begins.
+    // Allow in-flight requests to finish, then close the remaining connections.
+    const closing = setTimeout(() => server.closeAllConnections?.(), 5000);
+    closing.unref();
+    server.close(() => { clearTimeout(closing); resolve(); });
+    server.closeIdleConnections?.();
+  });
   if (config.localAgentAutoStart) {
     const agentShutdown = await shutdownLocalAgent({ reason: `WEB_${signal}` });
     if (!agentShutdown.stopped) console.error(`[cloud-web] Local Agent did not fully stop: ${agentShutdown.error || agentShutdown.message}`);

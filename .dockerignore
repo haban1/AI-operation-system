@@ -7,6 +7,7 @@
 !scripts/**
 !platform-workflows/**
 !engines/video-studio/**
+!engines/montage15/**
 !bundled/
 !bundled/content-library/
 !bundled/content-library/**
@@ -15,3 +16,5 @@ engines/video-studio/runtime/node_modules/**
 engines/video-studio/runtime/private/**
 engines/video-studio/runtime/data/**
 engines/video-studio/runtime/codex-home/**
+engines/montage15/node_modules/**
+engines/montage15/.local/**

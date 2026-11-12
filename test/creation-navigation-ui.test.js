@@ -33,7 +33,7 @@ for (const width of [1440, 390]) test(`创作导航与系统设置迁移 ${width
     if (url.pathname === signalBase + 'api/state') return json(signalState);
     if (url.pathname.startsWith(signalBase)) {
       const name = url.pathname.slice(signalBase.length) || 'index.html';
-      if (['index.html', 'app.js', 'style.css', 'hot-sources.js'].includes(name)) {
+      if (['index.html', 'app.js', 'style.css', 'hot-sources.js', 'creation-theme.js', 'integration-theme.css'].includes(name)) {
         let body = fs.readFileSync(path.join('engines/ai-signal-studio/web', name));
         if (name === 'index.html') body = body.toString().replace('__SIGNAL_BASE_PATH__', signalBase);
         return route.fulfill({ contentType: name.endsWith('.html') ? 'text/html' : name.endsWith('.css') ? 'text/css' : 'application/javascript', body });
@@ -45,25 +45,26 @@ for (const width of [1440, 390]) test(`创作导航与系统设置迁移 ${width
   await page.goto(runtime.base + '/#studio');
   const studio = page.frameLocator('#hotTopicWorkspace > iframe');
   const automatic = studio.frameLocator('#automaticFrame');
-  await studio.locator('#creationHome').waitFor();
-  assert.deepEqual(await studio.locator('.method-nav a').allTextContents(), ['创作方式', '素材库']);
-  assert.deepEqual(await studio.locator('.creation-route h3').allTextContents(), ['自动成片', '素材智剪']);
-  assert.equal(await studio.locator('#creationHome a[href="#creation"]').count(), 0);
+  const montage = studio.frameLocator('#montageFrame');
+  await montage.locator('#project-home').waitFor();
+  assert.deepEqual(await studio.locator('.method-nav a').allTextContents(), ['智能混剪', 'AI 热点自动生成']);
+  assert.equal(await montage.locator('.home-template').count(), 2);
+  assert.equal(await studio.locator('#creationHome').isVisible(), false);
   if (process.env.CREATION_NAV_EVIDENCE_DIR) {
     fs.mkdirSync(process.env.CREATION_NAV_EVIDENCE_DIR, { recursive: true });
     await page.screenshot({ path: path.join(process.env.CREATION_NAV_EVIDENCE_DIR, `content-${width}.png`), fullPage: true });
   }
   const frameHandle = await page.locator('#hotTopicWorkspace > iframe').elementHandle();
-  await studio.locator('.creation-route a[href="#automatic/create"]').click();
+  await studio.locator('.method-nav [data-studio-route=automatic]').click();
   await automatic.locator('#topics.active').waitFor();
-  assert.equal(await studio.locator('[data-studio-route=overview]').getAttribute('class'), 'method-link active');
-  await studio.locator('.method-nav [data-studio-route=overview]').click();
-  await studio.locator('.creation-route a[href="#editing"]').click();
-  await studio.locator('#chatInput').fill('保留制作草稿');
-  await studio.locator('.method-nav [data-studio-route=overview]').click();
-  await studio.locator('.creation-route a[href="#editing"]').click();
-  assert.equal(await studio.locator('#chatInput').inputValue(), '保留制作草稿');
-  await studio.locator('.method-nav [data-studio-route=materials]').click();
+  assert.equal(await studio.locator('[data-studio-route=automatic]').getAttribute('class'), 'method-link active');
+  await studio.locator('.method-nav [data-studio-route=editing]').click();
+  await montage.locator('#project-search').fill('保留工程筛选');
+  await studio.locator('.method-nav [data-studio-route=automatic]').click();
+  await automatic.locator('#topics.active').waitFor();
+  await studio.locator('.method-nav [data-studio-route=editing]').click();
+  assert.equal(await montage.locator('#project-search').inputValue(), '保留工程筛选');
+  await studio.locator('.content-library-link[data-studio-route=materials]').click();
   await studio.locator('#videoSearch').fill('保留素材筛选');
   await page.locator('#nav [data-workspace=settings]').click();
   await page.locator('[data-workspace-item=creation-settings]').click();

@@ -289,9 +289,18 @@ export function createContentLibrary(config, {
         hash.update(chunk); callback(null, chunk);
       } });
       await pipeline(input.createReadStream({ autoClose: false }), meter, fs.createWriteStream(temporary, { flags: 'wx', mode: 0o600 }), { signal });
-      const after = await input.stat();
-      if (copied !== stat.size || after.mtimeMs !== stat.mtimeMs || after.ctimeMs !== stat.ctimeMs || after.size !== stat.size) throw new Error('Source changed');
       const sha256 = hash.digest('hex');
+      let after = await input.stat();
+      if (copied !== stat.size || after.size !== stat.size) throw new Error('Source changed');
+      if (after.mtimeMs !== stat.mtimeMs || after.ctimeMs !== stat.ctimeMs) {
+        // First access on macOS can update extended metadata. Re-read bytes to
+        // distinguish that from a same-size source overwrite during import.
+        const verificationHash = crypto.createHash('sha256');
+        for await (const chunk of input.createReadStream({ start: 0, autoClose: false })) verificationHash.update(chunk);
+        const verified = await input.stat();
+        if (verificationHash.digest('hex') !== sha256 || verified.size !== after.size || verified.mtimeMs !== after.mtimeMs) throw new Error('Source changed');
+        after = verified;
+      }
       const knownMedia = items.find(item => item.sha256 === sha256 && item.filename.endsWith(extension));
       const metadata = knownMedia?.meta || await inspectMedia(temporary, { ffprobePath, timeoutMs: Math.max(100, deadline - Date.now()) });
       if (!['video', 'image'].includes(metadata.type) || metadata.type !== formats[extension][0]) throw new Error('Invalid media');
@@ -306,7 +315,8 @@ export function createContentLibrary(config, {
       const createdAt = Number.isFinite(Date.parse(entry.createdAt)) ? new Date(entry.createdAt).toISOString() : new Date().toISOString();
       const documentRef = await persistHotDocument(entry, { id, sourceId: String(entry.sourceId), mediaType: metadata.type, sha256 }, previousItem);
       return { id, source: entry.source, sourceId: String(entry.sourceId), title: boundedText(entry.title, 500) || '未命名作品', body: boundedText(entry.body, 20000), createdAt,
-        mediaType: metadata.type, mimeType: formats[extension][1], sizeBytes: copied, sha256, filename, sourceFingerprint: fingerprint,
+        mediaType: metadata.type, mimeType: formats[extension][1], sizeBytes: copied, sha256, filename,
+        sourceFingerprint: `${after.dev}:${after.ino}:${after.size}:${after.mtimeMs}:${after.ctimeMs}`,
         reviewStatus: entry.reviewStatus === 'selected' ? 'selected' : 'unreviewed', sourceStatus: boundedText(entry.sourceStatus, 200),
         artifactType: ['final_video', 'video_clip', 'image'].includes(entry.artifactType) ? entry.artifactType : metadata.type === 'image' ? 'image' : 'final_video', ...admission,
         ...(previousItem?.seedApproval ? { seedApproval: previousItem.seedApproval } : {}),
@@ -575,5 +585,13 @@ export function createContentLibrary(config, {
       return publicItem(item);
     });
   }
-  return { list: () => sync(), sync, receive, setAdmission, admitSeed, verify, publishDraft, assertPublishMaterial, streamMedia };
+  async function openForEditing(id) {
+    const item = await find(id);
+    if (admissionFields(item).admissionStatus === 'rejected') throw libraryError('CONTENT_REJECTED', '此素材已被排除，请选择其他素材');
+    if (!['video', 'image'].includes(item.mediaType)) throw libraryError('CONTENT_MEDIA_INVALID', '请选择视频或照片', 400);
+    const stored = await verifiedStored(item);
+    return { stream: stored.handle.createReadStream({ start: 0, autoClose: true }), sha256: item.sha256,
+      bytes: item.sizeBytes, title: item.title, filename: path.basename(String(item.meta?.name || item.filename).replaceAll('\\', '/')) };
+  }
+  return { list: () => sync(), sync, receive, setAdmission, admitSeed, verify, publishDraft, assertPublishMaterial, streamMedia, openForEditing };
 }

@@ -1,0 +1,21 @@
+/* Video stages keep their original colours; editor chrome follows main. */
+html[data-theme=day]{color-scheme:light;--page:#f2f5f8;--paper:#fff;--soft:#edf2f6;--line:#dde5ec;--ink:#25374a;--muted:#718295;--green:#218268;--lime:#218268}
+html[data-theme=day] body{background:var(--page);color:var(--ink)}
+html[data-theme=day] input,html[data-theme=day] textarea,html[data-theme=day] select{background:#fff!important;color:var(--ink)!important;border-color:var(--line)!important}
+html[data-theme=day] .app-header,html[data-theme=day] .project-toolbar,html[data-theme=day] .resource-panel,html[data-theme=day] .inspector-panel,html[data-theme=day] .preview-panel,html[data-theme=day] .timeline-panel,html[data-theme=day] .ai-adjust-panel{background:#fff;border-color:var(--line)}
+html[data-theme=day] .home-source-note,html[data-theme=day] .project-cover,html[data-theme=day] .media-card,html[data-theme=day] dialog,html[data-theme=day] .field-group,html[data-theme=day] .shot-card,html[data-theme=day] .timeline-shot,html[data-theme=day] .inspector-section,html[data-theme=day] .source-card{background:#f7f9fb;color:var(--ink);border-color:var(--line)}
+html[data-theme=day] .home-source-note strong{color:#38536b}
+html[data-theme=day] .button-secondary,html[data-theme=day] .button-quiet{background:#f2f6f8;color:#3c566b;border-color:var(--line)}
+html[data-theme=day] body .button-primary{background:#208467;color:#fff}
+html[data-theme=day] #ai-generate{color:#fff}
+html[data-theme=day] .home-tag{background:#e9f4ee;color:#26735d;border-color:#c8dfd3}
+html[data-theme=day] .timeline-shot.is-active,html[data-theme=day] .shot-card.is-active{background:#eaf4ee;border-color:#388b71}
+html[data-theme=day] .home-template-preview span{color:#fff}
+html[data-theme=day] .dialog-header,html[data-theme=day] .dialog-footer{border-color:var(--line)}
+html[data-theme=day] .shot-inspector{background:#fff;border-color:var(--line);color:var(--ink)}
+html[data-theme=day] .shot-inspector-preview{background:#edf2f5;color:#718295}
+html[data-theme=day] .timeline-shot span{color:#4f6579}
+html[data-theme=day] .timeline-shot.selected{background:#eaf5ef;border-color:#28856b}
+html[data-theme=day] .dialog-close{background:#edf2f5;color:#536b7e}
+html[data-theme=day] .render-panel{background:#edf6f1;border-color:#cbded3;color:#385b4b}
+html[data-theme=day] .render-panel.failed{background:#fff1ed;border-color:#e7c6bd;color:#963d32}

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f5f0" />
+    <title>智能混剪 · 视频工作台</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./workflow.css" />
+    <link rel="stylesheet" href="./workspace.css" />
+    <script src="./workflow.js" defer></script>
+    <script src="./production.js" defer></script>
+    <script src="./workspace.js" defer></script>
+    <script src="./app.js" defer></script>
+  <link rel="stylesheet" href="./integration-theme.css?v=20261112-final2"><script src="/creation-theme.js" defer></script></head>
+  <body class="is-home">
+    <section id="project-home" class="project-home" hidden>
+      <header class="home-heading"><div><span class="eyebrow">用你的素材，剪出好故事</span><h1>智能混剪</h1><p>选一套模板开始，或继续之前的工程。</p></div><span class="home-tag">AI 选片 · 15 秒成片</span></header>
+      <section class="home-section"><div class="home-section-title"><h2>选择模板，开始创作</h2><span>保留模板转场与原配乐，AI 为你挑选素材</span></div><div id="home-templates" class="home-templates"></div></section>
+      <section class="home-section"><div class="home-section-title"><h2>最近工程 <span id="home-project-count"></span></h2><input id="project-search" type="search" placeholder="搜索工程" aria-label="搜索工程"></div><div id="home-projects" class="home-projects"></div></section>
+      <div class="home-source-note"><span>▧</span><div><strong>素材文件夹会一直保留</strong><p>新工程可复用已连接的素材集，AI 自动选材，你也可以预览后拖拽替换。</p></div><span id="home-source-summary"></span></div>
+    </section>
+    <header class="app-header editor-chrome">
+      <a class="brand" href="./" aria-label="视频工作台首页"><span class="brand-mark" aria-hidden="true">◧</span><span>内容创作<span class="brand-divider">/</span><strong>智能混剪</strong></span></a>
+      <a class="stage-label" hidden href="../index.html#materials" target="_parent">查看系统素材库 ↗</a>
+      <div class="header-actions">
+        <span class="local-status"><i></i>本机处理</span>
+        <span id="save-status" class="save-status" role="status">正在连接…</span>
+        <button id="save-button" class="button button-quiet" disabled>保存工程</button>
+        <button id="render-button" class="button button-primary" disabled><span aria-hidden="true">↗</span> 导出视频</button>
+      </div>
+    </header>
+
+    <div class="project-toolbar editor-chrome">
+      <button id="back-to-projects" class="text-button" type="button">← 工程首页</button><span class="toolbar-divider"></span>
+      <strong id="current-project-name"></strong>
+      <div class="project-switcher"><label for="project-select">当前工程</label><select id="project-select" aria-label="选择已保存工程"><option value="">模板预览</option></select></div>
+      <button id="new-project-button" class="text-button"><span aria-hidden="true">＋</span> 新建工程</button>
+      <button id="history-button" class="text-button" disabled>修订记录</button>
+      <span class="toolbar-spacer"></span>
+      <span id="project-revision" class="revision-badge">先选一套模板，看看效果</span>
+      <button id="undo-button" class="text-button" disabled>撤销</button><button id="redo-button" class="text-button" disabled>重做</button><span id="format-label" class="format-label">竖屏 9:16 <span>·</span> 15 秒</span>
+    </div>
+
+    <div id="global-error" class="global-error" role="alert" hidden><span id="global-error-text"></span><button id="dismiss-error" aria-label="关闭错误提示">×</button></div>
+
+    <main class="workspace">
+      <aside class="resource-panel panel">
+        <div class="resource-heading"><h2>素材与制作</h2><span id="current-template-name"></span></div>
+        <div class="panel-tabs" role="tablist" aria-label="资源类型"><button id="templates-tab" class="panel-tab active" role="tab" aria-selected="true" aria-controls="templates-panel">模板<span id="template-count"></span></button><button id="assets-tab" class="panel-tab" role="tab" aria-selected="false" aria-controls="assets-panel">已导入素材<span id="asset-count"></span></button></div>
+        <section id="templates-panel" role="tabpanel" aria-labelledby="templates-tab">
+          <div class="panel-intro"><p>先选模板，再选择素材来源。</p></div>
+          <div id="template-list" class="template-list"><div class="skeleton-card"></div><div class="skeleton-card"></div></div>
+          <div id="template-detail" class="template-detail"></div><button id="use-template-button" class="button button-secondary full-width" disabled>用此模板新建工程</button>
+        </section>
+        <section id="assets-panel" role="tabpanel" aria-labelledby="assets-tab" hidden>
+          <div id="drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="选择本地视频、图片或音频"><span class="upload-icon" aria-hidden="true">＋</span><strong>导入本地素材</strong><span>拖到这里，或点击选择文件</span><small>视频、图片、音乐 · 保存在本机</small></div>
+          <button id="library-import-button" type="button" class="button button-secondary full-width">从系统素材库选择</button>
+          <input id="file-input" type="file" accept="video/*,image/*,audio/*,.mkv,.mov,.mp4,.webm,.m4v,.png,.jpg,.jpeg,.webp,.gif,.wav,.mp3,.m4a,.aac,.flac" multiple hidden />
+          <div id="import-status" class="import-status" role="status" hidden></div>
+          <div class="asset-filter"><span id="asset-summary">尚未导入素材</span><select id="asset-filter" aria-label="筛选素材"><option value="all">全部类型</option><option value="video">视频</option><option value="image">图片</option><option value="audio">音频</option></select></div>
+          <div id="asset-list" class="asset-list"></div>
+        </section>
+
+        <section class="source-setup">
+          <div class="section-label"><h3>素材来源</h3><button id="source-refresh" class="text-button" type="button">重新扫描</button></div>
+          <select id="source-select" aria-label="素材来源文件夹"><option value="">选择素材文件夹</option></select>
+          <div class="source-actions"><button id="source-choose" class="button button-secondary" type="button">选择本机文件夹</button><button id="source-path-toggle" class="text-button" type="button">填写路径</button></div>
+          <div id="source-path-form" hidden><input id="source-path" aria-label="文件夹完整路径" placeholder="粘贴素材文件夹的完整路径"><button id="source-connect" class="button button-secondary" type="button">连接文件夹</button></div>
+          <p id="source-status" class="section-help" role="status">连接一次，新工程可继续使用。</p>
+        </section>
+
+        <section id="ai-workflow" class="ai-workflow" hidden>
+          <div class="section-label"><h3>制作要求</h3><span id="ai-provider-status" role="status">正在检查连接</span></div>
+          <label class="field-label" for="ai-brief">制作要求</label>
+          <textarea id="ai-brief" rows="3" maxlength="2000" placeholder="例如，制作周周有课的 15 秒活动回顾，先介绍课堂，再展示指导和互动，结尾温暖一些。"></textarea>
+          <details class="brief-details"><summary>补充事实资料与分组</summary>
+          <label class="field-label" for="ai-facts">事实资料</label>
+          <textarea id="ai-facts" rows="3" maxlength="4000" placeholder="活动或商品名称、已确认的特点、必须出现的文案。"></textarea>
+          <label class="field-label" for="ai-subject">素材分组 / 商品</label>
+          <input id="ai-subject" maxlength="80" placeholder="可选，用于排除其他分组的素材">
+          </details>
+          <button id="ai-candidates-button" class="button button-quiet full-width" type="button">调整可用素材</button>
+          <p id="ai-candidate-summary" class="section-help"></p>
+          <p id="creation-music" class="section-help"></p><button id="creation-music-restore" class="text-button" type="button" hidden>使用模板原配乐</button><button id="ai-generate" class="button button-primary full-width" type="button">生成 15 秒初稿</button>
+          <p class="section-help ai-data-note">AI 使用制作要求、事实资料及所选素材的名称、标签、说明和时长。原片与渲染在本机处理。</p>
+          <div id="ai-run-status" role="status" aria-live="polite"></div>
+          <details><summary>AI 制作记录</summary><div id="ai-conversation" class="ai-conversation"></div></details>
+        </section>
+        <section class="media-browser"><div class="section-label"><h3>素材预览</h3><span id="media-count"></span></div><div class="media-search"><input id="media-search" type="search" placeholder="搜索名称或画面线索" aria-label="搜索素材"><select id="media-filter" aria-label="素材类型"><option value="all">全部</option><option value="video">视频</option><option value="image">图片</option></select></div><p class="section-help">点击预览，拖到时间轴替换镜头。</p><div id="media-grid" class="media-grid"></div></section>
+      </aside>
+
+      <section class="preview-panel" aria-label="视频预览">
+        <div class="preview-heading"><div><span class="eyebrow">作品预览</span><h1 id="preview-title">准备你的下一条视频</h1></div><span id="preview-badge" class="badge badge-neutral">示例预览</span></div>
+        <div class="preview-stage"><div class="preview-decoration decoration-one"></div><div class="preview-decoration decoration-two"></div><div id="preview-shell" class="preview-shell"><div id="preview-placeholder" class="preview-placeholder"><span class="placeholder-mark">▶</span><strong>让好素材，成为好作品</strong><p>从左侧选择模板开始</p></div><iframe id="preview-frame" title="视频画面预览" allow="autoplay" sandbox="allow-scripts allow-same-origin" hidden></iframe></div></div>
+        <div class="player-controls"><button id="play-button" class="play-button" aria-label="播放预览" disabled>▶</button><span id="time-current" class="time-code">00:00.00</span><input id="timeline" type="range" min="0" max="449" value="0" step="1" aria-label="预览进度" disabled /><span id="time-total" class="time-code">00:15.00</span><button id="restart-button" class="restart-button" aria-label="回到开头" disabled>↺</button></div>
+        <div id="preview-notice" class="preview-notice"><span class="notice-dot"></span><span>模板中的画面为示例。创建工程后，可以换成你自己的素材。</span></div>
+        <div id="render-panel" class="render-panel" hidden><div class="render-heading"><strong id="render-title">正在准备导出</strong><span id="render-percentage">0%</span></div><div class="progress-track"><div id="render-progress" class="progress-fill"></div></div><p id="render-message"></p><button id="render-cancel" class="text-button" type="button" hidden>取消导出</button><button id="render-retry" class="button button-secondary" type="button" hidden>重新导出</button><button id="receive-library-button" type="button" class="button button-secondary" hidden>加入待确认成片</button><a id="download-button" class="button button-primary" hidden download>下载成片 MP4 <span aria-hidden="true">↓</span></a></div>
+        <div id="draft-recovery" class="draft-recovery" hidden><span>发现上次未保存的修改</span><button id="draft-restore" class="text-button">恢复草稿</button><button id="draft-discard" class="text-button">丢弃草稿</button></div><section id="review-tools" hidden><div class="section-label"><h3>镜头时间轴</h3><span class="section-help">点击定位 · 拖拽素材替换 · 拖动镜头交换位置</span><button id="adjust-open" class="button button-secondary" type="button">精细调整</button></div><div id="timeline-ruler" class="timeline-ruler"></div><div id="shot-timeline" class="shot-timeline"></div><div id="music-track" class="music-track"><span>♫ 模板配乐</span><div></div><span>15s</span></div>          <details class="regenerate-details"><summary>重新生成部分内容</summary><div class="ai-regenerate-controls"><select id="ai-scope" aria-label="重新生成范围"></select><button id="ai-regenerate" class="button button-secondary" type="button">重新生成</button></div></details>
+          <label class="field-label" for="ai-instruction">自然语言调整</label>
+          <textarea id="ai-instruction" rows="2" maxlength="2000" placeholder="例如，第 3 个镜头换成老师指导的近景，音乐轻一点，其他内容保持。"></textarea>
+          <div class="adjust-scope-row"><label for="ai-adjust-scope">修改范围</label><select id="ai-adjust-scope"><option value="instruction">按指令识别</option><option value="selected">仅当前镜头</option><option value="fields">仅文案</option><option value="audio">仅音乐</option></select><span id="ai-scope-hint" role="status">明确指定镜头时，其他镜头保持原样。</span></div>
+          <div class="ai-actions"><button id="ai-adjust" class="button button-secondary" type="button">应用修改</button><button id="ai-cancel" class="button button-quiet" type="button" hidden>取消任务</button></div>
+</section><div class="preview-footer"><span><i></i>原片与渲染均在本机处理</span><span id="saved-preview-note">预览可播放、暂停及逐帧定位</span></div>
+      </section>
+      <aside id="shot-inspector" class="shot-inspector"><div class="section-label"><h2 id="shot-inspector-title">镜头 01</h2><span id="shot-inspector-range"></span></div><div id="shot-inspector-preview" class="shot-inspector-preview"></div><strong id="shot-inspector-name"></strong><p id="shot-inspector-description" class="section-help"></p><button id="shot-browse" class="button button-secondary full-width" type="button">从素材集中替换</button><div id="shot-trim-controls"><label class="field-label" for="shot-inpoint">原片取材起点 <span id="shot-original-duration"></span></label><input id="shot-inpoint" type="number" min="0" step="0.01"><p id="shot-used-range" class="section-help"></p><label class="field-label" for="shot-focus-x">水平画面焦点</label><input id="shot-focus-x" type="range" min="0" max="1" step="0.01"><label class="field-label" for="shot-focus-y">垂直画面焦点</label><input id="shot-focus-y" type="range" min="0" max="1" step="0.01"></div><div id="shot-lock-control"></div><button id="shot-ai-replace" class="button button-quiet full-width" type="button">AI 为这个镜头重新选材</button><p class="section-help">只修改当前镜头的取材，模板节奏保持 15 秒。</p></aside>
+
+    </main>
+    <dialog id="media-preview-dialog" class="media-preview-dialog"><div class="dialog-heading"><div><h2 id="media-preview-title">素材预览</h2><p id="media-preview-meta" class="section-help"></p></div><button id="media-preview-close" class="dialog-close" type="button" aria-label="关闭素材预览">×</button></div><div id="media-preview-stage" class="media-preview-stage"></div><p id="media-preview-description" class="section-help"></p><div id="media-preview-trim"><label class="field-label" for="media-preview-start">从原片此处开始（秒）</label><input id="media-preview-start" type="number" min="0" step="0.01" value="0"><p id="media-preview-range" class="section-help"></p></div><div class="dialog-actions"><button id="media-preview-cancel" class="button button-quiet" type="button">返回素材集</button><button id="media-preview-apply" class="button button-primary" type="button">替换当前镜头</button></div></dialog>
+    <dialog id="template-preview-dialog"><div class="dialog-heading"><h2 id="template-preview-title">模板预览</h2><button id="template-preview-close" class="dialog-close" type="button" aria-label="关闭模板预览">×</button></div><iframe id="template-preview-frame" title="模板效果预览" allow="autoplay" sandbox="allow-scripts allow-same-origin"></iframe><div class="dialog-actions"><button id="template-preview-use" class="button button-primary" type="button">用此模板新建工程</button></div></dialog>
+
+    <dialog id="adjust-dialog"><div class="dialog-heading"><h2>精细调整</h2><span id="inspector-template" class="small-label"></span><button id="adjust-close" class="dialog-close" type="button" aria-label="关闭精细调整">×</button></div><p id="adjust-source-status" class="section-help"></p><button id="relink-sources" class="text-button" type="button">素材移动后重新关联文件夹</button><button id="manual-import" class="text-button" type="button">单独添加素材或音乐</button>        <form id="editor-form" autocomplete="off">
+          <section class="inspector-section"><div class="section-label"><h3>工程信息</h3><span id="edit-state">已保存</span></div><label class="field-label" for="project-name">工程名称</label><input id="project-name" name="name" type="text" maxlength="80" placeholder="给这条视频起个名字" /></section>
+          <section class="inspector-section"><div class="section-label"><h3>文案与风格</h3><span>保留模板动效</span></div><label class="field-label" for="field-title">主标题</label><textarea id="field-title" name="title" rows="2" maxlength="28" placeholder="输入主标题"></textarea><label class="field-label" for="field-subtitle">副标题</label><textarea id="field-subtitle" name="subtitle" rows="2" maxlength="56" placeholder="一句话介绍内容"></textarea><div class="field-pair"><div><label class="field-label" for="field-brand">品牌 / 署名</label><input id="field-brand" name="brand" type="text" maxlength="24" /></div><div class="color-field"><label class="field-label" for="field-accent">主题色</label><div class="color-input"><input id="field-accent" name="accent" type="color" value="#d8ef7b" /><span id="accent-value">#d8ef7b</span></div></div></div></section>
+          <section id="montage-controls" class="inspector-section" hidden><div class="section-label"><h3>文字穿插与动效</h3></div><label class="field-label" for="field-beat1">穿插短句 1</label><input id="field-beat1" maxlength="16"><label class="field-label" for="field-beat2">穿插短句 2</label><input id="field-beat2" maxlength="16"><label class="field-label" for="field-beat3">收尾短句</label><input id="field-beat3" maxlength="16"><div class="toggle-list"><label><input id="setting-titles" type="checkbox"> 显示动态文字</label><label><input id="setting-brand" type="checkbox"> 显示品牌标记</label><label hidden><input id="setting-colorCards" type="checkbox"> 空槽位使用色卡</label></div><div class="range-field"><label for="setting-intensity">变形强度 <output id="intensity-value">80%</output></label><input id="setting-intensity" type="range" min="0" max="1" step="0.05"></div></section><section class="inspector-section"><div class="section-label"><h3>画面素材</h3><span id="slot-readiness"></span></div><p class="section-help">选择素材后，可调整取材起点和画面焦点。</p><div id="slot-list"></div></section>
+          <section class="inspector-section"><div class="section-label"><h3>音乐与转场音效</h3><span>独立调整</span></div><p id="soundtrack-info" class="section-help"></p><label><input id="music-enabled" type="checkbox" checked> 配乐</label> <label><input id="sfx-enabled" type="checkbox" checked> 卡点音效</label><label class="field-label" for="audio-select">配乐来源</label><select id="audio-select"></select><div class="range-field"><label for="audio-volume">音乐音量 <output id="audio-volume-value">80%</output></label><input id="audio-volume" type="range" min="0" max="1" step="0.01" value="0.8"></div><div class="range-field"><label for="sfx-volume">音效音量 <output id="sfx-volume-value">65%</output></label><input id="sfx-volume" type="range" min="0" max="1" step="0.01" value="0.65"></div><label class="field-label" for="audio-inpoint">导入音乐取材起点（秒）</label><input id="audio-inpoint" type="number" min="0" step="0.1" value="0"><label class="field-label" for="audio-offset">音乐整体偏移（秒，正数延后）</label><input id="audio-offset" type="number" min="-3" max="3" step="0.01" value="0"><button id="restore-template-music" class="text-button" type="button">恢复模板配乐</button><label class="field-label" for="audio-fadeout">音乐淡出（秒）</label><input id="audio-fadeout" type="number" min="0" max="3" step="0.1" value="0.6"><p class="section-help"><a href="./audio-credits" target="_blank">配乐署名与来源</a> · 原视频静音</p></section>
+          <section class="inspector-section"><h3>图层与文字时间</h3><label class="field-label" for="layer-order">从上到下的图层顺序</label><select id="layer-order"><option value="brand,text,media">署名 → 文案 → 画面</option><option value="text,brand,media">文案 → 署名 → 画面</option><option value="media,brand,text">画面 → 署名 → 文案</option></select><label class="field-label" for="text-offset">全部文字时间偏移（秒）</label><input id="text-offset" type="number" min="-2" max="2" step="0.01" value="0"></section><div class="editor-bottom"><p id="validation-summary">先为每个画面位置选择素材，再导出视频。</p><button id="save-bottom-button" type="button" class="button button-secondary full-width">保存并更新预览</button></div>
+        </form></dialog>
+    <dialog id="new-project-dialog"><form id="new-project-form"><div class="dialog-heading"><div><span class="eyebrow">开始创作</span><h2>新建视频工程</h2></div><button id="close-dialog" class="dialog-close" type="button" aria-label="关闭">×</button></div><label class="field-label" for="new-project-name">工程名称</label><input id="new-project-name" type="text" maxlength="80" placeholder="例如：礼盒展示 · 第一版" required /><label class="field-label" for="new-project-source">素材来源</label><select id="new-project-source"><option value="">先使用项目已有素材</option></select><button id="new-project-folder" class="text-button" type="button">选择其他文件夹</button><p id="new-project-source-status" class="section-help" role="status"></p><p class="section-help">文件夹里的照片与视频会交给 AI 挑选，可在创建后更换来源。</p><label class="field-label" for="new-project-format">画幅</label><select id="new-project-format"><option value="landscape">横屏 16:9 · 1920×1080</option><option value="portrait">竖屏 9:16 · 1080×1920</option></select><label class="field-label" for="new-project-template">选择模板</label><select id="new-project-template" required></select><p class="dialog-note">新工程保留模板的结构与动效，你可以替换素材和文案。</p><div class="dialog-actions"><button id="cancel-dialog" type="button" class="button button-quiet">取消</button><button id="create-project-submit" type="submit" class="button button-primary">创建工程 <span aria-hidden="true">→</span></button></div></form></dialog>
+    <dialog id="library-dialog"><div class="dialog-heading"><h2>选择系统素材</h2><button id="close-library-dialog" class="dialog-close" aria-label="关闭素材选择">×</button></div><p id="library-status" role="status"></p><div id="system-library-list"></div><div id="library-batch-actions" class="ai-actions" hidden><button id="library-select-all" class="text-button" type="button">全选</button><button id="library-import-selected" class="button button-primary" type="button">导入所选素材</button></div></dialog>
+    <dialog id="candidate-dialog"><div class="dialog-heading"><h2>本次可用素材</h2><button id="candidate-close" class="dialog-close" aria-label="关闭">×</button></div><p class="section-help">勾选本次 AI 可以使用的视频和照片。素材说明可在“我的素材”中补充。</p><div class="ai-actions"><button id="candidate-all" class="text-button">全选</button><button id="candidate-none" class="text-button">清空</button></div><div id="candidate-list"></div><button id="candidate-done" class="button button-primary full-width">完成选择</button></dialog>
+    <dialog id="asset-notes-dialog"><form id="asset-notes-form"><div class="dialog-heading"><h2>素材说明</h2><button id="asset-notes-close" class="dialog-close" type="button" aria-label="关闭">×</button></div><p id="asset-notes-name"></p><label class="field-label" for="asset-description">画面内容 / 适用镜头</label><textarea id="asset-description" rows="3" maxlength="500" placeholder="例如，讲师在教室前方演示，适合教学讲解镜头。"></textarea><label class="field-label" for="asset-subject">素材分组 / 商品</label><input id="asset-subject" maxlength="80"><label class="field-label" for="asset-tags">标签</label><input id="asset-tags" placeholder="用逗号分隔，如课堂、讲师、全景"><button id="asset-notes-save" class="button button-primary full-width" type="submit">保存说明</button><p id="asset-notes-status" role="status"></p></form></dialog>
+    <dialog id="history-dialog"><div class="dialog-heading"><h2>修订记录</h2><button id="history-close" class="dialog-close" aria-label="关闭">×</button></div><p class="section-help">恢复会创建新修订，已保存的历史版本可继续查看。</p><div id="history-list"></div></dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <noscript><div class="global-error">此工作台需要启用 JavaScript。</div></noscript>
+  </body>
+</html>

@@ -1,0 +1,17 @@
+/* Content uses main's actual shell; this file styles only the embedded area. */
+body #montageWorkspace,body.studio-embedded #montageWorkspace{flex:1;min-height:0;margin:0 -26px -24px}
+#montageFrame{display:block;width:100%;height:100%;border:0}
+.content-library-link{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin-left:auto;white-space:nowrap}
+.content-library-link svg{width:15px;height:15px}
+.content-library-link.active{color:var(--accent)}
+body .studio-connection{margin-left:20px}
+html[data-theme=day]{color-scheme:light;--accent:#167b68;--line:#dce4e9;--muted:#71808e;background:#f1f5f9;color:#233447}
+html[data-theme=day] body,html[data-theme=day] .app-shell,html[data-theme=day] .workspace-shell{background:#f1f5f9;color:#233447}
+html[data-theme=day] body .studio-topbar{background:#fbfcfe;border-color:#dce4e9}
+html[data-theme=day] .method-link,html[data-theme=day] .content-library-link{color:#66788a}
+html[data-theme=day] .method-link:hover{background:#edf4f3}
+html[data-theme=day] .method-link.active{background:#e5f2ed;color:#14765d}
+html[data-theme=day] .video-card,html[data-theme=day] .video-info,html[data-theme=day] .video-card-footer,html[data-theme=day] .video-dialog,html[data-theme=day] .form-dialog{background:#fff;color:#233447;border-color:#dce4e9}
+html[data-theme=day] input,html[data-theme=day] select,html[data-theme=day] textarea,html[data-theme=day] .search-field,html[data-theme=day] .button:not(.primary){background:#fff;color:#304355;border-color:#dce4e9}
+html[data-theme=day] .empty-state{color:#6e8091}
+@media(max-width:760px){body #montageWorkspace,body.studio-embedded #montageWorkspace{margin:0 -16px -18px}.content-library-link{font-size:11px;gap:4px}body .studio-connection{margin-left:8px}body .studio-connection .connection-dot{display:none}}

@@ -2,14 +2,14 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#080e13">
-<title>混剪 · 内容创作</title><link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="./style.css?v=20261111-two-creation-routes"><script src="./lucide.min.js" defer></script><script src="./app.js?v=20261111-creation-nav" defer></script>
-</head>
+<title>智能混剪 · 内容创作</title><link rel="icon" href="./icon.svg" type="image/svg+xml"><link rel="stylesheet" href="./style.css?v=20261111-two-creation-routes"><script src="./lucide.min.js" defer></script><script src="./app.js?v=20261112-main-montage" defer></script>
+<link rel="stylesheet" href="./content-integration.css?v=20261112"><script src="/creation-theme.js" defer></script></head>
 <body>
 <a class="skip-link" href="#main">跳到工作区</a>
 <div class="app-shell">
 <header class="studio-topbar">
 <a class="brand" href="#overview" aria-label="内容创作首页"><span class="brand-icon"><i data-lucide="clapperboard"></i></span><span>内容创作</span></a>
-<nav class="method-nav" aria-label="内容创作"><a class="method-link" href="#overview" data-studio-route="overview">创作方式</a><a class="method-link" href="#materials" data-method="materials" data-studio-route="materials">素材库</a></nav>
+<nav class="method-nav" aria-label="内容创作"><a class="method-link" href="#editing" data-studio-route="editing">智能混剪</a><a class="method-link" href="#automatic/create" data-studio-route="automatic">AI 热点自动生成</a></nav><a class="content-library-link" href="#materials" data-studio-route="materials"><i data-lucide="library"></i>成片与素材</a>
 <div class="studio-connection"><span class="connection-dot" id="connectionDot"></span><span id="connectionLabel">正在连接</span><button class="icon-button" id="refreshAll" title="刷新状态" aria-label="刷新状态"><i data-lucide="refresh-cw"></i></button></div>
 </header>
 <div class="workspace-shell">
@@ -27,6 +27,7 @@
 </section>
 <section id="panel-assets" class="tab-panel assets-panel" role="tabpanel" aria-labelledby="tab-assets" hidden><div class="section-toolbar asset-topbar"><div class="segmented-control" aria-label="素材类型"><button class="active" data-asset-kind="content">内容素材</button><button data-asset-kind="company">公司资产</button></div><div class="toolbar-actions"><button class="button" id="addSlogan"><i data-lucide="type"></i>添加标语</button><button class="button" id="addCollection"><i data-lucide="folder-plus"></i>映射目录</button></div></div><div class="asset-layout"><aside class="asset-folders"><div class="folder-heading"><span id="collectionHeading">素材目录</span><span id="collectionCount" class="muted"></span></div><div id="collectionList"></div></aside><div class="asset-browser"><div class="asset-browser-toolbar"><nav id="assetBreadcrumbs" class="asset-breadcrumbs" aria-label="素材路径"></nav><div class="asset-filter-tools"><select id="assetCategoryFilter" aria-label="按分类筛选素材"><option value="">全部分类</option></select><label class="search-field compact"><i data-lucide="search"></i><input type="search" id="assetSearch" placeholder="搜索当前目录" aria-label="搜索当前目录"></label></div></div><div id="assetGrid" class="asset-grid"></div><div id="assetFooter" class="asset-footer"></div></div></div></section>
 </section>
+<section id="montageWorkspace" hidden aria-label="智能混剪"><iframe id="montageFrame" title="智能混剪 · 工程与素材" allow="autoplay"></iframe></section>
 <section id="automaticWorkspace" hidden><h1 class="sr-only">自动热点</h1><div class="automatic-frame"><iframe id="automaticFrame" title="自动热点工作台"></iframe></div></section>
 </main></div></div>
 <dialog id="videoDialog" class="video-dialog"><div class="dialog-header"><div><h2 id="videoDialogTitle"></h2><span id="videoDialogMeta" class="muted"></span></div><button class="icon-button" data-close-dialog="videoDialog" title="关闭预览" aria-label="关闭预览"><i data-lucide="x"></i></button></div><div class="video-stage"><video id="videoPlayer" controls playsinline preload="metadata"></video></div><div class="dialog-footer video-dialog-actions"><span id="videoDialogStatus" class="output-status"></span><button class="button primary" id="confirmPreviewOutput" hidden><i data-lucide="check"></i>确认可发布</button><button class="button primary" id="publishPreviewOutput" hidden><i data-lucide="send"></i>去发布</button><button class="button" id="useVideoStyle"><i data-lucide="wand-sparkles"></i>使用这个工作流</button><a id="downloadVideo" class="button primary" download><i data-lucide="download"></i>下载成片</a></div></dialog>

@@ -53,7 +53,7 @@ async function sendFile(req,res,file,{download=false}={}) {
   const stream=fs.createReadStream(file,{start,end}); stream.on('error',()=>res.destroy()); res.on('close',()=>stream.destroy()); stream.pipe(res);
 }
 
-export function createVideoStudio({root=ROOT,stateDir=process.env.VIDEO_STUDIO_DATA_DIR||path.join(root,'runtime','data'),automaticUrl=process.env.AI_SIGNAL_STUDIO_URL||'http://127.0.0.1:8892/',publishingLibrary=null,automaticOutputs=null}={}) {
+export function createVideoStudio({root=ROOT,stateDir=process.env.VIDEO_STUDIO_DATA_DIR||path.join(root,'runtime','data'),automaticUrl=process.env.AI_SIGNAL_STUDIO_URL||'http://127.0.0.1:8892/',publishingLibrary=null,automaticOutputs=null,assistantEnabled=true}={}) {
   let bridgePromise,storePromise;
   const thumbJobs=new Map();
   let confirmationTail=Promise.resolve();
@@ -288,10 +288,10 @@ export function createVideoStudio({root=ROOT,stateDir=process.env.VIDEO_STUDIO_D
         return await sendFile(req,res,output.absolutePath,{download:full.searchParams.get('download')==='1'});
       }
       if(pathname==='/api/studio/bootstrap'&&req.method==='GET') {
-        const runtime=await toolStatus();
+        const runtime=assistantEnabled?await toolStatus():{tools:[]};
         const manifest=await readJson(path.join(root,'bundled','manifest.json'),{});
         const styles=manifest.videos||[];
-        let sessions=[]; try{sessions=await(await bridge()).listSessions();}catch{}
+        let sessions=[]; if(assistantEnabled)try{sessions=await(await bridge()).listSessions();}catch{}
         return json(res,{videos:await videos(base,actor),skills:styles.map(v=>({id:v.sourceSkill||`chatcut-source-pack-${String(v.styleId).padStart(2,'0')}`,name:v.title,title:v.title,description:v.description||v.subtitle||'',styleId:v.styleId})),tools:runtime.tools||runtime,cli:runtime,collections:await collections(),slogans:(await store()).slogans,sessions,automaticUrl});
       }
       if(pathname==='/api/status'&&req.method==='GET')return json(res,{online:true,...await toolStatus()});

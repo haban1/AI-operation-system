@@ -25,6 +25,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY engines/video-studio/package.json engines/video-studio/package-lock.json ./engines/video-studio/
 COPY engines/video-studio/runtime/package.json engines/video-studio/runtime/package-lock.json ./engines/video-studio/runtime/
+COPY engines/montage15/package.json engines/montage15/package-lock.json ./engines/montage15/
 ENV HYPERFRAMES_SKIP_SKILLS=1 \
     HYPERFRAMES_NO_TELEMETRY=1 \
     PUPPETEER_SKIP_DOWNLOAD=1 \
@@ -35,13 +36,15 @@ ENV HYPERFRAMES_SKIP_SKILLS=1 \
     VIDEO_STUDIO_DATA_DIR=/app/data/video-studio
 ENV PATH="/app/engines/video-studio/node_modules/.bin:${PATH}"
 RUN npm ci --prefix engines/video-studio --no-audit --no-fund \
-    && npm ci --prefix engines/video-studio/runtime --no-audit --no-fund
+    && npm ci --prefix engines/video-studio/runtime --no-audit --no-fund \
+    && npm ci --prefix engines/montage15 --no-audit --no-fund
 COPY src ./src
 COPY agent ./agent
 COPY public ./public
 COPY scripts ./scripts
 COPY platform-workflows ./platform-workflows
 COPY engines/video-studio ./engines/video-studio
+COPY engines/montage15 ./engines/montage15
 COPY bundled/content-library ./bundled/content-library
 RUN node scripts/verify-bundled-media.mjs
 RUN mkdir -p data/video-studio logs \

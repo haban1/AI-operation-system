@@ -1,0 +1,27 @@
+{
+  "repository": "https://github.com/heygen-com/hyperframes",
+  "source_ref": "main",
+  "downloaded_at_utc": "2026-11-10T01:49:56.779072+00:00",
+  "unchanged_upstream_bytes": true,
+  "license": "Apache-2.0; third-party assets and dependencies require their own license review",
+  "files": [
+    {
+      "file": "play-mode.html",
+      "url": "https://raw.githubusercontent.com/heygen-com/hyperframes/main/registry/examples/play-mode/index.html",
+      "sha256": "8e679a41ab1300b5ac7820466beea05bd72b86a5d434f7078a6e66fca004d096",
+      "bytes": 5952
+    },
+    {
+      "file": "warm-grain.html",
+      "url": "https://raw.githubusercontent.com/heygen-com/hyperframes/main/registry/examples/warm-grain/index.html",
+      "sha256": "11ee960a4cf5d2fc57c4e37a902920eee959ba05b507dcefd74dca2318d56859",
+      "bytes": 6541
+    },
+    {
+      "file": "LICENSE.hyperframes.txt",
+      "url": "https://raw.githubusercontent.com/heygen-com/hyperframes/main/LICENSE",
+      "sha256": "4259155fb06f127687ee7b0a8a3682d45132db0f2da26cbc0b7a2d1e796436b8",
+      "bytes": 10763
+    }
+  ]
+}

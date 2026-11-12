@@ -200,9 +200,21 @@
     const previousPresentation = state.presentation;
     const presentation = hash === 'overview' ? 'overview' : hash === 'settings' ? 'settings' : hash === 'creation' ? 'creation' : hash === 'editing' ? 'editing' : hash.startsWith('automatic') ? 'automatic' : hash === 'materials' ? 'materials' : 'editing';
     state.presentation = presentation;
-    const home = presentation === 'overview';
+    const montage = ['overview', 'editing', 'creation'].includes(presentation);
+    const home = false;
     $('creationHome').hidden = !home;
-    document.body.dataset.studioView = presentation;
+    document.body.dataset.studioView = montage ? 'editing' : presentation;
+    $('montageWorkspace').hidden = !montage;
+    if (montage) {
+      $('mixWorkspace').hidden = true; $('automaticWorkspace').hidden = true;
+      const frame = $('montageFrame');
+      if (!frame.getAttribute('src')) frame.src = `${API_BASE}/montage/`;
+      document.querySelectorAll('[data-studio-route]').forEach(el => el.classList.toggle('active', el.dataset.studioRoute === 'editing'));
+      document.title = '智能混剪 · 内容创作';
+      if (embeddedMode) window.parent.postMessage({ type: 'content-workbench:view-changed', view: 'editing', route: 'editing', title: '智能混剪' }, location.origin);
+      renderIcons();
+      return;
+    }
     if (home) hash = 'materials';
     if ((presentation === 'editing' && hash === 'editing') || presentation === 'creation') hash = 'mix/create';
     if (presentation === 'settings') hash = 'automatic/settings';
@@ -250,7 +262,7 @@
       if (state.tab === 'create') { renderMessages(); renderSelectedAssets(); }
     }
     if (home) { $('mixWorkspace').hidden = true; $('automaticWorkspace').hidden = true; }
-    document.querySelectorAll('[data-studio-route]').forEach((el) => el.classList.toggle('active', el.dataset.studioRoute === (['automatic','editing','creation'].includes(presentation) ? 'overview' : presentation)));
+    document.querySelectorAll('[data-studio-route]').forEach((el) => el.classList.toggle('active', el.dataset.studioRoute === presentation));
     if (embeddedMode) window.parent.postMessage({ type: 'content-workbench:view-changed', view: presentation, route: location.hash.replace(/^#\/?/, '') || 'overview', title: { overview: '创作方式', automatic: '热点选题', editing: '素材智剪', creation: 'AIGC 创作', materials: '素材库', settings: '创作设置' }[presentation] }, location.origin);
     renderVideos(); renderIcons();
   }
@@ -604,10 +616,15 @@
       $('automaticFrame').dataset.signalView = view;
       state.presentation = view; document.body.dataset.studioView = view;
       history.replaceState(null, '', view === 'settings' ? '#settings' : '#automatic/create');
-      document.querySelectorAll('[data-studio-route]').forEach((el) => el.classList.toggle('active', el.dataset.studioRoute === (view === 'automatic' ? 'overview' : view)));
+      document.querySelectorAll('[data-studio-route]').forEach((el) => el.classList.toggle('active', el.dataset.studioRoute === view));
       if (embeddedMode) window.parent.postMessage({ type: 'content-workbench:view-changed', view, title: event.data.title }, location.origin);
     }
     if (event.data?.type === 'content-workbench:outputs-changed') await loadOutputs();
+  });
+  window.addEventListener('message', event => {
+    if (event.origin !== location.origin || event.source !== $('montageFrame').contentWindow) return;
+    if (['content-library:publish', 'content-workbench:unauthorized'].includes(event.data?.type)) window.parent.postMessage(event.data, location.origin);
+    if (event.data?.type === 'content-workbench:open-library') location.hash = 'materials';
   });
   window.addEventListener('hashchange', route);
   $('videoGrid').innerHTML = Array.from({length:6}, () => '<div class="skeleton-card" aria-hidden="true"></div>').join('');

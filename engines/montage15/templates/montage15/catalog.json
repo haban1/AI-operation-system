@@ -1,0 +1,475 @@
+[
+  {
+    "id": "perspective-flow",
+    "name": "01 · 透视穿梭",
+    "description": "七个素材位，推镜、透视侧移、旋转与圆形揭示交替，短标题穿插全屏画面。",
+    "sourceUrl": "https://videohive.net/item/seamless-transitions-for-davinci-resolve/33184639",
+    "referenceName": "GR-44 · 透视与视差方向",
+    "cuts": [
+      0,
+      60,
+      120,
+      180,
+      240,
+      300,
+      360
+    ],
+    "transitionFrames": 18,
+    "defaults": {
+      "title": "向前，去发现",
+      "subtitle": "让每一次出发，都有新的可能",
+      "brand": "MOTION JOURNAL",
+      "accent": "#C7EF87",
+      "beat1": "保持热爱",
+      "beat2": "穿过边界",
+      "beat3": "下一程，即刻开始"
+    },
+    "cards": [
+      {
+        "key": "title",
+        "start": 0.15,
+        "end": 1.8,
+        "layout": "overlay"
+      },
+      {
+        "key": "beat1",
+        "start": 4.85,
+        "end": 5.85,
+        "layout": "full"
+      },
+      {
+        "key": "beat2",
+        "start": 8.7,
+        "end": 9.9,
+        "layout": "band"
+      },
+      {
+        "key": "beat3",
+        "start": 12.8,
+        "end": 15,
+        "layout": "center"
+      }
+    ],
+    "soundtrack": {
+      "title": "Newer Wave",
+      "author": "Kevin MacLeod",
+      "sourceUrl": "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN2000024",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "musicFile": "perspective-flow-music.wav",
+      "sfxFile": "perspective-flow-sfx.wav",
+      "bpm": 120,
+      "sourceBpm": 110.0,
+      "sourceInPoint": 23.735455,
+      "speed": 1.090909091,
+      "cues": [
+        {
+          "cutFrame": 60,
+          "peakSeconds": 2.27,
+          "kind": "perspective-flow"
+        },
+        {
+          "cutFrame": 120,
+          "peakSeconds": 4.27,
+          "kind": "perspective-flow"
+        },
+        {
+          "cutFrame": 180,
+          "peakSeconds": 6.27,
+          "kind": "perspective-flow"
+        },
+        {
+          "cutFrame": 240,
+          "peakSeconds": 8.27,
+          "kind": "perspective-flow"
+        },
+        {
+          "cutFrame": 300,
+          "peakSeconds": 10.27,
+          "kind": "perspective-flow"
+        },
+        {
+          "cutFrame": 360,
+          "peakSeconds": 12.27,
+          "kind": "perspective-flow"
+        }
+      ]
+    }
+  },
+  {
+    "id": "prism-pulse",
+    "name": "02 · 棱镜脉冲",
+    "description": "八个素材位，分片错位、色差、闪切与动态文字卡组成快节奏混剪。",
+    "sourceUrl": "https://buymeacoffee.com/lazyartist89/e/582242",
+    "referenceName": "Lazy Pack · 分片折射方向；文字节奏参考 Energy Sport Opener",
+    "cuts": [
+      0,
+      45,
+      90,
+      150,
+      210,
+      270,
+      330,
+      390
+    ],
+    "transitionFrames": 15,
+    "defaults": {
+      "title": "让热爱发生",
+      "subtitle": "现在，就是最好的时刻",
+      "brand": "LIVE THE MOMENT",
+      "accent": "#DDF14E",
+      "beat1": "蓄势",
+      "beat2": "突破",
+      "beat3": "全力以赴"
+    },
+    "cards": [
+      {
+        "key": "title",
+        "start": 0.1,
+        "end": 1.4,
+        "layout": "overlay"
+      },
+      {
+        "key": "beat1",
+        "start": 3.8,
+        "end": 4.8,
+        "layout": "full"
+      },
+      {
+        "key": "beat2",
+        "start": 8.05,
+        "end": 8.9,
+        "layout": "full"
+      },
+      {
+        "key": "beat3",
+        "start": 13.55,
+        "end": 15,
+        "layout": "center"
+      }
+    ],
+    "soundtrack": {
+      "title": "Voltaic",
+      "author": "Kevin MacLeod",
+      "sourceUrl": "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1600056",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "musicFile": "prism-pulse-music.wav",
+      "sfxFile": "prism-pulse-sfx.wav",
+      "bpm": 120,
+      "sourceBpm": 120.0,
+      "sourceInPoint": 31.815,
+      "speed": 1.0,
+      "cues": [
+        {
+          "cutFrame": 45,
+          "peakSeconds": 1.725,
+          "kind": "prism-pulse"
+        },
+        {
+          "cutFrame": 90,
+          "peakSeconds": 3.225,
+          "kind": "prism-pulse"
+        },
+        {
+          "cutFrame": 150,
+          "peakSeconds": 5.225,
+          "kind": "prism-pulse"
+        },
+        {
+          "cutFrame": 210,
+          "peakSeconds": 7.225,
+          "kind": "prism-pulse"
+        },
+        {
+          "cutFrame": 270,
+          "peakSeconds": 9.225,
+          "kind": "prism-pulse"
+        },
+        {
+          "cutFrame": 330,
+          "peakSeconds": 11.225,
+          "kind": "prism-pulse"
+        },
+        {
+          "cutFrame": 390,
+          "peakSeconds": 13.225,
+          "kind": "prism-pulse"
+        }
+      ]
+    }
+  },
+  {
+    "id": "film-strip",
+    "name": "03 · 胶片分格",
+    "description": "六个素材位，胶片卷动、漏光与短暂三联画，文字和镜头交替。",
+    "sourceUrl": "https://motionarray.com/premiere-pro-templates/film-cinematic-opener-3467667/",
+    "referenceName": "Film Cinematic Opener · 胶片与分格方向",
+    "cuts": [
+      0,
+      72,
+      144,
+      216,
+      288,
+      360
+    ],
+    "transitionFrames": 21,
+    "defaults": {
+      "title": "把此刻留下",
+      "subtitle": "那些值得重温的片段",
+      "brand": "A MOMENT TO KEEP",
+      "accent": "#E7C27E",
+      "beat1": "光影之间",
+      "beat2": "故事发生",
+      "beat3": "每一刻，都算数"
+    },
+    "cards": [
+      {
+        "key": "title",
+        "start": 0.2,
+        "end": 2.1,
+        "layout": "overlay"
+      },
+      {
+        "key": "beat1",
+        "start": 5.65,
+        "end": 6.85,
+        "layout": "full"
+      },
+      {
+        "key": "beat2",
+        "start": 10.25,
+        "end": 11.6,
+        "layout": "band"
+      },
+      {
+        "key": "beat3",
+        "start": 12.9,
+        "end": 15,
+        "layout": "center"
+      }
+    ],
+    "soundtrack": {
+      "title": "Chill Wave",
+      "author": "Kevin MacLeod",
+      "sourceUrl": "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1600048",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "musicFile": "film-strip-music.wav",
+      "sfxFile": "film-strip-sfx.wav",
+      "bpm": 100,
+      "sourceBpm": 100.0,
+      "sourceInPoint": 24.285,
+      "speed": 1.0,
+      "cues": [
+        {
+          "cutFrame": 72,
+          "peakSeconds": 2.715,
+          "kind": "film-strip"
+        },
+        {
+          "cutFrame": 144,
+          "peakSeconds": 5.115,
+          "kind": "film-strip"
+        },
+        {
+          "cutFrame": 216,
+          "peakSeconds": 7.515,
+          "kind": "film-strip"
+        },
+        {
+          "cutFrame": 288,
+          "peakSeconds": 9.915,
+          "kind": "film-strip"
+        },
+        {
+          "cutFrame": 360,
+          "peakSeconds": 12.315,
+          "kind": "film-strip"
+        }
+      ]
+    }
+  },
+  {
+    "id": "focus-story",
+    "name": "04 · 光影虚实",
+    "description": "五个素材位，缓慢推近、虚实交接、光晕与克制的标题，适合氛围和故事。",
+    "sourceUrl": "https://videohive.net/item/the-slideshow/60982546",
+    "referenceName": "The Slideshow · 对焦与电影氛围方向",
+    "cuts": [
+      0,
+      90,
+      180,
+      270,
+      360
+    ],
+    "transitionFrames": 27,
+    "defaults": {
+      "title": "让时间慢下来",
+      "subtitle": "看见细节，也看见生活",
+      "brand": "STORIES IN LIGHT",
+      "accent": "#C7D9CB",
+      "beat1": "靠近一点",
+      "beat2": "感受此刻",
+      "beat3": "美好，正在发生"
+    },
+    "cards": [
+      {
+        "key": "title",
+        "start": 0.35,
+        "end": 2.7,
+        "layout": "overlay"
+      },
+      {
+        "key": "beat1",
+        "start": 4.05,
+        "end": 5.7,
+        "layout": "band"
+      },
+      {
+        "key": "beat2",
+        "start": 9.95,
+        "end": 11.6,
+        "layout": "overlay"
+      },
+      {
+        "key": "beat3",
+        "start": 13.05,
+        "end": 15,
+        "layout": "center"
+      }
+    ],
+    "soundtrack": {
+      "title": "Dream Culture",
+      "author": "Kevin MacLeod",
+      "sourceUrl": "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1300046",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "musicFile": "focus-story-music.wav",
+      "sfxFile": "focus-story-sfx.wav",
+      "bpm": 80,
+      "sourceBpm": 70.0,
+      "sourceInPoint": 23.567143,
+      "speed": 1.142857143,
+      "cues": [
+        {
+          "cutFrame": 90,
+          "peakSeconds": 3.405,
+          "kind": "focus-story"
+        },
+        {
+          "cutFrame": 180,
+          "peakSeconds": 6.405,
+          "kind": "focus-story"
+        },
+        {
+          "cutFrame": 270,
+          "peakSeconds": 9.405,
+          "kind": "focus-story"
+        },
+        {
+          "cutFrame": 360,
+          "peakSeconds": 12.405,
+          "kind": "focus-story"
+        }
+      ]
+    }
+  },
+  {
+    "id": "split-journey",
+    "name": "05 · 分屏漫游",
+    "description": "七个素材位，三列错峰滑入、画面拼接与实心／描边文字，适合旅行和活动。",
+    "sourceUrl": "https://mixkit.co/free-after-effects-templates/holiday-travel-opener-839/",
+    "referenceName": "Holiday Travel Opener · 分屏遮罩方向",
+    "cuts": [
+      0,
+      60,
+      120,
+      180,
+      240,
+      300,
+      360
+    ],
+    "transitionFrames": 21,
+    "defaults": {
+      "title": "一起，去看看",
+      "subtitle": "把沿途的精彩，连成故事",
+      "brand": "LET’S GO TOGETHER",
+      "accent": "#F0CD57",
+      "beat1": "遇见新风景",
+      "beat2": "分享好时光",
+      "beat3": "下一站，有你"
+    },
+    "cards": [
+      {
+        "key": "title",
+        "start": 0.15,
+        "end": 1.85,
+        "layout": "overlay"
+      },
+      {
+        "key": "beat1",
+        "start": 4.9,
+        "end": 5.9,
+        "layout": "full"
+      },
+      {
+        "key": "beat2",
+        "start": 8.9,
+        "end": 9.95,
+        "layout": "band"
+      },
+      {
+        "key": "beat3",
+        "start": 12.85,
+        "end": 15,
+        "layout": "center"
+      }
+    ],
+    "soundtrack": {
+      "title": "Nowhere Land",
+      "author": "Kevin MacLeod",
+      "sourceUrl": "https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1600051",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "musicFile": "split-journey-music.wav",
+      "sfxFile": "split-journey-sfx.wav",
+      "bpm": 120,
+      "sourceBpm": 120.0,
+      "sourceInPoint": 15.705,
+      "speed": 1.0,
+      "cues": [
+        {
+          "cutFrame": 60,
+          "peakSeconds": 2.315,
+          "kind": "split-journey"
+        },
+        {
+          "cutFrame": 120,
+          "peakSeconds": 4.315,
+          "kind": "split-journey"
+        },
+        {
+          "cutFrame": 180,
+          "peakSeconds": 6.315,
+          "kind": "split-journey"
+        },
+        {
+          "cutFrame": 240,
+          "peakSeconds": 8.315,
+          "kind": "split-journey"
+        },
+        {
+          "cutFrame": 300,
+          "peakSeconds": 10.315,
+          "kind": "split-journey"
+        },
+        {
+          "cutFrame": 360,
+          "peakSeconds": 12.315,
+          "kind": "split-journey"
+        }
+      ]
+    }
+  }
+]
