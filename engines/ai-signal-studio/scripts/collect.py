@@ -25,11 +25,11 @@ def save(path, data):
     temp.replace(path)
 
 def fetch(url, accept=None):
-    for attempt in range(3):
+    for attempt in range(4):
         try:return read_public(url,accept=accept or 'application/json,text/html;q=0.9,*/*;q=0.8')[0]
         except (ValueError,OSError) as error:
-            retryable=any(word in str(error) for word in ('连接失败','超时','HTTP 429','HTTP 502','HTTP 503','HTTP 504'))
-            if not retryable or attempt==2:
+            retryable=any(word in str(error) for word in ('连接失败','连接中断','超时','HTTP 429','HTTP 502','HTTP 503','HTTP 504'))
+            if not retryable or attempt==3:
                 raise ValueError('公开资料获取失败：'+str(error)+'；请检查网络或稍后重试。') from None
             time.sleep(attempt+1)
 
@@ -80,6 +80,12 @@ def collect(settings=None):
     states, candidates, discussions = [], [], []
     def legacy(key,name,url):
         raw=fetch(url)
+        if key!='github':
+            # 部分代理会在不带长度的分块响应中提前结束，JSON 不完整时重新获取
+            for attempt in range(2):
+                try:json.loads(raw);break
+                except json.JSONDecodeError:
+                    time.sleep(attempt+1);raw=fetch(url)
         (batch/(key+'.txt')).write_text(raw,encoding='utf-8')
         if key=='github':
             return [{**row,'source_key':key,'content_type':'repository','discovery':'GitHub 周榜',

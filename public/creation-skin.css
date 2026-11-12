@@ -277,3 +277,7 @@ html[data-theme] .ai-tune .ai-actions{display:flex;gap:8px;align-items:center}
 html[data-theme] .ai-tune #ai-tune-run{min-width:120px}
 html[data-theme] .caption-chip{min-width:13%}
 @media(min-width:1101px){html[data-theme] .workspace{grid-template-columns:250px minmax(320px,1fr) 264px!important}}
+html[data-theme] .job{position:relative;padding-right:44px!important}
+html[data-theme] .job-dismiss{position:absolute;top:8px;right:10px;width:26px;height:26px;border:0;border-radius:50%;background:transparent;color:var(--tk-warn-text);font-size:17px;line-height:1;cursor:pointer}
+html[data-theme] .job-dismiss:hover{background:var(--tk-warn-line)}
+html[data-theme] .job.running .job-dismiss{display:none}

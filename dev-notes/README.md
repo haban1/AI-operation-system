@@ -1,5 +1,7 @@
 # 开发交接入口
 
+2026-11-12 热点来源采集中断自动重试（GitHub / Hacker News 恢复）与热点成片库并入“成片与素材”见 [本轮记录](changes/20261112-hot-topic-sources-library-flow.md)；重启 3101 后需重新填写热点文稿 Token。
+
 2026-11-12 智能混剪文案时间轴（人工改 / AI 单句改写）、AI 调整合一面板与模板预览播放见 [本轮记录](changes/20261112-montage-captions-ai-tune.md)；本机只保留 3101。
 
 2026-11-12 内容创作三层页面外观对齐主系统、混剪标题栏合并与热点生成按钮重排见 [本轮记录](changes/20261112-creation-ui-alignment.md)；只改前端外观与 DOM 位置，ID 与接口不变。

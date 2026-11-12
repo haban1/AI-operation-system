@@ -1,4 +1,5 @@
 """Bounded public HTTP reads with redirect checks and local proxy support."""
+import http.client
 import ipaddress
 import socket
 import urllib.error
@@ -77,8 +78,13 @@ def read_public(url, accept=None):
                 raise ValueError('该链接不是可读取的网页或文本，请提供网页版本')
             raw=response.read(MAX_BYTES+1)
             if len(raw)>MAX_BYTES:raise ValueError('网页过大，已跳过')
+            expected=response.headers.get('Content-Length')
+            # 代理或网络中途断开时可能只返回部分内容；按长度核对，交给调用方重试
+            if expected and expected.isdigit() and len(raw)<int(expected):raise ValueError('网页连接中断，内容不完整')
             return raw.decode(response.headers.get_content_charset() or 'utf-8',errors='replace'),final,mime
     except urllib.error.HTTPError as error:
         raise ValueError(f'网页返回 HTTP {error.code}') from None
+    except http.client.HTTPException:
+        raise ValueError('网页连接中断，内容不完整') from None
     except (urllib.error.URLError,TimeoutError,OSError):
         raise ValueError('网页连接失败或超时') from None

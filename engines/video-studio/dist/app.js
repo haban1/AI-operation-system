@@ -197,6 +197,8 @@
     let hash = location.hash.replace(/^#\/?/, '');
     if (pickerMode) hash = 'materials';
     if (!hash) hash = 'overview';
+    // 热点成片统一在“成片与素材”里查看（筛选为自动热点），不再进入单独的热点成片页
+    if (hash === 'automatic/library' && !pickerMode) { $('outputSourceFilter').value = 'automatic'; history.replaceState(null, '', '#materials'); hash = 'materials'; }
     const previousPresentation = state.presentation;
     const presentation = hash === 'overview' ? 'overview' : hash === 'settings' ? 'settings' : hash === 'creation' ? 'creation' : hash === 'editing' ? 'editing' : hash.startsWith('automatic') ? 'automatic' : hash === 'materials' ? 'materials' : 'editing';
     state.presentation = presentation;
@@ -298,7 +300,9 @@
       const confirm = approved ? (v.materialId ? `<button class="text-button publish-output" data-publish-video="${esc(v.id)}">${icon('send')}去发布</button>` : '<span class="muted">发布确认记录待核对</span>') : `<button class="text-button confirm-output" data-confirm-output="${esc(v.id)}"${state.confirmingOutputs ? ' disabled' : ''}>${icon('check')}确认可发布</button>`;
       return `<article class="video-card${!pickerMode && !approved ? ' has-selection' : ''}${state.selectedOutputs.has(v.id) ? ' selected-output' : ''}">${!pickerMode && !approved ? `<label class="output-select" title="选择${esc(v.title)}"><input type="checkbox" data-select-output="${esc(v.id)}" aria-label="选择${esc(v.title)}"${state.selectedOutputs.has(v.id) ? ' checked' : ''}${state.confirmingOutputs ? ' disabled' : ''}></label>` : ''}<button class="video-cover" data-play-video="${esc(v.id)}" aria-label="预览${esc(v.title)}">${preview}<span class="style-chip">${esc(v.styleLabel || v.style || (v.source === 'automatic' ? '自动热点' : '混剪'))}</span><span class="play-button"><span>${icon(v.mediaType === 'image' ? 'expand' : 'play')}</span></span>${v.durationSeconds || v.duration ? `<span class="duration-chip">${seconds(v.durationSeconds || v.duration)}</span>` : ''}</button><div class="video-info"><div class="video-title-row"><h3>${esc(v.title)}</h3>${pickerMode ? '' : `<span class="output-status ${approved ? 'approved' : 'pending'}">${approved ? '可发布' : '待确认'}</span>`}</div><div class="video-subtitle"><span class="video-meta">${icon('layers-2')}${esc(v.width && v.height ? `${v.width} × ${v.height}` : v.mediaType === 'image' ? '图片素材' : '视频成片')}</span><span>${esc(v.createdLabel || (v.bundled || hasWorkflow ? '工作流样片' : v.source === 'automatic' ? '自动热点' : '制作导出'))}</span></div>${v.syncError ? `<p class="output-card-error" role="alert">${esc(v.syncError)}</p>` : ''}${state.confirmErrors.has(v.id) ? `<p class="output-card-error" role="alert">${esc(state.confirmErrors.get(v.id))}</p>` : ''}</div><div class="video-card-footer">${pickerMode ? `<button class="text-button" data-publish-video="${esc(v.id)}"${state.confirmingOutputs ? ' disabled' : ''}>${icon('check')}${approved ? '选择用于发布' : '确认并用于发布'}</button>` : workflow}<div class="video-footer-actions">${pickerMode ? '' : confirm}<a class="icon-button" href="${esc(mediaUrl)}" download title="下载${esc(v.title)}" aria-label="下载${esc(v.title)}">${icon('download')}</a></div></div></article>`;
     }).join('');
-    $('videoGrid').innerHTML = videos.length ? videoCards(videos) : empty('search', query || $('outputStatusFilter').value || $('outputSourceFilter').value ? '没有找到匹配的成片' : '暂无成片', pickerMode ? '先在内容生成工作台完成导出，再刷新素材库。' : '完成视频导出后会自动同步到素材库。');
+    const hotEmpty = !videos.length && !pickerMode && state.method === 'materials' && $('outputSourceFilter').value === 'automatic' && !query && !$('outputStatusFilter').value;
+    if (hotEmpty) $('videoGrid').innerHTML = `<div class="empty-state">${icon('radio')}<strong>还没有热点成片</strong><p>在“AI 热点自动生成”里选题并生成，完成后会自动出现在这里，确认后即可发布。</p><a class="button primary" href="#automatic/create">${icon('arrow-left')}去生成热点</a></div>`;
+    else $('videoGrid').innerHTML = videos.length ? videoCards(videos) : empty('search', query || $('outputStatusFilter').value || $('outputSourceFilter').value ? '没有找到匹配的成片' : '暂无成片', pickerMode ? '先在内容生成工作台完成导出，再刷新素材库。' : '完成视频导出后会自动同步到素材库。');
     $('recentOutputs').innerHTML = state.videos.length ? videoCards(state.videos.slice(0, 3)) : empty('film', '暂无成片', '完成创作后，视频会显示在这里。');
     $('recentOutputs').querySelectorAll('.output-select').forEach((el) => el.remove());
     $('recentOutputs').querySelectorAll('.video-card').forEach((el) => el.classList.remove('has-selection', 'selected-output'));
@@ -609,7 +613,7 @@
       return;
     }
     if (pickerMode || event.origin !== location.origin || event.source !== $('automaticFrame').contentWindow) return;
-    if (event.data?.type === 'content-workbench:open-library' && event.data.source === 'automatic') { location.hash = 'automatic/library'; await loadOutputs(); return; }
+    if (event.data?.type === 'content-workbench:open-library' && event.data.source === 'automatic') { $('outputSourceFilter').value = 'automatic'; location.hash = 'materials'; await loadOutputs(); return; }
     if (event.data?.type === 'content-workbench:view-changed' && event.source === $('automaticFrame').contentWindow) {
       if ($('automaticWorkspace').hidden) return;
       const view = event.data.view === 'settings' ? 'settings' : 'automatic';
@@ -626,6 +630,7 @@
     if (['content-library:publish', 'content-workbench:unauthorized'].includes(event.data?.type)) window.parent.postMessage(event.data, location.origin);
     if (event.data?.type === 'content-workbench:open-library') location.hash = 'materials';
   });
+  document.querySelector('.content-library-link')?.addEventListener('click', () => { $('outputSourceFilter').value = ''; });
   window.addEventListener('hashchange', route);
   $('videoGrid').innerHTML = Array.from({length:6}, () => '<div class="skeleton-card" aria-hidden="true"></div>').join('');
   renderMessages(); renderTools(); renderCollections(); route(); renderIcons();
