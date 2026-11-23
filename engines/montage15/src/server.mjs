@@ -14,6 +14,7 @@ import { assertRevision, revisionSummary, validateAssetNotes } from './editor-st
 import { CodexPlanner } from './codex-planner.mjs';
 import { AiEditing, publicAiRun } from './ai-editing.mjs';
 import { SourceFolders } from './source-folders.mjs';
+import { BrowserFolders, folderLimits } from './browser-folders.mjs';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'none'";
@@ -59,6 +60,7 @@ export async function createWorkbench({ dataDir = process.env.VIDEO_WORKBENCH_DA
   await store.init();
   const registry = new TemplateRegistry(store, templates.filter(template => !catalogIds || catalogIds.includes(template.id)), templateIds);
   const sources = new SourceFolders(store);
+  const browserFolders = new BrowserFolders(store);
   await sources.init();
   const ai = new AiEditing({ store, planner, assetsForProject: project => sources.assets(project), prepareAssets: (project, plan) => sources.materialize(project, plan) });
   await ai.init();
@@ -66,7 +68,7 @@ export async function createWorkbench({ dataDir = process.env.VIDEO_WORKBENCH_DA
   await queue.init();
   const sessionToken = randomBytes(24).toString('hex');
   const capabilities = { engine: 'HyperFrames', engineVersion: '0.9.27', stage: 4, localOnly: true, originalAudio: false,
-    browserAvailable: !!await findBrowser(), ffmpegAvailable: false, ffprobeAvailable: false };
+    browserAvailable: !!await findBrowser(), ffmpegAvailable: false, ffprobeAvailable: false, folderUpload: folderLimits };
   for (const [binary, key] of [[FFMPEG, 'ffmpegAvailable'], [FFPROBE, 'ffprobeAvailable']]) {
     try { await exec(binary, ['-version'], { timeout: 5000 }); capabilities[key] = true; } catch {}
   }
@@ -74,6 +76,7 @@ export async function createWorkbench({ dataDir = process.env.VIDEO_WORKBENCH_DA
     ['/app.js', ['public/app.js', 'text/javascript; charset=utf-8']], ['/styles.css', ['public/styles.css', 'text/css; charset=utf-8']],
     ['/workflow.js', ['public/workflow.js', 'text/javascript; charset=utf-8']], ['/workflow.css', ['public/workflow.css', 'text/css; charset=utf-8']],
     ['/production.js', ['public/production.js', 'text/javascript; charset=utf-8']],
+    ['/folder-upload.js', ['public/folder-upload.js', 'text/javascript; charset=utf-8']],
     ['/captions.js', ['public/captions.js', 'text/javascript; charset=utf-8']], ['/ai-tune.js', ['public/ai-tune.js', 'text/javascript; charset=utf-8']],
     ['/workspace.js', ['public/workspace.js', 'text/javascript; charset=utf-8']], ['/workspace.css', ['public/workspace.css', 'text/css; charset=utf-8']],
     ['/integration-theme.css', ['public/integration-theme.css', 'text/css; charset=utf-8']],
@@ -110,6 +113,13 @@ export async function createWorkbench({ dataDir = process.env.VIDEO_WORKBENCH_DA
       });
       if (read && pathname === '/api/ai/status') return json(res, await planner.status());
       if (read && pathname === '/api/source-folders') return json(res, { sources: await sources.list() });
+      if (req.method === 'POST' && pathname === '/api/source-folders/upload') {
+        return json(res, { source: sources.view(await browserFolders.create(await body(req))) }, 201);
+      }
+      const uploadMatch = /^\/api\/source-folders\/([^/]+)\/files$/.exec(pathname);
+      if (req.method === 'POST' && uploadMatch) {
+        return json(res, { source: sources.view(await browserFolders.receive(matchId(uploadMatch[1]), req)) }, 201);
+      }
       if (req.method === 'POST' && pathname === '/api/assets/relink-folder') {
         const input = await body(req);
         if (Object.keys(input).some(key => key !== 'sourceId')) fail(400, 'INVALID_SOURCE_FOLDER', '请选择新的来源文件夹');
@@ -126,7 +136,7 @@ export async function createWorkbench({ dataDir = process.env.VIDEO_WORKBENCH_DA
         const id = matchId(sourceMatch[1]);
         if (read && !sourceMatch[2]) return json(res, { source: sources.view(await store.get('source-folders', id)) });
         if (read && sourceMatch[2] === '/items') return json(res, { items: (await sources.items(id)).map(item => ({ ...viewAsset(item), thumbnailUrl: resource(`/api/source-folders/${id}/thumbnails/${item.id}`) })) });
-        if (req.method === 'POST' && sourceMatch[2] === '/scan') return json(res, { source: sources.view(await sources.scan(id)) }, 202);
+        if (req.method === 'POST' && sourceMatch[2] === '/scan') return await store.locked(`folder-upload:${id}`, async () => json(res, { source: sources.view(await sources.scan(id)) }, 202));
         if (req.method === 'POST' && sourceMatch[2] === '/import') {
           const input = await body(req);
           if (Object.keys(input).some(key => key !== 'id')) fail(400, 'INVALID_SOURCE_ITEM', '请选择来源文件夹中的素材');

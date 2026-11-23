@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { chromium } from 'playwright-core';
+import { createBackgroundPage } from '../agent/browser-control/collection-pages.js';
 import { collectPlatformAnalytics, parsePlatformAnalyticsCards } from '../agent/platform-analytics.js';
 
 const capturedAt = '2026-11-02T04:00:00.000Z';
@@ -229,12 +230,13 @@ function fixture({ platformCode = 'douyin', initialUrl = manageUrl, snapshots = 
   };
   const context = {
     pages: () => [existingPage],
-    async newPage() { calls.created += 1; return page; },
+    async newPage() { assert.fail('analytics must not create a visible tab'); },
   };
   const adapter = {
     platformCode,
     spec: { manageUrl: initialUrl, checkUrl: initialUrl },
     async ensureContext() { calls.contextRequests += 1; return context; },
+    async createBackgroundPage(target) { assert.equal(target, context); calls.created += 1; return page; },
     async assertRuntimeAllowed() { calls.guard += 1; if (guardImpl) await guardImpl(calls); },
     ...(identity ? { readWechatAccountIdentity: async receivedPage => { assert.equal(receivedPage, page); return identity; } } : {}),
   };
@@ -509,7 +511,7 @@ test('the actual video channels platform root is a trusted account overview with
 test('offline video channels DOM reads inline leaf counts under yesterday data without accepting unrelated work counters', { skip: !chromePath }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath: chromePath });
   t.after(() => browser.close());
-  const context = await browser.newContext();
+  const context = await browser.newContext({ viewport: null });
   const html = `<!doctype html><html><body>
     <header><span class="user-name">隔离测试视频号</span></header>
     <main>
@@ -521,14 +523,16 @@ test('offline video channels DOM reads inline leaf counts under yesterday data w
       <div hidden><span>关注者</span><span>999</span></div>
     </main>
   </body></html>`;
+  const operatorTab = await context.newPage();
   await context.route('**/*', route => route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html }));
   const result = await collectPlatformAnalytics({
     platformCode: 'wechat_channels',
     spec: { manageUrl: 'https://channels.weixin.qq.com/platform' },
     async ensureContext() { return context; },
+    createBackgroundPage,
     async assertRuntimeAllowed() {},
   }, {});
-  assert.equal(result.status, 'SUCCESS');
+  assert.equal(result.status, 'SUCCESS', result.result.message);
   const analytics = result.result.analytics;
   assert.equal(analytics.accountIdentity.name, '隔离测试视频号');
   const byKey = Object.fromEntries(analytics.metrics.map(metric => [metric.key, metric]));
@@ -546,7 +550,8 @@ test('offline video channels DOM reads inline leaf counts under yesterday data w
     assert.equal(chinaDay(byKey[key].periodEnd), yesterday);
     assert.equal(Date.parse(byKey[key].periodEnd) - Date.parse(byKey[key].periodStart), 86400000 - 1);
   }
-  assert.equal(context.pages().length, 0, 'the temporary collection page must be closed');
+  assert.deepEqual(context.pages(), [operatorTab], 'only the operator tab should remain');
+  assert.equal(operatorTab.url(), 'about:blank');
 });
 
 test('snapshot identity requires an explicit verified marker and a reliable source', async () => {
@@ -1112,9 +1117,9 @@ test('unsupported simulated adapters never create an analytics browser page', as
 });
 
 test('a page created after the total deadline is still closed without navigating it', async () => {
-  const { adapter, context, page, calls } = fixture();
+  const { adapter, page, calls } = fixture();
   let releasePage;
-  context.newPage = () => {
+  adapter.createBackgroundPage = () => {
     calls.created += 1;
     return new Promise(resolve => { releasePage = () => resolve(page); });
   };

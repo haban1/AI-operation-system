@@ -2,9 +2,11 @@ import path from 'node:path';
 import { createWorkbench } from '../../engines/montage15/src/server.mjs';
 import { hashFile, serveFile } from '../../engines/montage15/src/media.mjs';
 import { ContentLibraryError } from './content-library.js';
+import { SystemMontagePlanner } from './montage-ai-planner.js';
+import { getAiSettings } from './settings.js';
 
-// Only the user-accepted template is available for new business projects.
-export const acceptedMontageTemplates = ['perspective-flow', 'prism-pulse'];
+// Candidate templates are kept out of the production gallery until accepted.
+export const acceptedMontageTemplates = ['perspective-flow', 'prism-pulse', 'steady-type'];
 const outputPattern = /^montage-([a-f0-9-]{36})$/;
 
 export async function createMontageWorkbench({ stateDir, publicDir, library, publishingLibrary }) {
@@ -31,7 +33,7 @@ export async function createMontageWorkbench({ stateDir, publicDir, library, pub
       throw new ContentLibraryError(409,'CONTENT_FILE_CHANGED','成片文件已改变，请重新导出');
     return {...describe(job),absolutePath:job.outputFile};
   }
-  app=await createWorkbench({dataDir:stateDir,mountPath:'/video-workbench/montage',authenticatedMount:true,templateIds:acceptedMontageTemplates,catalogIds:acceptedMontageTemplates,
+  app=await createWorkbench({dataDir:stateDir,mountPath:'/video-workbench/montage',authenticatedMount:true,templateIds:acceptedMontageTemplates,catalogIds:acceptedMontageTemplates,planner:new SystemMontagePlanner({settings:getAiSettings}),
     assetLibrary:{
       async list(){const snapshot=await library.list();return [...snapshot.items,...snapshot.pendingItems]
         .filter(item=>['image','video'].includes(item.mediaType) && item.sizeBytes<=512*1024**2)

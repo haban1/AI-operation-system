@@ -13,7 +13,7 @@
     dirty: false, saving: false, creating: false, rendering: false, importing: false,
     playing: false, frame: 0, tab: 'templates', job: null, pollTimer: null, pollEpoch: 0, toastTimer: null,
   };
-  const workflow = new window.MontageWorkflow({ state, api, saveProject, setProject, markDirty, renderAssets, toast, showError, resource, updateStatus });
+  const workflow = new window.MontageWorkflow({ state, api, saveProject, setProject, markDirty, renderAssets, toast, showError, resource, updateStatus, displayText });
   const production = new window.MontageProduction({ state, api, resource, saveProject, setProject, markDirty, workflow, toast, showError, renderProject, refreshEditor: renderInspector, seek: frame => { sendPreview('pause'); sendPreview('seek', { frame }); } });
   const workspace = new window.MontageWorkspace({ state, api, production, workflow, resource, saveProject, openProject, openNewProjectDialog, markDirty, refreshEditor: renderInspector, toast, action: callback => production.action(callback) });
   production.onWorkspace = () => workspace.render();
@@ -46,14 +46,17 @@
     return result;
   }
 
+  function displayText(value) {
+    return String(value ?? '').replace(/视频工程|工程/g, '视频');
+  }
   function showError(error) {
-    $('global-error-text').textContent = error?.message || String(error);
+    $('global-error-text').textContent = displayText(error?.message || String(error));
     $('global-error').hidden = false;
   }
   const run = (fn) => async (event) => { try { await fn(event); } catch (error) { showError(error); } };
   function toast(message) {
     clearTimeout(state.toastTimer);
-    $('toast').textContent = message;
+    $('toast').textContent = displayText(message);
     $('toast').hidden = false;
     state.toastTimer = setTimeout(() => { $('toast').hidden = true; }, 3000);
   }
@@ -68,10 +71,10 @@
 
   function validation() {
     const template = currentTemplate();
-    if (!state.project || !template) return { missing: 0, problems: ['请先创建工程。'] };
+    if (!state.project || !template) return { missing: 0, problems: ['请先创建视频。'] };
     let missing = 0;
     const problems = [];
-    if (!state.project.name.trim()) problems.push('请填写工程名称');
+    if (!state.project.name.trim()) problems.push('请填写视频名称');
     if (!state.project.fields.title.trim()) problems.push('请填写主标题');
     for (const def of template.slots) {
       const slot = state.project.slots.find((s) => s.id === def.id);
@@ -98,14 +101,11 @@
     const project = state.project;
     const cards = !!(template?.supportsColorCards && project?.settings?.colorCards);
     $('format-label').textContent = `${(project?.width || template?.width) > (project?.height || template?.height) ? '横屏 16:9' : '竖屏 9:16'} · 15 秒`;
-    $('save-status').textContent = state.saving ? '正在保存…' : project ? state.dirty ? '有未保存修改' : '已保存到本机' : '模板预览';
+    $('save-status').textContent = state.saving ? '正在自动保存…' : project ? state.dirty ? (saveError ? '自动保存失败' : '等待自动保存…') : '已自动保存' : '模板预览';
     $('save-status').classList.toggle('is-dirty', state.dirty);
-    $('save-button').disabled = !project || state.saving || state.rendering || state.workflowBusy;
-    $('save-bottom-button').disabled = state.saving || state.rendering || state.workflowBusy;
-    $('save-bottom-button').textContent = state.saving ? '正在保存…' : '保存并更新预览';
     $('render-button').disabled = !project || state.saving || state.rendering || state.workflowBusy || problems.length > 0;
-    $('render-button').innerHTML = state.rendering ? '<span aria-hidden="true">◌</span> 正在导出' : '<span aria-hidden="true">↗</span> 导出视频';
-    $('render-button').title = problems.length ? problems.join('；') : '保存当前工程并导出 MP4';
+    $('render-button').textContent = state.rendering ? '正在生成成片…' : '放入成片库';
+    $('render-button').title = problems.length ? problems.join('；') : '生成 MP4 并放入成片库';
     $('edit-state').textContent = state.dirty ? '尚未保存' : '已保存';
     $('slot-readiness').textContent = template && project ? `${template.slots.length - missing} / ${template.slots.length} 已就绪` : '';
     $('validation-summary').textContent = problems.length ? `${problems.join('；')}。` : cards && missing ? `${missing} 个空槽位使用色卡，可直接预览和导出。` : '素材已就绪，可以保存并导出视频。';
@@ -116,13 +116,25 @@
     badge.className = `badge ${!project ? 'badge-neutral' : problems.length ? 'badge-warning' : 'badge-ready'}`;
     badge.textContent = !project ? '色卡模板预览' : missing && cards ? '色卡演示' : missing ? `待补齐 ${missing} 个素材` : problems.length ? '需要调整' : '素材已就绪';
     const notice = $('preview-notice').lastElementChild;
-    notice.textContent = !project ? '色卡代表素材位置。创建工程后，可以替换视频、图片和文字。' : state.dirty ? '有未保存修改。点击“保存并更新预览”后查看最新效果。' : missing && cards ? '空槽位使用色卡。选择素材即可替换，转场与时间结构保持不变。' : missing ? '请为每个画面位置选择素材，再进行导出。' : problems.length ? '请先处理右侧提示的问题，再进行导出。' : '正在预览已保存的工程。建议播放检查镜头、文字和音乐后再导出。';
+    notice.textContent = !project ? '色卡代表素材位置。创建视频后，可以替换视频、图片和文字。' : state.dirty ? '预览将在保存后更新。' : missing && cards ? '空槽位使用色卡。' : missing ? '请为每个画面位置选择素材。' : problems.length ? '请先处理右侧提示的问题。' : '正在预览已保存的视频。';
     $('saved-preview-note').textContent = project ? `预览修订 ${project.revision}${state.dirty ? ' · 等待保存更新' : ''}` : '预览可播放、暂停及逐帧定位';
   }
 
+  let autoTimer, saveError = false, pendingSave;
+  function scheduleSave() {
+    clearTimeout(autoTimer);
+    const id = state.project?.id;
+    autoTimer = setTimeout(async () => {
+      if (!id || state.project?.id !== id || !state.dirty) return;
+      if (state.saving || state.workflowBusy) return scheduleSave();
+      try { await saveProject({quiet:true}); } catch (error) { saveError=true; updateStatus(); showError(error); }
+    }, 800);
+  }
   function markDirty() {
     if (!state.project) return;
     state.dirty = true;
+    saveError = false;
+    scheduleSave();
     if (state.job && !['queued','rendering'].includes(state.job.status)) $('render-panel').hidden = true;
     production.changed();
     updateStatus();
@@ -168,7 +180,7 @@
     $('use-template-button').disabled = !state.templates.some(item => item.id === template?.id);
     $('editor-form').hidden = !state.project;
     if (!state.project) {
-      $('template-detail').innerHTML = template ? `<strong>${escape(template.name)}</strong><p>${escape(template.description)}</p><div class="detail-meta"><span>${template.slots.length} 个画面位置</span><span>15 秒</span><span>可换视频 / 图片</span></div><p style="margin-top:15px">创建工程后，为各个画面位置选择素材，再预览与导出。</p>` : '<p>选择左侧模板，查看样式与素材需求。</p>';
+      $('template-detail').innerHTML = template ? `<strong>${escape(template.name)}</strong><p>${escape(template.description)}</p><div class="detail-meta"><span>${template.slots.length} 个画面位置</span><span>15 秒</span><span>可换视频 / 图片</span></div><p style="margin-top:15px">创建视频后，为各个画面位置选择素材，再预览与导出。</p>` : '<p>选择左侧模板，查看样式与素材需求。</p>';
       updateStatus();
       return;
     }
@@ -179,7 +191,14 @@
     $('accent-value').textContent = $('field-accent').value;
     $('montage-controls').hidden = !template.supportsColorCards;
     if (template.supportsColorCards) {
-      ['beat1','beat2','beat3'].forEach(key => { $(`field-${key}`).value = p.fields[key] || ''; });
+      const beatKeys = workflow.fieldKeys().filter(key => key.startsWith('beat'));
+      $('extra-beat-fields').hidden = !beatKeys.some(key => ['beat4','beat5'].includes(key));
+      for (const key of ['beat1','beat2','beat3','beat4','beat5']) {
+        const input = $('field-'+key), label = input.labels[0];
+        input.hidden = label.hidden = !beatKeys.includes(key);
+        input.value = p.fields[key] || '';
+        label.textContent = workflow.fieldLabel(key,key === 'beat3' || key === 'beat5' ? '收尾短句' : '穿插短句 '+key.slice(4));
+      }
       ['titles','brand','colorCards'].forEach(key => { $(`setting-${key}`).checked = p.settings[key]; });
       $('setting-intensity').value = p.settings.intensity;
       $('intensity-value').textContent = `${Math.round(p.settings.intensity * 100)}%`;
@@ -270,9 +289,10 @@
     const stage = document.querySelector('.preview-stage');
     const t = state.project || currentTemplate();
     const ratio = t ? t.width / t.height : 16 / 9;
-    const cap = ratio > 1 ? 1100 : 330;
+    const expanded=$('editor-preview').classList.contains('preview-expanded');
+    const cap = expanded ? Infinity : ratio > 1 ? 1100 : 330;
     $('preview-shell').style.aspectRatio = String(ratio);
-    $('preview-shell').style.width = `${Math.min(cap, stage.clientWidth, Math.max(150, (stage.clientHeight - 24) * ratio))}px`;
+    $('preview-shell').style.width = `${Math.min(cap, stage.clientWidth, expanded ? stage.clientHeight*ratio : Math.max(150,(stage.clientHeight-24)*ratio))}px`;
   }
   function resetPlayer() {
     state.frame = 0;
@@ -287,7 +307,7 @@
     resetPlayer();
     $('preview-placeholder').hidden = !!template;
     $('preview-frame').hidden = !template;
-    ['play-button', 'restart-button', 'timeline'].forEach((id) => { $(id).disabled = !template; });
+    ['play-button', 'restart-button', 'timeline', 'preview-fullscreen'].forEach((id) => { $(id).disabled = !template; });
     if (!template) return;
     const p = state.project;
     $('preview-frame').src = resource(p ? `/api/projects/${encodeURIComponent(p.id)}/preview?revision=${p.revision}&v=${Date.now()}` : `/api/templates/${encodeURIComponent(template.id)}/preview`);
@@ -304,7 +324,7 @@
   }
 
   function confirmDiscard() {
-    return !state.dirty || window.confirm('当前修改还没有保存。确定离开这份工程吗？未保存的修改将被丢弃。');
+    return !state.dirty || window.confirm('当前修改还没有保存。确定离开这份视频吗？未保存的修改将被丢弃。');
   }
   async function selectTemplate(id) {
     if (!confirmDiscard()) return;
@@ -343,7 +363,7 @@
       state.projects.unshift(project);
       $('new-project-dialog').close();
       setProject(project);
-      toast('工程已创建，填写要求后即可让 AI 制作');
+      toast('视频已创建，填写要求后即可让 AI 制作');
     } finally {
       state.creating = false;
       $('create-project-submit').disabled = false;
@@ -379,7 +399,12 @@
     setProject(project);
   }
 
-  async function saveProject({ quiet = false } = {}) {
+  function saveProject(options = {}) {
+    if (pendingSave) return pendingSave;
+    pendingSave = writeProject(options).finally(()=>{pendingSave=null;});
+    return pendingSave;
+  }
+  async function writeProject({ quiet = false } = {}) {
     if (!state.project || state.saving) return null;
     state.saving = true;
     updateStatus();
@@ -396,7 +421,9 @@
         p.updatedAt = project.updatedAt;
         state.dirty = true;
       } else {
-        state.project = structuredClone(project);
+        // Existing input handlers retain slot/field references between keystrokes.
+        p.revision = project.revision;
+        p.updatedAt = project.updatedAt;
         state.dirty = false;
       }
       const index = state.projects.findIndex((item) => item.id === project.id);
@@ -404,7 +431,7 @@
       renderProjectSelect();
       refreshPreview();
       if (!changedWhileSaving) production.saved(project);
-      if (!quiet) toast(changedWhileSaving ? '已保存，期间新增的修改仍待保存' : '工程已保存，预览已更新');
+      if (!quiet) toast(changedWhileSaving ? '已保存，期间新增的修改仍待保存' : '视频已保存，预览已更新');
       return project;
     } finally {
       state.saving = false;
@@ -457,13 +484,16 @@
     $('render-percentage').textContent = status === 'succeeded' ? '100%' : ['failed','cancelled'].includes(status) ? '未完成' : `${percentage}%`;
     $('render-progress').style.width = `${status === 'succeeded' ? 100 : percentage}%`;
     $('render-title').textContent = status === 'succeeded' ? `修订 ${job.revision} · 导出完成` : ['failed','cancelled'].includes(status) ? `修订 ${job.revision} · ${status==='cancelled'?'导出已取消':'导出失败'}` : `正在导出修订 ${job.revision}`;
-    $('render-message').textContent = status === 'failed' ? job.error || job.message || '请检查素材与本机渲染服务后重试。' : status === 'succeeded' ? '成片已保存在本机。请下载后检查画面、文字与声音。' : job.message || '正在本机生成视频，完成后可下载成片。';
+    $('render-message').textContent = displayText(status === 'failed' ? job.error || job.message || '请检查素材与本机渲染服务后重试。' : status === 'succeeded' ? '成片已保存在本机。请下载后检查画面、文字与声音。' : job.message || '正在本机生成视频，完成后可下载成片。');
     const download = localUrl(job.downloadUrl);
     $('download-button').hidden = status !== 'succeeded' || !download;
     // 嵌入主系统时：导出完成后可直接“加入成片库”（确认入库后在发布管理中使用）
     const libraryButton = $('receive-library-button');
-    libraryButton.hidden = status !== 'succeeded' || window.parent === window;
-    if (state.libraryJob !== job.id) { state.libraryJob = job.id; libraryButton.disabled = false; libraryButton.textContent = '加入成片库'; }
+    const receipt = sessionStorage.getItem('montage:library:' + job.id);
+    libraryButton.hidden = status !== 'succeeded' || receipt === 'received' || receipt === 'pending';
+    if (state.libraryJob !== job.id) { state.libraryJob = job.id; libraryButton.disabled = false; libraryButton.textContent = '放入成片库'; }
+    if(status === 'succeeded' && receipt === 'received') $('render-message').textContent='已放入成片库';
+    if(status === 'succeeded' && receipt === 'pending') receiveCurrentOutput();
     if (status === 'succeeded' && download) $('download-button').href = download;
     else $('download-button').removeAttribute('href');
     $('render-cancel').hidden = !state.rendering;
@@ -484,7 +514,7 @@
       if (['queued', 'rendering'].includes(job.status || job.state)) state.pollTimer = setTimeout(() => pollJob(id), 1000);
     } catch (error) {
       if (epoch !== state.pollEpoch) return;
-      showError(new Error(`导出状态暂时无法读取：${error.message}。工程已保存，可重开后确认结果。`));
+      showError(new Error(`导出状态暂时无法读取：${error.message}。视频已保存，可重开后确认结果。`));
       state.pollTimer = setTimeout(() => pollJob(id), 4000);
     }
   }
@@ -494,13 +524,14 @@
     const { problems } = validation();
     if (problems.length) throw new Error(problems.join('；'));
     if (state.dirty) await saveProject({ quiet: true });
-    if (state.dirty) throw new Error('保存期间工程又发生了修改，请完成保存后再导出。');
+    if (state.dirty) throw new Error('保存期间视频又发生了修改，请完成保存后再导出。');
     state.rendering = true;
     updateStatus();
     $('download-button').hidden = true;
     $('download-button').removeAttribute('href');
     try {
       const { job } = await api(`/api/projects/${encodeURIComponent(state.project.id)}/render`, { method: 'POST', body: JSON.stringify({ expectedRevision: state.project.revision }) });
+      sessionStorage.setItem('montage:library:' + job.id,'pending');
       displayJob(job);
       state.jobs.push(job);
       pollJob(job.id);
@@ -546,7 +577,7 @@
       $('library-dialog').close();
       toast(`已导入 ${ids.length} 个素材`);
     } catch (error) {
-      $('library-status').textContent = error.message;
+      $('library-status').textContent = displayText(error.message);
       throw error;
     } finally {
       libraryBusy = false;
@@ -562,7 +593,7 @@
     $('system-library-list').replaceChildren();
     $('library-batch-actions').hidden = !!slotId;
     const { items } = await api('/api/library-assets');
-    $('library-status').textContent = items.length ? slotId ? '选择一个素材替换此画面。' : '可一次选择多个素材，加入当前工程的 AI 候选范围。' : '系统素材库中暂无可用素材，可先导入本地文件。';
+    $('library-status').textContent = items.length ? slotId ? '选择一个素材替换此画面。' : '可一次选择多个素材，加入当前视频的 AI 候选范围。' : '系统素材库中暂无可用素材，可先导入本地文件。';
     $('system-library-list').innerHTML = items.map(item => {
       const information = `${escape(typeNames[item.mediaType])} · ${item.width || '—'} × ${item.height || '—'}${item.durationSeconds ? ` · ${secondsLabel(item.durationSeconds)}` : ''}`;
       return slotId
@@ -572,24 +603,39 @@
     $('system-library-list').querySelectorAll('[data-library-id]').forEach(button => button.addEventListener('click', run(() => importLibraryIds([button.dataset.libraryId]))));
   }
   async function receiveCurrentOutput(){
-    if(!state.job || state.job.status!=='succeeded')return;
+    if(!state.job || (state.job.status||state.job.state)!=='succeeded')return;
+    const jobId=state.job.id, key='montage:library:'+jobId;
+    if(receiving.has(jobId))return;
+    receiving.add(jobId);
     const button=$('receive-library-button');button.disabled=true;
-    if(window.parent!==window){
-      // 由外层创作工作台确认这条成片入库，结果通过消息返回
-      const id='montage-'+state.job.id;
+    $('render-message').textContent='成片已生成，正在放入成片库…';
+    try {
+      const id='montage-'+jobId;
       button.textContent='正在加入…';
-      const result=await new Promise(resolve=>{
-        const timer=setTimeout(()=>{window.removeEventListener('message',listen);resolve({ok:false,error:'成片库暂时没有响应，请稍后在成片库确认入库。'});},30000);
-        function listen(event){if(event.origin!==location.origin||event.source!==window.parent||event.data?.type!=='content-workbench:confirm-result'||event.data.id!==id)return;clearTimeout(timer);window.removeEventListener('message',listen);resolve(event.data);}
-        window.addEventListener('message',listen);
-        window.parent.postMessage({type:'content-workbench:confirm-output',id},location.origin);
+      const response=await fetch('/api/studio/outputs/confirm',{
+        method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ids:[id]}), signal:AbortSignal.timeout(120000)
       });
-      if(result.ok){button.textContent='已加入成片库 ✓';toast('已加入成片库，可在“发布管理”中使用');}
-      else{button.disabled=false;button.textContent='加入成片库';toast(result.error||'未能加入成片库');}
-      return;
-    }
-    try{await api(`/api/jobs/${encodeURIComponent(state.job.id)}/library`,{method:'POST',body:'{}'});toast('已加入成片库，等待确认入库');}finally{button.disabled=false;}
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(response.status===401?'请重新登录后重试':data.message||'成片库暂不可用，请稍后重试');
+      const result=data.results?.find(item=>item.id===id);
+      if(result?.ok!==true||result.status!=='approved'||!/^[a-f0-9]{32}$/.test(result.materialId))
+        throw new Error(result?.error||'未收到这条成片的入库确认，请重试');
+      sessionStorage.setItem(key,'received');
+      if(window.parent!==window)window.parent.postMessage({type:'content-workbench:outputs-changed'},location.origin);
+      if(state.job?.id===jobId){
+        button.hidden=true;
+        $('render-message').textContent='已放入成片库';
+        const dialog=$('output-ready-dialog');
+        dialog.dataset.materialId=result.materialId;
+        dialog.showModal();
+      }
+    } catch(error){
+      sessionStorage.setItem(key,'retry');
+      if(state.job?.id===jobId){button.hidden=false;button.disabled=false;button.textContent='重试入库';$('render-message').textContent='成片已生成，入库失败：'+error.message;}
+    } finally {receiving.delete(jobId);}
   }
+  const receiving=new Set();
 
   function bindEvents() {
     $('library-import-button').addEventListener('click',run(()=>openSystemLibrary()));
@@ -597,7 +643,67 @@
     $('library-import-selected').addEventListener('click', run(() => importLibraryIds([...$('system-library-list').querySelectorAll('input:checked')].map(input => input.value))));
     $('close-library-dialog').addEventListener('click',()=>{if(!libraryBusy)$('library-dialog').close();});
     $('receive-library-button').addEventListener('click',run(receiveCurrentOutput));
+    const readyDialog=$('output-ready-dialog');
+    const player=$('output-player'), playerStatus=$('output-player-status');
+    function previewNotice(message){
+      playerStatus.textContent=message;
+      playerStatus.hidden=!message;
+    }
+    $('play-output').addEventListener('click',()=>{
+      const url='/api/content-library/'+readyDialog.dataset.materialId+'/media';
+      if(player.getAttribute('src')!==url||player.error)player.src=url;
+      previewNotice('');
+      player.hidden=false;
+      const stillPreviewing=()=>readyDialog.open && player.getAttribute('src')===url;
+      player.play().catch(error=>{
+        if(stillPreviewing() && error.name!=='AbortError' && !player.error)previewNotice('未能开始播放，请点击播放器内的播放按钮。');
+      });
+      if(player.requestFullscreen && document.fullscreenEnabled){
+        player.requestFullscreen().catch(()=>{if(stillPreviewing()&&!player.error)previewNotice('无法进入全屏，已切换为弹窗播放。');});
+      }else if(player.webkitEnterFullscreen && player.readyState>=1){
+        try{player.webkitEnterFullscreen();}catch{previewNotice('无法进入全屏，已切换为弹窗播放。');}
+      }else previewNotice('当前浏览器不支持全屏，可在弹窗中播放。');
+    });
+    player.addEventListener('error',()=>{
+      if(readyDialog.open && player.hasAttribute('src'))previewNotice('成片暂时无法播放，请重试。');
+    });
+    readyDialog.addEventListener('close',()=>{
+      player.pause();
+      player.removeAttribute('src');
+      player.load();
+      player.hidden=true;
+      previewNotice('');
+    });
+    $('continue-editing').addEventListener('click',()=>readyDialog.close());
+    $('publish-output').addEventListener('click',()=>{
+      const id=readyDialog.dataset.materialId;
+      readyDialog.close();
+      if(window.parent!==window)window.parent.postMessage({type:'content-library:publish',id},location.origin);
+      else location.assign('/?publishMaterial='+encodeURIComponent(id)+'#publishing');
+    });
     const previewStage = document.querySelector('.preview-stage');
+    const panel=$('editor-preview'), expandButton=$('preview-fullscreen');
+    let windowMode=false;
+    function syncPreviewSize(){
+      const expanded=windowMode||document.fullscreenElement===panel;
+      panel.classList.toggle('preview-expanded',expanded);
+      expandButton.title=expanded?'退出全屏':'全屏预览';
+      expandButton.setAttribute('aria-label',expandButton.title);
+      expandButton.setAttribute('aria-pressed',String(expanded));
+      resizePreview();
+    }
+    expandButton.addEventListener('click',async()=>{
+      if(document.fullscreenElement===panel){await document.exitFullscreen();return;}
+      if(!windowMode && document.fullscreenEnabled && panel.requestFullscreen){
+        try{await panel.requestFullscreen();return;}catch{/* Fall back to the editor viewport. */}
+      }
+      windowMode=!windowMode;
+      syncPreviewSize();
+    });
+    document.addEventListener('fullscreenchange',syncPreviewSize);
+    document.addEventListener('keydown',event=>{
+      if(windowMode && event.key==='Escape'){windowMode=false;syncPreviewSize();expandButton.focus();}
+    });
     new ResizeObserver(resizePreview).observe(previewStage);
     window.addEventListener('resize', resizePreview);
     $('templates-tab').addEventListener('click', () => setTab('templates'));
@@ -610,8 +716,6 @@
     $('cancel-dialog').addEventListener('click', () => $('new-project-dialog').close());
     $('new-project-form').addEventListener('submit', run(createProject));
     $('project-select').addEventListener('change', run((event) => openProject(event.target.value)));
-    $('save-button').addEventListener('click', run(() => saveProject()));
-    $('save-bottom-button').addEventListener('click', run(() => saveProject()));
     $('render-button').addEventListener('click', run(renderProject));
     $('editor-form').addEventListener('submit', (event) => event.preventDefault());
     $('project-name').addEventListener('input', () => { if (state.project) { state.project.name = $('project-name').value; markDirty(); } });
@@ -622,7 +726,10 @@
       if (key === 'accent') $('accent-value').textContent = $(`field-${key}`).value;
       markDirty();
     }));
-    ['beat1','beat2','beat3'].forEach(key => $(`field-${key}`).addEventListener('input', () => { if(state.project){state.project.fields[key]=$(`field-${key}`).value;workflow.lock('fields',key);markDirty();} }));
+    ['beat1','beat2','beat3','beat4','beat5'].forEach(key => $('field-'+key).addEventListener('input', () => {
+      if(!workflow.fieldKeys().includes(key))return;
+      state.project.fields[key]=$('field-'+key).value; workflow.lock('fields',key); markDirty();
+    }));
     ['titles','brand','colorCards'].forEach(key => $(`setting-${key}`).addEventListener('change', () => { if(state.project){state.project.settings[key]=$(`setting-${key}`).checked;if(key!=='colorCards')workflow.lock('settings',key);markDirty();} }));
     $('setting-intensity').addEventListener('input',()=>{if(state.project){state.project.settings.intensity=Number($('setting-intensity').value);$('intensity-value').textContent=`${Math.round(state.project.settings.intensity*100)}%`;workflow.lock('settings','intensity');markDirty();}});
     $('audio-select').addEventListener('change', () => {

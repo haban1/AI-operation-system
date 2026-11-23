@@ -270,3 +270,24 @@ def test_prompt_does_not_embed_company_or_benchmark_answers():
     assert '智慧驱动' not in QUERY_REWRITE_SYSTEM_PROMPT
     assert QUERY_REWRITE_PROMPT_VERSION
     assert '不是回答器' in QUERY_REWRITE_SYSTEM_PROMPT
+
+def test_conversation_colloquialisms_preserve_the_question_intent():
+    for question, canonical in [
+        ('示例公开课要钱不', '示例公开课是否收费？'),
+        ('示例公开课要不要钱', '示例公开课是否收费？'),
+        ('示例公开课咋参加', '示例公开课如何报名？'),
+        ('示例公开课怎么参加', '示例公开课如何报名？'),
+    ]:
+        accepted, _, diagnostic = parse({'canonical_question': canonical}, question)
+        assert accepted == canonical, diagnostic
+        assert diagnostic['canonicalAccepted'] is True
+
+
+def test_colloquial_rewrite_does_not_invent_registration_or_drop_negation():
+    for question, canonical in [
+        ('你们公司咋过去', '你们公司如何报名？'),
+        ('示例公开课要钱不', '示例公开课免费报名入口是什么？'),
+        ('不是问公司地址，我问示例公开课在哪举办', '公司地址在哪里？'),
+    ]:
+        accepted, _, diagnostic = parse({'canonical_question': canonical}, question)
+        assert diagnostic['canonicalAccepted'] is False, (accepted, diagnostic)

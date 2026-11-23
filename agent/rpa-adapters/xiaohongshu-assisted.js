@@ -1,7 +1,8 @@
 ﻿import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { chromium } from 'playwright-core';
+import { launchQuietPersistentContext } from '../browser-control/quiet-persistent-context.js';
+import { capturePageEvidence, focusInteractivePage } from '../browser-control/collection-pages.js';
 import { forceStopProfileProcesses, listWindowsProcesses, profileProcessTreeIds } from '../platform-process-cleanup.js';
 import { resolveUploadTimeoutMs } from '../publish-upload-timeout.js';
 import { RpaAdapter } from './base.js';
@@ -191,12 +192,11 @@ export class XiaohongshuAssistedRpaAdapter extends RpaAdapter {
       fs.mkdirSync(this.profileDir, { recursive: true });
       const processSnapshot = await listWindowsProcesses().catch(() => []);
       const preexistingProfileProcessIds = profileProcessTreeIds(processSnapshot, this.profileDir);
-      const context = await chromium.launchPersistentContext(this.profileDir, {
+      const context = await launchQuietPersistentContext(this.profileDir, {
         headless: false,
         executablePath: this.executablePath,
         viewport: null,
-        acceptDownloads: true,
-        args: ['--start-maximized']
+        acceptDownloads: true
       });
       try {
         await this.assertRuntimeAllowed();
@@ -224,6 +224,7 @@ export class XiaohongshuAssistedRpaAdapter extends RpaAdapter {
     const webAccessOwned = this.browserExecution?.providerUsed === 'web_access_cdp';
     this.context = null;
     if ('activePage' in this) this.activePage = null;
+    this.channelPages?.clear();
     if (webAccessOwned && this.browserRuntimeManager) {
       await this.browserRuntimeManager.stopPlatform(this.platformCode).catch(() => {});
       this.profileProcessIds = [];
@@ -241,17 +242,21 @@ export class XiaohongshuAssistedRpaAdapter extends RpaAdapter {
     return { stopped: true, browserClosed: Boolean(context || launching || killedProcessIds.length), killedProcessIds, providerUsed: this.browserExecution?.providerUsed || 'playwright' };
   }
 
-  async getPage() {
-    const context = await this.ensureContext();
-    const pages = context.pages();
-    const page = pages.find(item => item.url().includes('creator.xiaohongshu.com')) || pages[0] || await context.newPage();
-    await page.bringToFront();
-    return page;
+  async getPage({ bringToFront = false, publish = false } = {}) {
+    return this.getWorkspacePage(bringToFront ? 'INTERACTIVE_CREATOR' : publish ? 'PUBLISH' : 'CREATOR',
+      { hostHints: ['creator.xiaohongshu.com'], bringToFront, visible: publish });
   }
 
   async openLogin() {
-    const page = await this.getPage();
+    const page = await this.getPage({ bringToFront: true });
     await page.goto(this.creatorUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    return this.status(page);
+  }
+
+  async openManualAction() {
+    const page = this.openWorkspace('PUBLISH');
+    if (!page) return this.openLogin();
+    await focusInteractivePage(page);
     return this.status(page);
   }
 
@@ -279,14 +284,14 @@ export class XiaohongshuAssistedRpaAdapter extends RpaAdapter {
   }
 
   async openMainSite() {
-    const page = await this.getMainSitePage();
+    const page = await this.getMainSitePage({ bringToFront: true });
     await page.goto('https://www.xiaohongshu.com/notification', { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(1500);
     return this.mainSiteStatus(page);
   }
 
   async debugMain(page = null) {
-    const current = page || await this.getMainSitePage();
+    const current = page || this.openWorkspace('INTERACTIVE_MAIN') || await this.getMainSitePage();
     const status = await this.mainSiteStatus(current);
     const bodyText = await current.locator('body').innerText({ timeout: 5000 }).catch(() => '');
     const dom = await current.evaluate(() => {
@@ -453,8 +458,8 @@ export class XiaohongshuAssistedRpaAdapter extends RpaAdapter {
     return results;
   }
 
-  async debug() {
-    const page = await this.getPage();
+  async debug(page = null) {
+    page ||= this.openWorkspace('INTERACTIVE_CREATOR') || this.openWorkspace('PUBLISH') || await this.getPage();
     const status = await this.status(page);
     const bodyText = await page.locator('body').innerText({ timeout: 5000 }).catch(() => '');
     const inputs = await page.locator('input,textarea,[contenteditable="true"]').evaluateAll(elements => elements.slice(0, 40).map(element => ({
@@ -470,18 +475,18 @@ export class XiaohongshuAssistedRpaAdapter extends RpaAdapter {
     if (!/(^|\.)xiaohongshu\.com$/i.test(parsed.hostname)) throw new Error('Only xiaohongshu.com URLs are allowed');
     await page.goto(parsed.toString(), { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(1800);
-    return this.debug();
+    return this.debug(page);
   }
 
   async inspectSection(targetText) {
-    const page = await this.getPage();
+    const page = this.openWorkspace('INTERACTIVE_CREATOR') || this.openWorkspace('PUBLISH') || await this.getPage();
     const label = String(targetText || '').trim();
     if (!label) throw new Error('targetText 不能为空');
     const locator = page.getByText(label, { exact: true }).first();
     if (!await locator.isVisible().catch(() => false)) throw new Error(`未找到页面入口：${label}`);
     await locator.click();
     await page.waitForTimeout(1800);
-    return this.debug();
+    return this.debug(page);
   }
 
   async runIssueDiagnosis(payload = {}) {
@@ -526,7 +531,7 @@ export class XiaohongshuAssistedRpaAdapter extends RpaAdapter {
         });
         const key = String(item.key || 'page-' + (index + 1)).replace(/[^a-z0-9_-]+/gi, '-').slice(0, 80) || 'page-' + (index + 1);
         const screenshotPath = path.join(screenshotDir, key + '.png');
-        await page.screenshot({ path: screenshotPath, fullPage: false });
+        await capturePageEvidence(page, { path: screenshotPath, fullPage: false });
         captured.push({ key, name: String(item.name || key), url: page.url(), title: await page.title(), keyText: evidence.keyText, controls: evidence.controls, selectorHits, structure: evidence.structure, screenshotPath, capturedAt: new Date().toISOString() });
       }
       return { status: 'SUCCESS', result: { platformCode: this.platformCode, capturedAt: new Date().toISOString(), safeReadOnly: true, mode: 'READ_ONLY', pages: captured } };
@@ -551,7 +556,7 @@ export class XiaohongshuAssistedRpaAdapter extends RpaAdapter {
       return { status: 'FAILED', result: await this.evidence(payload, '本地素材不存在，无法准备小红书草稿', null, 'material_missing', { submitAttempted: false }) };
     }
 
-    const page = await this.getPage();
+    const page = await this.getPage({ publish: true });
     await page.goto(this.creatorUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     const loggedIn = await this.waitForReady(page);
     if (!loggedIn) {
@@ -710,11 +715,9 @@ export class XiaohongshuAssistedRpaAdapter extends RpaAdapter {
     };
   }
 
-  async getMainSitePage() {
-    const context = await this.ensureContext();
-    const page = context.pages().find(item => item.url().includes('www.xiaohongshu.com')) || await context.newPage();
-    await page.bringToFront();
-    return page;
+  async getMainSitePage({ bringToFront = false } = {}) {
+    return this.getWorkspacePage(bringToFront ? 'INTERACTIVE_MAIN' : 'MAIN',
+      { hostHints: ['www.xiaohongshu.com'], bringToFront });
   }
 
   async matchNoteCandidateByThumbnail(page, thumbnailUrl, candidates = []) {
@@ -1226,7 +1229,7 @@ export class XiaohongshuAssistedRpaAdapter extends RpaAdapter {
       await bodyInput.fill(body).catch(async () => { await bodyInput.pressSequentially(body, { delay: 8 }); });
     }
     const readiness = await this.waitForUploadAndPublishReady(page, uploadTimeoutMs);
-    await page.bringToFront();
+    await focusInteractivePage(page);
     return { readiness };
   }
 
@@ -1536,7 +1539,7 @@ export class XiaohongshuAssistedRpaAdapter extends RpaAdapter {
     let screenshotPath = null;
     if (page) {
       screenshotPath = path.join(this.logsDir, `xhs-${stage}-${safeStamp}.png`);
-      await page.screenshot({ path: screenshotPath, fullPage: false }).catch(() => { screenshotPath = null; });
+      await capturePageEvidence(page, { path: screenshotPath, fullPage: false }).catch(() => { screenshotPath = null; });
     }
     const record = {
       stamp,

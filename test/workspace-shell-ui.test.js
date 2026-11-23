@@ -84,7 +84,7 @@ for (const width of [1440, 390]) {
     await assertVisibleLabel(page.locator('[data-settings-config-toggle="ai"] .settings-toggle-copy b'), 'AI 服务配置');
     await page.locator('details.side-status > summary').click();
     assert.equal(await page.locator('details.side-status').getAttribute('open'), '');
-    await assertVisibleLabel(page.locator('#masterSwitch b'), '全局运行');
+    await assertVisibleLabel(page.locator('#masterSwitch b'), '自动任务已开启');
 
     for (const [name, key, ready] of [
       ['aliases', 'aliases', '#aliasRefresh'],

@@ -2,6 +2,7 @@ import http from 'node:http';
 import { discoverAiModels } from './services/ai-model-discovery.js';
 import crypto from 'node:crypto';
 import { buildLocalRagTestRequest } from './services/rag-local-test.js';
+import { knowledgeConversationPreflight, knowledgeAnswerPresentation } from './services/knowledge-conversation.js';
 import { interactionOverview, visibleInteractionMessagesSql } from './services/interaction-overview.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -24,6 +25,7 @@ import { MINI_PROGRAM_PLATFORM_CODE, requestMiniProgramHandoff } from './service
 import { proxyWechatAdmin } from './services/wechat-admin-proxy.js';
 import { createWechatWorkbenchProxy, isWechatWorkbenchPath } from './services/wechat-workbench-proxy.js';
 import { handleModelGateway } from './services/model-gateway.js';
+import { createWechatKnowledgeQuery } from './services/wechat-knowledge.js';
 import { getAiSignalIntegration } from './services/ai-signal-integration.js';
 import { createAiSignalProxy, isAiSignalProxyPath } from './services/ai-signal-proxy.js';
 import { getCreativeWorkbenchStatus } from './services/creative-workbench.js';
@@ -47,7 +49,7 @@ import { randomIntervalMs } from './services/polling.js';
 import { redactAiSecrets, clearAiApiKey, clearWecomWebhookUrl, getAiSettings, getAiSettingsSummary, getMasterSwitch, getMessageCollectionSettings, getPlatformSmartReply, getPlatformSmartReplyMap, getWecomSettingsSummary, saveAiSettings, saveMasterSwitch, saveMessageCollectionSettings, savePlatformSmartReply, saveWecomWebhookUrl } from './services/settings.js';
 import { aiUsageOverview, listAiCallLogs, recordAiCall } from './services/ai-usage.js';
 import { deleteMaterialKnowledgeDraft, getMaterialKnowledgeDraft, listMaterialKnowledgeDrafts, markMaterialKnowledgeDraftFailed, markMaterialKnowledgeDraftImported, markMaterialKnowledgeDraftImporting, saveMaterialKnowledgeDraft, updateMaterialKnowledgeDraft } from './services/material-knowledge-drafts.js';
-import { validatePublishPrecheck } from './services/publish-validation.js';
+import { readMaterialInfo } from './services/material-info.js';
 import { reviewPublishContent } from './services/content-compliance.js';
 import { buildMockAiReview, validateAiReviewApproval } from './services/ai-compliance.js';
 import { buildPublishIdempotencyKey, deriveTaskStatus, hashString } from './services/workflow.js';
@@ -252,23 +254,6 @@ let conversationRecoveryTimer = null;
 let scheduledPublishTimer = null;
 let scheduledPublishTickRunning = false;
 
-function sha256LocalFile(file) {
-  const hash = crypto.createHash('sha256');
-  const fd = fs.openSync(file, 'r');
-  const buffer = Buffer.allocUnsafe(1024 * 1024);
-  try {
-    let bytes;
-    let position = 0;
-    while ((bytes = fs.readSync(fd, buffer, 0, buffer.length, position)) > 0) {
-      hash.update(buffer.subarray(0, bytes));
-      position += bytes;
-    }
-  } finally {
-    fs.closeSync(fd);
-  }
-  return hash.digest('hex');
-}
-
 function send(res, status, data, headers = {}) {
   const responseBody = typeof data === 'string' || Buffer.isBuffer(data) ? data : JSON.stringify(data);
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
@@ -449,7 +434,7 @@ async function refreshLocalAgentPlatformControl() {
 
 const localAgentProxyJsonRoutes = Object.freeze([
   { method: 'POST', pattern: /^\/pick-file$/ },
-  { method: 'POST', pattern: /^\/precheck$/ },
+  { method: 'POST', pattern: /^\/material-info$/ },
   { method: 'POST', pattern: /^\/ai-review$/ },
   { method: 'POST', pattern: /^\/traffic-prediction$/ },
   { method: 'POST', pattern: /^\/ocr$/ },
@@ -1324,18 +1309,15 @@ function preparePublishRequest(data, { complianceMaxAgeMs = config.aiReviewMaxAg
     if (invalidRetryTarget) throw publishRequestError(409, '再次发送只能选择原任务中发送失败的平台账号');
   }
   const normalizedData = { ...data, title, body: bodyText, materialPath, targets, contentOrigin };
-  const precheckValidation = validatePublishPrecheck(normalizedData);
-  if (!precheckValidation.ok) throw publishRequestError(400, precheckValidation.message);
-  let materialSha;
-  try { materialSha = sha256LocalFile(materialPath); }
-  catch { throw publishRequestError(400, '本地素材不存在或不可读取，请重新检测素材'); }
+  let effectiveMaterialMeta;
+  try { effectiveMaterialMeta = { ...data.materialMeta, ...readMaterialInfo(materialPath) }; }
+  catch { throw publishRequestError(400, '本地素材不存在或不可读取，请重新选择素材'); }
+  const materialSha = effectiveMaterialMeta.sha256;
   const libraryMaterial = contentLibrary.assertPublishMaterial(materialPath, materialSha, { contentLibraryItemId: data.contentLibraryItemId });
-  const precheckSha = String(data.precheck?.meta?.sha256 || '').toLowerCase();
-  if (!precheckSha || precheckSha !== materialSha) throw publishRequestError(409, '素材文件已发生变化，请重新检测素材并执行 AI 审核');
   let compliance = data.aiReview;
   if (!compliance && getAiSettingsSummary().mode !== 'online') compliance = buildMockAiReview({
     title, body: bodyText, contentOrigin, materialSha256: materialSha,
-    sourceType: data.precheck?.meta?.type || '', frameCount: data.precheck?.meta?.type === 'video' ? config.ocrVideoFrameCount : 1
+    sourceType: effectiveMaterialMeta.type || '', frameCount: effectiveMaterialMeta.type === 'video' ? config.ocrVideoFrameCount : 1
   });
   const complianceValidation = validateAiReviewApproval(compliance, {
     title, body: bodyText, contentOrigin, materialSha256: materialSha,
@@ -1362,9 +1344,8 @@ function preparePublishRequest(data, { complianceMaxAgeMs = config.aiReviewMaxAg
     if (duplicate) throw publishRequestError(409, `检测到相同账号、素材和文案的发布任务 #${duplicate.id}，为防止重复发布已拒绝创建`, { existingTaskId: duplicate.id, status: duplicate.status }, 'PUBLISH_DUPLICATE');
   }
   const publishMode = data.publishMode === 'AUTO' && data.managementConfirmed === true ? 'AUTO' : 'DRAFT_ONLY';
-  const effectiveMaterialMeta = data.materialMeta || data.precheck.meta || {};
   return {
-    data: { ...normalizedData, aiReview: compliance }, title, bodyText, materialPath, targets, contentOrigin, retryOfTaskId,
+    data: { ...normalizedData, precheck: undefined, aiReview: compliance }, title, bodyText, materialPath, targets, contentOrigin, retryOfTaskId,
     compliance, verified, materialSha, idempotencyKey, publishMode, effectiveMaterialMeta, libraryMaterial
   };
 }
@@ -1373,12 +1354,12 @@ function createPreparedPublishTask(prepared, { idempotencyKey = prepared.idempot
   const stamp = now();
   db.exec('BEGIN IMMEDIATE');
   try {
-    const taskId = Number(run(`INSERT INTO publish_tasks(title,body,material_path,material_meta,retry_of_task_id,status,created_at,updated_at,idempotency_key,compliance_json,compliance_rule_version,confirmed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, prepared.title, prepared.bodyText, prepared.materialPath, JSON.stringify({ meta: prepared.effectiveMaterialMeta, precheck: prepared.data.precheck, publishMode: prepared.publishMode, contentOrigin: prepared.contentOrigin, imageText: prepared.data.imageText || '', retryOfTaskId: prepared.retryOfTaskId }), prepared.retryOfTaskId, 'QUEUED', stamp, stamp, idempotencyKey, JSON.stringify(prepared.compliance), prepared.compliance.ruleVersion, prepared.compliance.overall === 'WARNING' ? stamp : null).lastInsertRowid);
+    const taskId = Number(run(`INSERT INTO publish_tasks(title,body,material_path,material_meta,retry_of_task_id,status,created_at,updated_at,idempotency_key,compliance_json,compliance_rule_version,confirmed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, prepared.title, prepared.bodyText, prepared.materialPath, JSON.stringify({ meta: prepared.effectiveMaterialMeta, publishMode: prepared.publishMode, contentOrigin: prepared.contentOrigin, imageText: prepared.data.imageText || '', retryOfTaskId: prepared.retryOfTaskId }), prepared.retryOfTaskId, 'QUEUED', stamp, stamp, idempotencyKey, JSON.stringify(prepared.compliance), prepared.compliance.ruleVersion, prepared.compliance.overall === 'WARNING' ? stamp : null).lastInsertRowid);
     for (const { target, account } of prepared.verified) {
       const targetId = Number(run(`INSERT INTO publish_targets(task_id,platform_code,account_id,status,submission_status,review_status,publish_attempt_state,submit_lock,updated_at) VALUES(?,?,?,'QUEUED','NOT_SUBMITTED','UNKNOWN','NOT_ATTEMPTED','UNLOCKED',?)`, taskId, target.platformCode, account.id, stamp).lastInsertRowid);
       const draftFingerprint = buildDraftFingerprint({ taskId, targetId, title: prepared.title, materialPath: prepared.materialPath, materialSha256: prepared.materialSha, durationSeconds: prepared.effectiveMaterialMeta.durationSeconds, createdAt: stamp, accountId: account.id, platformCode: target.platformCode });
       run('UPDATE publish_targets SET draft_fingerprint=? WHERE id=?', JSON.stringify(draftFingerprint), targetId);
-      createJob(account.device_id, 'PUBLISH', { taskId, targetId, retryOfTaskId: prepared.retryOfTaskId, platformCode: target.platformCode, accountId: account.id, accountName: account.display_name, profileName: account.profile_name, title: prepared.title, body: prepared.bodyText, materialPath: prepared.materialPath, materialMeta: prepared.effectiveMaterialMeta, materialSha256: prepared.materialSha, draftFingerprint, taskCreatedAt: stamp, precheck: prepared.data.precheck, compliance: prepared.compliance, publishMode: prepared.publishMode, managementConfirmed: prepared.data.managementConfirmed === true, contentOrigin: prepared.contentOrigin }, { idempotencyKey: `publish:target:${targetId}` });
+      createJob(account.device_id, 'PUBLISH', { taskId, targetId, retryOfTaskId: prepared.retryOfTaskId, platformCode: target.platformCode, accountId: account.id, accountName: account.display_name, profileName: account.profile_name, title: prepared.title, body: prepared.bodyText, materialPath: prepared.materialPath, materialMeta: prepared.effectiveMaterialMeta, materialSha256: prepared.materialSha, draftFingerprint, taskCreatedAt: stamp, compliance: prepared.compliance, publishMode: prepared.publishMode, managementConfirmed: prepared.data.managementConfirmed === true, contentOrigin: prepared.contentOrigin }, { idempotencyKey: `publish:target:${targetId}` });
     }
     hotTopicKnowledge.enqueue({ taskId, material: prepared.libraryMaterial });
     if (typeof onCreated === 'function') onCreated({ taskId, stamp });
@@ -3894,6 +3875,7 @@ async function api(req, res, url) {
   if (pathname.startsWith('/api/model/v1/')) return handleModelGateway(req, res, {
     token: config.modelGatewayToken, getSettings: getAiSettings, recordUsage: recordAiCall,
     localEmbeddings: { url: config.ragBaseUrl + '/rag-admin-api/v1/embeddings', token: config.ragToken },
+    knowledgeQuery: wechatKnowledgeQuery,
   });
   if (req.method === 'GET' && pathname === '/api/health') return ok(res, { service: 'cloud-web', time: now(), qwenMode: getAiSettingsSummary().mode });
   if (req.method === 'GET' && pathname === '/api/auth/session') {
@@ -4164,11 +4146,13 @@ async function api(req, res, url) {
     const input = buildLocalRagTestRequest(await body(req), {
       knowledgeBaseId: config.ragKnowledgeBaseId, operatorId: adminSession(req)?.sub || 'admin'
     });
+    const presentation = knowledgeConversationPreflight(input);
+    if (presentation) return ok(res, { response: null, presentation, mode: 'LOCAL_TEST' });
     const response = requireRagAdminResult(await formalRagClient.queryFormalKnowledge(input), '知识库测试失败');
     const snapshot = validateFormalRagResponseSnapshot(input, response);
     if (!snapshot.ok) throw httpError(502, snapshot.code, '测试结果与当前会话不一致，请重新测试');
     if (!['ANSWERED', 'NO_ANSWER'].includes(response.result)) throw httpError(502, 'INVALID_RAG_TEST_RESPONSE', '测试服务返回了无效结果');
-    return ok(res, { response, mode: 'LOCAL_TEST' });
+    return ok(res, { response, presentation: knowledgeAnswerPresentation(input, response), mode: 'LOCAL_TEST' });
   }
   if (req.method === 'GET' && pathname === '/api/rag/files') {
     requireRagAdminEnabled();
@@ -4473,7 +4457,10 @@ async function api(req, res, url) {
     const confirmedExpired = isConfirmedLoginExpired(data, config.loginStatusLogoutConfirmations)
       && !row(`SELECT id FROM issues WHERE source='LOGIN_MONITOR' AND category='ACCOUNT_LOGIN'
         AND related_type='ACCOUNT' AND related_id=?
-        AND status IN ('OPEN','DIAGNOSING','DIAGNOSED','RETRYING') LIMIT 1`, String(id));
+        AND (status IN ('OPEN','DIAGNOSING','DIAGNOSED','RETRYING')
+          OR (?='wechat_channels' AND status IN ('RESOLVED','FALSE_POSITIVE')
+            AND resolution_type IN ('MANUAL_HANDLED','FALSE_POSITIVE') AND resolved_at>?))
+        LIMIT 1`, String(id), previous.platform_code, new Date(Date.now()-2*60*60*1000).toISOString());
     run(`UPDATE accounts SET login_status=?,login_checked_at=?,login_message=?,login_url=?,login_source='LOCAL_AGENT',login_evidence=? WHERE id=?`, loginStatus, data.checkedAt, String(data.message || ''), String(data.url || ''), JSON.stringify(data.evidence || []), id);
     let alert = null;
     if (loginStatus === 'READY') {
@@ -5826,6 +5813,7 @@ function isServerMainModule() {
   } catch { return false; }
 }
 const formalRagClient = new RagClient();
+const wechatKnowledgeQuery = createWechatKnowledgeQuery({ ragClient: formalRagClient, knowledgeBaseId: config.ragKnowledgeBaseId });
 const hotTopicKnowledge = createHotTopicKnowledge({ db, ragClient: formalRagClient,
   enabled: config.ragAdminEnabled && formalRagClient.configured, knowledgeBaseId: config.ragKnowledgeBaseId });
 const serverInstanceLock = acquireInstanceLock(config.databasePath + '.server.lock', { enabled: config.instanceLockEnabled, label: 'cloud-web' });

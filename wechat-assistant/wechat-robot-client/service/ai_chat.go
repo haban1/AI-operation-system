@@ -12,6 +12,7 @@ import (
 
 	"wechat-robot-client/interface/settings"
 	"wechat-robot-client/pkg/robotctx"
+	"wechat-robot-client/pkg/tianheknowledge"
 	"wechat-robot-client/repository"
 	"wechat-robot-client/vars"
 )
@@ -31,6 +32,7 @@ func NewAIChatService(ctx context.Context, config settings.Settings) *AIChatServ
 func (s *AIChatService) Chat(robotCtx robotctx.RobotContext, aiMessages []openai.ChatCompletionMessageParamUnion) (openai.ChatCompletionMessage, error) {
 	// 获取 AI 配置
 	aiConfig := s.config.GetAIConfig()
+	tianheknowledge.Prepare(&robotCtx, aiConfig.BaseURL, aiConfig.APIKey, aiMessages)
 
 	// 构建系统提示词
 	var basePrompt strings.Builder

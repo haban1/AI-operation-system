@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { AppError, digest, editProject, fail } from './domain.mjs';
-import { assertKnownId, assertRevision, editableFields, editableSettings, projectLocks, validateScope } from './editor-state.mjs';
+import { assertKnownId, assertRevision, fieldsForTemplate, editableSettings, projectLocks, validateScope } from './editor-state.mjs';
 import { musicTracks } from './music.mjs';
 
 const operationKeys = ['type', 'target', 'assetId', 'text', 'inPoint', 'focusX', 'focusY', 'number', 'enabled'];
@@ -64,7 +64,8 @@ export function buildAiContext(project, assets, run, history = []) {
     project: {
       fields: project.fields, slots: project.slots, audio: project.audio, settings: project.settings,
       durationSeconds: 15, fps: 30,
-      slotDefinitions: template.slots.map((slot,index) => ({ id: slot.id, shotNumber:index+1, durationSeconds: slot.durationFrames / template.fps, startsAtSeconds: slot.startFrame / template.fps })),
+      slotDefinitions: template.slots.map((slot,index) => ({ id: slot.id, shotNumber:index+1, role:slot.name, durationSeconds: slot.durationFrames / template.fps, startsAtSeconds: slot.startFrame / template.fps,
+        ...(template.cards?.length === template.slots.length && template.cards[index] ? { captionKey: template.cards[index].key } : {}) })),
     },
     assets: candidates,
     audioAssets: assets.filter(asset => asset.type === 'audio').map(({ id, name, duration, description, tags }) => ({ id, name, duration, description, tags })),
@@ -110,7 +111,7 @@ export function applyAiPlan(project, assets, run, plan) {
     seen.add(identity);
     if (!allowsOperation(run.scope, operation)) fail(422, 'AI_SCOPE_VIOLATION', 'AI 修改超出本次选定范围，工程已保留');
     if (operation.type === 'field') {
-      if (!editableFields.includes(operation.target) || typeof operation.text !== 'string') fail(422, 'AI_INVALID_FIELD', 'AI 文案字段不正确');
+      if (!fieldsForTemplate(project.templateSnapshot).includes(operation.target) || typeof operation.text !== 'string') fail(422, 'AI_INVALID_FIELD', 'AI 文案字段不正确');
       if (operation.text === project.fields[operation.target]) continue;
       if (locks.fields.includes(operation.target)) fail(409, 'AI_LOCKED', 'AI 尝试修改已锁定文案，工程已保留');
       if (operation.target !== 'accent') ensureGroundedNumbers(operation.text, facts);
@@ -198,7 +199,8 @@ export class AiEditing {
     if ((await this.store.all('ai-runs')).some(run => run.projectId === project.id && ['running', 'queued'].includes(run.status))) fail(409, 'AI_PROJECT_BUSY', '此工程正在处理 AI 任务');
     if (this.queue.length >= 4) fail(429, 'AI_QUEUE_FULL', 'AI 任务较多，请稍后再试');
     if (input.mode === 'generate' && !candidateAssets(project, assets).length) fail(422, 'AI_ASSETS_REQUIRED', '请选择当前分组的候选素材');
-    if (!(await this.planner.status()).available) fail(503, 'AI_UNAVAILABLE', 'Codex CLI 尚未就绪，请检查本机安装和登录');
+    const provider = await this.planner.status();
+    if (!provider.available) fail(503, 'AI_UNAVAILABLE', provider.message || 'AI 尚未就绪，请检查系统设置中的模型配置');
     const now = new Date().toISOString();
     const run = {
       id, projectId: project.id, baseRevision: project.revision, mode: input.mode, scope,

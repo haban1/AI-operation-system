@@ -651,7 +651,12 @@
   });
   window.addEventListener('message', event => {
     if (event.origin !== location.origin || event.source !== $('montageFrame').contentWindow) return;
-    if (['content-library:publish', 'content-workbench:unauthorized'].includes(event.data?.type)) window.parent.postMessage(event.data, location.origin);
+    if (event.data?.type === 'content-library:publish' && /^[a-f0-9]{32}$/.test(event.data.id)) {
+      if (window.parent !== window) window.parent.postMessage(event.data, location.origin);
+      else location.assign('/?publishMaterial=' + encodeURIComponent(event.data.id) + '#publishing');
+    }
+    if (event.data?.type === 'content-workbench:outputs-changed') loadOutputs({ reportError: false });
+    if (event.data?.type === 'content-workbench:unauthorized') window.parent.postMessage(event.data, location.origin);
     if (event.data?.type === 'content-workbench:open-library') location.hash = 'materials';
     // 智能混剪导出完成后“加入成片库”：直接确认这条成片入库，结果回传给混剪页
     if (event.data?.type === 'content-workbench:confirm-output' && typeof event.data.id === 'string' && /^montage-[A-Za-z0-9-]{8,100}$/.test(event.data.id)) {

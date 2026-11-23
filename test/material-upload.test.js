@@ -9,7 +9,7 @@ import sharp from 'sharp';
 import ffmpeg from '@ffmpeg-installer/ffmpeg';
 import { startServer, stopChild, cleanupDir, freePort, jsonRequest } from './helpers/runtime.js';
 
-test('浏览器素材上传通过真实 Web/Agent 链路保存、预检和预览', async t => {
+test('浏览器素材上传通过真实 Web/Agent 链路保存和预览，不执行素材预检', async t => {
   const agentPort = await freePort();
   const runtime = await startServer({env:{
     AUTH_ENABLED:'true', ADMIN_USERNAME:'admin', ADMIN_PASSWORD:'upload-test-password',
@@ -44,40 +44,48 @@ test('浏览器素材上传通过真实 Web/Agent 链路保存、预检和预览
     assert.notEqual(uploads[0].data.materialPath,uploads[1].data.materialPath);
     for(const {status,data} of uploads){
       assert.equal(status,200,JSON.stringify(data));
-      assert.equal(data.precheck.meta.type,'image');
-      assert.equal(data.precheck.meta.parserReady,true);
-      assert.equal(data.precheck.meta.width,256);
-      assert.equal(data.precheck.meta.name,'测试 素材.png');
+      assert.equal(data.materialMeta.type,'image');
+      assert.equal(data.precheck,undefined);
+      assert.equal(data.materialMeta.parserReady,undefined);
+      assert.equal(data.materialMeta.name,'测试 素材.png');
       assert.ok(data.materialPath.startsWith(uploadedRoot+path.sep));
       assert.deepEqual(fs.readFileSync(data.materialPath),image);
-      const checked=await jsonRequest(runtime.base,'/api/local-agent/precheck',{method:'POST',headers:{Cookie:cookie},body:{materialPath:data.materialPath,platforms:['weibo']}});
+      const checked=await jsonRequest(runtime.base,'/api/local-agent/material-info',{method:'POST',headers:{Cookie:cookie},body:{materialPath:data.materialPath,platforms:['weibo']}});
       assert.equal(checked.response.status,200);
-      assert.equal(checked.data.precheck.meta.sha256,createHash('sha256').update(image).digest('hex'));
+      assert.equal(checked.data.materialMeta.sha256,createHash('sha256').update(image).digest('hex'));
       const preview=await fetch(runtime.base+'/api/local-agent'+checked.data.previewUrl,{headers:{Cookie:cookie,Range:'bytes=0-31'}});
       assert.equal(preview.status,206);
       assert.deepEqual(Buffer.from(await preview.arrayBuffer()),image.subarray(0,32));
     }
   });
-  await t.test('视频上传后仍能执行平台预检和播放',async()=>{
+  await t.test('视频上传无需平台检测且可播放',async()=>{
     const fixture=path.join(runtime.dir,'test.mp4');
     execFileSync(ffmpeg.path,['-v','error','-f','lavfi','-i','color=c=blue:s=320x240:r=25','-t','1','-c:v','libx264','-pix_fmt','yuv420p',fixture]);
     const result=await upload('视频.MP4',fs.readFileSync(fixture));
     assert.equal(result.status,200,JSON.stringify(result.data));
-    assert.equal(result.data.precheck.meta.type,'video');
-    assert.equal(result.data.precheck.meta.width,320);
-    const checked=await jsonRequest(runtime.base,'/api/local-agent/precheck',{method:'POST',headers:{Cookie:cookie},body:{materialPath:result.data.materialPath,platforms:['bilibili']}});
-    assert.equal(checked.data.precheck.meta.parserReady,true);
-    assert.equal(checked.data.precheck.results[0].platformCode,'bilibili');
+    assert.equal(result.data.materialMeta.type,'video');
+    assert.equal(result.data.materialMeta.width,undefined);
+    const checked=await jsonRequest(runtime.base,'/api/local-agent/material-info',{method:'POST',headers:{Cookie:cookie},body:{materialPath:result.data.materialPath,platforms:['bilibili']}});
+    assert.equal(checked.data.materialMeta.type,'video');
+    assert.equal(checked.data.precheck,undefined);
+    const retired=await jsonRequest(runtime.base,'/api/local-agent/precheck',{method:'POST',headers:{Cookie:cookie},body:{materialPath:result.data.materialPath}});
+    assert.equal(retired.response.status,404);
   });
-  await t.test('非法路径、空文件、超限和伪造媒体不留下文件',async()=>{
+  await t.test('非法路径、空文件和超限不留下文件',async()=>{
     const before=fs.readdirSync(uploadedRoot).sort();
     for(const [name,bytes,expected] of [
       ['../escape.png',image,400],['C:\\escape.png',image,400],['bad.exe',image,415],
-      ['empty.png',Buffer.alloc(0),400],['large.png',Buffer.alloc(1024*1024+1),413],
-      ['broken.mp4',Buffer.from('not a video'),422],['wrong.jpg',image,422]
+      ['empty.png',Buffer.alloc(0),400],['large.png',Buffer.alloc(1024*1024+1),413]
     ])assert.equal((await upload(name,bytes)).status,expected,name);
     assert.equal((await upload('image.png',image,{'Content-Type':'application/json'})).status,415);
     assert.deepEqual(fs.readdirSync(uploadedRoot).sort(),before);
+  });
+  await t.test('上传不依赖媒体解析器或分平台规则',async()=>{
+    const result=await upload('unparsed.mp4',Buffer.from('media parser deliberately unavailable'));
+    assert.equal(result.status,200);
+    assert.equal(result.data.materialMeta.type,'video');
+    assert.equal(result.data.precheck,undefined);
+    assert.equal(result.data.materialMeta.parserReady,undefined);
   });
   await t.test('上传中断清理未完成文件',async()=>{
     const before=fs.readdirSync(uploadedRoot).sort();

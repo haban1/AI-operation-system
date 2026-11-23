@@ -19,6 +19,12 @@ function candidateTopic(title) {
 }
 
 export function businessSubjectClarificationReply(question, { script = 'auto' } = {}) {
+  // A bare participation question supplies no activity identity. Preserve named
+  // activities and let history resolve follow-ups rather than guessing a course.
+  const bare = compact(question).replace(/^(?:请问|請問|我想问|我想問)/u, '').replace(/[呀啊呢吗嗎嘛]$/u, '');
+  if (/^(?:(?:我)?(?:想|要)?(?:在|到)?(?:哪|那)(?:里|裡|儿|兒)?(?:参加|參加)|(?:咋|怎么|怎麼|如何)(?:参加|參加))$/u.test(bare)) {
+    return script === 'traditional' ? '你想參加哪個活動或課程呀？' : '你想参加哪个活动或课程呀？';
+  }
   const application = applicationClarificationReply(question, { script });
   if (application) return application;
   const text = compact(question).replace(/^(?:请问|請問|我想问|我想問|我想知道)/u, '').replace(/^(?:这个|這個|那个|那個)/u, '').replace(/(?:吗|嗎|呢)$/u, '');

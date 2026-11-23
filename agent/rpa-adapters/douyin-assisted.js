@@ -1,3 +1,4 @@
+import { capturePageEvidence } from '../browser-control/collection-pages.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -1572,7 +1573,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       };
     }).filter(Boolean)).catch(() => []);
     const screenshotPath = path.join(this.logsDir, `${this.platformCode}-stranger-inbox-inspection-${Date.now()}.png`);
-    await page.screenshot({ path: screenshotPath, fullPage: false }).catch(() => {});
+    await capturePageEvidence(page, { path: screenshotPath, fullPage: false }).catch(() => {});
     return {
       ok: true,
       navigation,
@@ -1840,13 +1841,22 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       if (!result.sourceVideoKey && result.sourceVideoOpaqueKey) result.sourceVideoKey = result.sourceVideoOpaqueKey;
       const userNode = element.querySelector('h4[class*="cmt-name-"],[class*="username-"]');
       const contentNode = element.querySelector('pre[class*="cmt-text-"],[class*="comment-content-text-"]');
+      const rowProps = element[Object.keys(element).find(key => key.startsWith('__reactFiber$'))]?.return?.memoizedProps;
+      // The creator site binds the top-level row to two equal opaque IDs. Never take an opaque ID from a sibling or reply.
+      if (/^@[A-Za-z0-9+/=_-]{12,}$/.test(rowProps?.id || '') && rowProps.id === rowProps.levelOneCid
+        && text(rowProps.uid) && text(rowProps.username) === text(userNode?.innerText || userNode?.textContent) && text(rowProps.username)
+        && text(rowProps.content) && text(rowProps.content) === text(contentNode?.innerText || contentNode?.textContent)) {
+        result.commentStableId = rowProps.id;
+        result.actorPlatformId = text(rowProps.uid);
+      }
       const timeNode = element.querySelector('p[class*="cmt-time-"],[class*="time-"]');
       const image = element.querySelector('img[alt]');
       const published = element.querySelector('[class*="publish-time-"]');
       const countNode = element.querySelector('[class*="comment-count-"] span');
-      const currentPickerCard = element.parentElement?.classList.contains('douyin-creator-interactive-list-items');
-      const pickerTitle = currentPickerCard ? element.querySelector('[class*="title-"]') : null;
-      const pickerTime = currentPickerCard ? element.querySelector('[class*="time-"]') : null;
+      const unified = element.classList?.contains('creator-unified-work');
+      const currentPickerCard = unified || element.parentElement?.classList.contains('douyin-creator-interactive-list-items');
+      const pickerTitle = currentPickerCard ? element.querySelector(unified ? '.creator-unified-work-title' : '[class*="title-"]') : null;
+      const pickerTime = currentPickerCard ? element.querySelector(unified ? '.creator-unified-work-meta' : '[class*="time-"]') : null;
       const pickerCount = currentPickerCard ? element.querySelector('[class*="right-"] > div') : null;
       return {
         ...result,
@@ -1865,6 +1875,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
   }
 
   async readDouyinCommentCandidate(locator) {
+    if (await locator.evaluate((el,selector)=>Boolean(el.parentElement?.closest?.(selector)),this.spec.commentRowSelector).catch(()=>false)) return null;
     const candidate = await this.readDouyinElementIdentity(locator);
     if (!candidate || typeof locator.page !== 'function') return candidate;
     const current = await this.readDouyinCurrentVideoIdentity(locator.page());
@@ -2096,10 +2107,15 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     return { messages: enriched, attemptedCount, verifiedCount, results };
   }
 
+  douyinVideoPickerSheet(page) {
+    const old = page.locator('.semi-sidesheet-content:visible,.douyin-creator-interactive-sidesheet-content:visible').filter({ hasText: '作品列表' });
+    const unified = page.locator('.douyin-creator-interactive-portal .douyin-creator-interactive-sidesheet-body:visible').filter({ has: page.locator('.creator-unified-work .creator-unified-work-title:visible') });
+    return old.or(unified).first();
+  }
+
   async ensureDouyinVideoPickerOpen(page) {
-    const sheetSelector = '.semi-sidesheet-content,.douyin-creator-interactive-sidesheet-content';
-    const existing = page.locator(sheetSelector).filter({ hasText: '作品列表' });
-    if (await existing.first().isVisible().catch(() => false)) return { ok: true, alreadyOpen: true, sheet: existing.first() };
+    const sheet = this.douyinVideoPickerSheet(page);
+    if (await sheet.isVisible()) return { ok: true, alreadyOpen: true, sheet };
     const chooseControls = [
       page.getByRole('button', { name: /^选择作品$/ }),
       page.getByText(/^选择作品$/, { exact: true })
@@ -2111,8 +2127,11 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     }
     if (!choose) return { ok: false, reason: 'DOUYIN_VIDEO_PICKER_TRIGGER_MISSING', url: page.url() };
     await this.assertRuntimeAllowed();
-    await choose.click();
-    const sheet = page.locator(sheetSelector).filter({ hasText: '作品列表' }).first();
+    try { await choose.click({timeout:3000}); }
+    catch (error) {
+      if (await sheet.isVisible()) return { ok: true, alreadyOpen: true, sheet };
+      throw error;
+    }
     const opened = await sheet.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
     return opened ? { ok: true, alreadyOpen: false, sheet } : { ok: false, reason: 'DOUYIN_VIDEO_PICKER_NOT_OPENED' };
   }
@@ -2140,12 +2159,12 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
   async inspectDouyinCommentVideos(page, { maxRounds = 8 } = {}) {
     const picker = await this.ensureDouyinVideoPickerOpen(page);
     if (!picker.ok) return { ...picker, videos: [] };
-    await picker.sheet.locator('[class*="item-container-"],.douyin-creator-interactive-list-items > [class*="container-"]').first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+    await this.douyinPickerCards(picker.sheet).first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
     const videos = [];
     const seen = new Set();
     let stopReason = 'MAX_ROUNDS';
     for (let round = 1; round <= Math.max(1, Number(maxRounds) || 8); round += 1) {
-      const cards = picker.sheet.locator('[class*="item-container-"],.douyin-creator-interactive-list-items > [class*="container-"]');
+      const cards = this.douyinPickerCards(picker.sheet);
       const count = Math.min(await cards.count().catch(() => 0), 200);
       let added = 0;
       for (let index = 0; index < count; index += 1) {
@@ -2185,6 +2204,10 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     return { ok: videos.length > 0, reason: videos.length ? stopReason : 'DOUYIN_VIDEO_LIST_EMPTY', videos };
   }
 
+  douyinPickerCards(sheet) {
+    return sheet.locator('[class*="item-container-"],.douyin-creator-interactive-list-items > [class*="container-"],.creator-unified-work:has(.creator-unified-work-title)');
+  }
+
   async readDouyinCurrentVideoIdentity(page) {
     const preview = page.locator('[class*="previewCard-"]').first();
     if (await preview.isVisible().catch(() => false)) {
@@ -2196,8 +2219,9 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
         return { title: text(element.querySelector('[class*="title-"]')), publishedAt: text(element.querySelector('[class*="desc-"]')) };
       }).catch(() => null);
       if (rendered?.publishedAt) {
+        const publication = value => clean(value).replace(/^发布于\s*/, '发布于');
         const matches = (this.douyinCommentVideoInventories?.get(page) || []).filter(video =>
-          clean(video.sourceVideoTitle) === rendered.title && clean(video.sourceVideoPublishedAt) === rendered.publishedAt);
+          clean(video.sourceVideoTitle) === rendered.title && publication(video.sourceVideoPublishedAt) === publication(rendered.publishedAt));
         if (matches.length === 1) return { ...matches[0], identityEvidence: 'UNIQUE_RENDERED_TITLE_AND_PUBLICATION_TIME' };
       }
       return null;
@@ -2219,7 +2243,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     if (!expectedKey) return { ok: false, reason: 'DOUYIN_SOURCE_VIDEO_KEY_REQUIRED' };
     if (!this.douyinCommentVideoInventories?.get(page)?.length) await this.inspectDouyinCommentVideos(page);
     const current = await this.readDouyinCurrentVideoIdentity(page);
-    const sheetVisible = await page.locator('.semi-sidesheet-content,.douyin-creator-interactive-sidesheet-content').first().isVisible().catch(() => false);
+    const sheetVisible = await this.douyinVideoPickerSheet(page).isVisible();
     if (clean(current?.sourceVideoKey) === expectedKey && !sheetVisible) return { ok: true, alreadySelected: true, video: current };
     let picker = await this.ensureDouyinVideoPickerOpen(page);
     if (!picker.ok && picker.reason === 'DOUYIN_VIDEO_PICKER_TRIGGER_MISSING') {
@@ -2230,7 +2254,7 @@ export class DouyinAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     if (!picker.ok) return picker;
     const observed = [];
     for (let round = 1; round <= Math.max(1, Number(maxRounds) || 8); round += 1) {
-      const cards = picker.sheet.locator('[class*="item-container-"],.douyin-creator-interactive-list-items > [class*="container-"]');
+      const cards = this.douyinPickerCards(picker.sheet);
       const count = Math.min(await cards.count().catch(() => 0), 200);
       for (let index = 0; index < count; index += 1) {
         const card = cards.nth(index);

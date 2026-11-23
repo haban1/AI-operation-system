@@ -471,5 +471,52 @@
         }
       ]
     }
+  },
+  {
+    "id": "steady-type",
+    "name": "稳镜字动",
+    "description": "六段稳定取景，以现场全景、讲解、人物指导、操作特写、交流和收尾组织素材。逐段变换动态标题，画面直接切换或轻柔衔接，不附加连续推近。",
+    "license": "本项目原创模板、配乐及转场音效，无第三方音乐采样",
+    "referenceName": "稳镜字动 · 原创课堂样片",
+    "cuts": [0, 70, 141, 225, 309, 380],
+    "slotNames": ["课堂全景", "老师演示", "现场指导", "操作特写", "交流互动", "收尾全景"],
+    "transitionFrames": 12,
+    "defaults": {
+      "title": "周周有课上",
+      "subtitle": "课堂现场",
+      "brand": "",
+      "accent": "#B5FFD0",
+      "beat1": "跟着老师看演示",
+      "beat2": "这一步这样做",
+      "beat3": "把步骤敲出来",
+      "beat4": "一起试一起解",
+      "beat5": "下节课再见"
+    },
+    "cards": [
+      {"key": "title", "start": 0, "end": 2.3333333333333335, "layout": "overlay"},
+      {"key": "beat1", "start": 2.3333333333333335, "end": 4.7, "layout": "overlay"},
+      {"key": "beat2", "start": 4.7, "end": 7.5, "layout": "overlay"},
+      {"key": "beat3", "start": 7.5, "end": 10.3, "layout": "overlay"},
+      {"key": "beat4", "start": 10.3, "end": 12.666666666666666, "layout": "overlay"},
+      {"key": "beat5", "start": 12.666666666666666, "end": 15, "layout": "overlay"}
+    ],
+    "soundtrack": {
+      "title": "课堂律动",
+      "author": "本项目程序合成",
+      "license": "原创合成，无第三方音乐采样",
+      "musicFile": "steady-type-music.wav",
+      "sfxFile": "steady-type-sfx.wav",
+      "bpm": 128,
+      "sourceBpm": 128,
+      "sourceInPoint": 0,
+      "speed": 1,
+      "cues": [
+        {"cutFrame": 70, "peakSeconds": 2.333, "kind": "sweep"},
+        {"cutFrame": 141, "peakSeconds": 4.7, "kind": "sweep"},
+        {"cutFrame": 225, "peakSeconds": 7.5, "kind": "sweep"},
+        {"cutFrame": 309, "peakSeconds": 10.3, "kind": "sweep"},
+        {"cutFrame": 380, "peakSeconds": 12.667, "kind": "sweep"}
+      ]
+    }
   }
 ]

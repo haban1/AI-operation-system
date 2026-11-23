@@ -5,7 +5,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import ffmpeg from '@ffmpeg-installer/ffmpeg';
-import { precheckMaterial } from '../agent/precheck.js';
+import { readMaterialInfo } from '../src/services/material-info.js';
 import { buildMockAiReview } from '../src/services/ai-compliance.js';
 import { startServer, stopChild, tempRuntimeDir, cleanupDir, jsonRequest } from './helpers/runtime.js';
 
@@ -83,8 +83,7 @@ async function fixture(t, { decode = 'passed' } = {}) {
       targets: [{ platformCode: 'douyin', accountId: account.id }],
       complianceConfirmed: true, managementConfirmed: true, publishMode: 'AUTO', ...overrides,
     };
-    result.precheck = await precheckMaterial({ materialPath: result.materialPath, title: result.title, body: result.body, platforms: ['douyin'] });
-    assert.notEqual(result.precheck.overall, 'BLOCKED', JSON.stringify(result.precheck));
+    result.materialMeta = readMaterialInfo(result.materialPath);
     return result;
   };
   return { ...runtime, db, request, jobs, counts, item, admission, draft, payload, sourceVideo, scriptPath };
@@ -196,7 +195,7 @@ test('ordinary manual media publishes without creating or accepting client suppl
   const ctx = await fixture(t);
   const manualPath = path.join(ctx.dir, 'manual.mp4');
   fs.copyFileSync(ctx.sourceVideo, manualPath);
-  const payload = await ctx.payload({ title: '普通手动素材内容分享', body: '这是运营手动选择的普通媒体素材，仍按照现有预检和审核流程创建平台发布任务。', materialPath: manualPath });
+  const payload = await ctx.payload({ title: '普通手动素材内容分享', body: '这是运营手动选择的普通媒体素材，仍按照现有内容审核流程创建平台发布任务。', materialPath: manualPath });
   payload.hotTopicDocument = { schemaVersion: 1, title: 'forged', body: 'forged', markdown: 'forged', questions: ['forged'] };
   const created = await ctx.request('/api/publish/tasks', { method: 'POST', body: payload });
   assert.equal(created.response.status, 201, created.text);

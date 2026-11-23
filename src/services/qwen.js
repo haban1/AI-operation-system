@@ -1,4 +1,6 @@
 import { beginAiConnectionTest, finishAiConnectionTest } from './ai-connection-status.js';
+import { aiHttpError } from './ai-http-error.js';
+import { requestAi } from './ai-request.js';
 import { getAiSettings, redactAiSecrets } from './settings.js';
 import { recordAiCall } from './ai-usage.js';
 import { countUnicodeCharacters, truncateUnicodeSafely } from './platform-reply-policy.js';
@@ -465,13 +467,13 @@ export async function testAiConnection() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15_000);
   try {
-    const response = await fetch(`${settings.baseUrl}/chat/completions`, {
+    const response = await requestAi(`${settings.baseUrl}/chat/completions`, {
       method: 'POST', redirect: 'error',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${settings.apiKey}` },
       body: JSON.stringify({ model: settings.model, temperature: 0, max_tokens: 128, messages: [{ role: 'user', content: '仅回复 OK' }] }),
       signal: controller.signal
     });
-    if (!response.ok) throw new Error(`AI API 返回 HTTP ${response.status}，请检查 Key、地址和模型权限`);
+    if (!response.ok) throw await aiHttpError(response, { operation: 'AI 连接测试', code: 'AI_CONNECTION_FAILED' });
     const data = await response.json();
     if (typeof data?.choices?.[0]?.message?.content !== 'string' || !data.choices[0].message.content.trim()) throw new Error('接口未返回有效的对话内容');
     const returnedModel = String(data.model || settings.model).split(settings.apiKey).join('******');

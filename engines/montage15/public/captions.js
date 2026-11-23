@@ -15,8 +15,10 @@
     beat1: { label: '穿插短句 1', max: 16, rows: 1 },
     beat2: { label: '穿插短句 2', max: 16, rows: 1 },
     beat3: { label: '收尾短句', max: 16, rows: 1 },
+    beat4: { label: '穿插短句 4', max: 16, rows: 1 },
+    beat5: { label: '收尾短句', max: 16, rows: 1 },
   };
-  const CARD_NAMES = { title: '开场标题', beat1: '短句 1', beat2: '短句 2', beat3: '收尾短句' };
+  const CARD_NAMES = { title: '开场标题', beat1: '短句 1', beat2: '短句 2', beat3: '收尾短句', beat4: '短句 4', beat5: '收尾短句' };
   // 开场标题卡同时显示品牌（小字）、主标题和副标题；其他卡只显示一句
   const cardFields = key => key === 'title' ? ['title', 'subtitle', 'brand'] : [key];
   const aiFields = key => key === 'title' ? ['title', 'subtitle'] : [key];
@@ -51,6 +53,7 @@
     track.append(lane);
     const locks = project.locks?.fields || [];
     cards.forEach(card => {
+      const cardName = this.workflow.fieldLabel(card.key,CARD_NAMES[card.key]);
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'caption-chip' + (card.key === this.focusedCaption ? ' selected' : '');
@@ -59,12 +62,12 @@
       button.style.width = `${Math.max(6, ((card.end - card.start) / 15) * 100)}%`;
       const text = (project.fields?.[card.key] || '').trim();
       const name = document.createElement('small');
-      name.textContent = CARD_NAMES[card.key] + (cardFields(card.key).some(key => locks.includes(key)) ? ' · 已锁定' : '');
+      name.textContent = cardName + (cardFields(card.key).some(key => locks.includes(key)) ? ' · 已锁定' : '');
       const value = document.createElement('span');
       value.textContent = text || '（空）';
       button.append(name, value);
-      button.title = `${CARD_NAMES[card.key]}：${sec(card.start)}–${sec(card.end)}，点击编辑`;
-      button.setAttribute('aria-label', `文案 ${CARD_NAMES[card.key]}：${text || '空'}`);
+      button.title = `${cardName}：${sec(card.start)}–${sec(card.end)}，点击编辑`;
+      button.setAttribute('aria-label', `文案 ${cardName}：${text || '空'}`);
       button.addEventListener('click', () => {
         this.focusedCaption = card.key;
         this.seek(Math.min(449, Math.round((card.start + Math.min(.5, (card.end - card.start) / 2)) * 30)));
@@ -85,7 +88,7 @@
     if (!card) { this.captionSignature = null; return; }
     const project = this.state.project;
     const busy = !!this.state.workflowBusy;
-    $('caption-panel-title').textContent = `文案 · ${CARD_NAMES[card.key]}`;
+    $('caption-panel-title').textContent = `文案 · ${this.workflow.fieldLabel(card.key,CARD_NAMES[card.key])}`;
     $('caption-panel-range').textContent = `${sec(card.start)}–${sec(card.end)}`;
     const signature = project.id + ':' + card.key;
     if (signature !== this.captionSignature) {
@@ -99,7 +102,10 @@
         const head = document.createElement('label');
         head.className = 'field-label';
         head.htmlFor = 'caption-input-' + key;
-        head.innerHTML = `<span>${meta.label}</span><span class="caption-count" id="caption-count-${key}"></span>`;
+        const labelText = document.createElement('span'), count = document.createElement('span');
+        labelText.textContent = this.workflow.fieldLabel(key, meta.label);
+        count.className = 'caption-count'; count.id = 'caption-count-' + key;
+        head.append(labelText, count);
         const input = document.createElement('textarea');
         input.id = 'caption-input-' + key;
         input.rows = meta.rows;
@@ -160,12 +166,12 @@
     if (!key || !project || this.state.workflowBusy) return;
     const keys = aiFields(key);
     const want = $('caption-ai-instruction').value.trim() || '保持原意，表达更简洁、更有吸引力';
-    const limits = keys.map(item => `${FIELDS[item].label}不超过 ${FIELDS[item].max} 字`).join('，');
+    const limits = keys.map(item => `${this.workflow.fieldLabel(item,FIELDS[item].label)}不超过 ${FIELDS[item].max} 字`).join('，');
     // 用户明确要求 AI 改这一句：先解锁，否则服务端会拒绝修改已锁定文案
     const locks = this.workflow.locks();
     if (keys.some(item => locks.fields.includes(item))) { locks.fields = locks.fields.filter(item => !keys.includes(item)); this.markDirty(); }
     await this.workflow.start('instruction', { kind: 'fields', ids: keys },
-      `只改写「${CARD_NAMES[key]}」的文案（${keys.map(item => FIELDS[item].label).join('、')}）：${want}。${limits}。其他文案、镜头、音乐与设置保持不变。`);
+      `只改写「${this.workflow.fieldLabel(key,CARD_NAMES[key])}」的文案：${want}。${limits}。其他文案、镜头、音乐与设置保持不变。`);
   };
 
   const timeline = P.timeline;

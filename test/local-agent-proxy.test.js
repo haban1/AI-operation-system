@@ -57,13 +57,13 @@ test('Web 统一代理 Local Agent，隐藏共享 Token 并限制代理路由', 
       res.setHeader('Content-Type', 'application/json');
       return res.end(JSON.stringify({ ok: true, deviceId: 'device-rpa-01', bindingId: reportedBindingId, version: 'proxy-test', masterSwitchEnabled: true }));
     }
-    if (req.method === 'POST' && url.pathname === '/precheck') {
+    if (req.method === 'POST' && url.pathname === '/material-info') {
       seen.precheckToken = req.headers['x-agent-token'];
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       seen.precheckBody = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       res.setHeader('Content-Type', 'application/json');
-      return res.end(JSON.stringify({ ok: true, precheck: { overall: 'PASSED' }, previewUrl: '/material-preview/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' }));
+      return res.end(JSON.stringify({ ok: true, materialMeta: { type: 'video' }, previewUrl: '/material-preview/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' }));
     }
     if (req.method === 'POST' && url.pathname === '/audio-content-generation') {
       seen.audioToken = req.headers['x-agent-token'];
@@ -109,6 +109,9 @@ test('Web 统一代理 Local Agent，隐藏共享 Token 并限制代理路由', 
       ...process.env,
       PORT: String(webPort),
       AGENT_PORT: String(agentPort),
+      SERVER_HOST: '127.0.0.1',
+      AGENT_HOST: '127.0.0.1',
+      BROWSER_AGENT_URL: '',
       DATABASE_PATH: path.join(dir, 'test.db'),
       AUTH_ENABLED: 'false',
       AGENT_SHARED_TOKEN: token,
@@ -116,6 +119,8 @@ test('Web 统一代理 Local Agent，隐藏共享 Token 并限制代理路由', 
       AUTO_COLLECT_ENABLED: 'false',
       SMOKE_TEST_ENABLED: 'false',
       QWEN_MODE: 'mock',
+      AI_AUDIO_CONTENT_GENERATION_ENABLED: 'true',
+      AI_AUDIO_CONTENT_AUTO_TRIGGER: 'true',
       RPA_MODE: 'simulated'
     },
     stdio: ['ignore', 'pipe', 'pipe']
@@ -155,12 +160,12 @@ test('Web 统一代理 Local Agent，隐藏共享 Token 并限制代理路由', 
   assert.equal(health.response.status, 200);
   assert.equal(health.data.localAgent.online, true);
 
-  const precheck = await requestJson(base, '/api/local-agent/precheck', {
+  const precheck = await requestJson(base, '/api/local-agent/material-info', {
     method: 'POST',
     body: JSON.stringify({ materialPath: 'D:/material/demo.mp4', platforms: ['bilibili'] })
   });
   assert.equal(precheck.response.status, 200);
-  assert.equal(precheck.data.precheck.overall, 'PASSED');
+  assert.equal(precheck.data.materialMeta.type, 'video');
   assert.equal(seen.precheckToken, token);
   assert.equal(seen.precheckBody.materialPath, 'D:/material/demo.mp4');
 
@@ -243,7 +248,7 @@ test('Web 统一代理 Local Agent，隐藏共享 Token 并限制代理路由', 
   assert.equal(mismatchedHealth.data.localAgent.online, false);
   assert.equal(mismatchedHealth.data.localAgent.bindingVerified, false);
   assert.match(mismatchedHealth.data.localAgent.message, /不属于当前 Web 安装实例/);
-  const rejectedMismatchedAgent = await requestJson(base, '/api/local-agent/precheck', { method: 'POST', body: '{}' });
+  const rejectedMismatchedAgent = await requestJson(base, '/api/local-agent/material-info', { method: 'POST', body: '{}' });
   assert.equal(rejectedMismatchedAgent.response.status, 503);
   assert.equal(rejectedMismatchedAgent.data.code, 'LOCAL_AGENT_OFFLINE');
 });

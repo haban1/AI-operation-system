@@ -32,6 +32,13 @@ html[data-theme] :is(.timeline-shot.is-active,.timeline-shot.selected,.shot-card
 html[data-theme] :is(.muted,.section-help,.note,.small-label,.librarySummary,.video-meta,.cardDescription){color:var(--tk-muted)!important}
 html[data-theme] :is(h1,h2,h3,strong,.topic-title){color:var(--tk-ink)}
 
+/* Hot-source status cards must pair their surface and text in both themes. */
+html[data-theme] .source-result{background:var(--tk-glass-solid);color:var(--tk-ink);border-color:var(--tk-line-strong)}
+html[data-theme] .source-result strong{color:var(--tk-ink)}
+html[data-theme] .source-result span{color:var(--tk-muted)}
+html[data-theme] .source-result.unavailable{border-color:var(--tk-warn)}
+html[data-theme] .source-result.ok{border-color:var(--tk-ok)}
+
 /* ---------- 按钮：主按钮渐变，次按钮白底描边，文字按钮主色 ---------- */
 html[data-theme] :is(.button,.primary,.secondary,.button-primary,.button-secondary,.button-quiet,.routeButton){
   display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:34px;padding:7px 14px!important;border-radius:10px!important;
@@ -111,6 +118,20 @@ html[data-theme] .studio-topbar .content-library-link.active{color:var(--tk-ink)
 html[data-theme] .studio-topbar .studio-connection{margin-left:auto!important;display:inline-flex;align-items:center;gap:8px;padding:4px 6px 4px 11px;border-radius:999px;background:var(--tk-surface2);border:1px solid var(--tk-line);font-size:12px;color:var(--tk-muted)}
 html[data-theme] .studio-topbar .studio-connection .icon-button{width:26px;height:26px;border:0!important;background:transparent!important}
 html[data-theme] .studio-topbar .connection-dot{width:7px;height:7px;border-radius:50%}
+html.creation-page-scroll{height:auto;overflow-x:hidden;overflow-y:auto}
+html.creation-page-scroll body{height:auto;overflow:visible}
+html.creation-page-scroll .app-shell{height:auto;min-height:100dvh}
+html.creation-page-scroll .studio-topbar{position:static;top:auto}
+html.creation-page-scroll .workspace-shell{display:block;flex:none}
+html.creation-page-scroll body main{display:block;overflow:visible}
+html.creation-page-scroll #automaticWorkspace:not([hidden]){display:block;height:auto}
+html.creation-page-scroll .automatic-frame{height:auto;min-height:0;overflow:visible}
+html.creation-page-scroll #automaticFrame{display:block;width:100%;min-height:0}
+html.creation-page-scroll #mixWorkspace{height:auto}
+html.creation-page-scroll .library-panel{overflow:visible}
+html[data-creation-page-scroll],html[data-creation-page-scroll] body{height:auto!important;min-height:0!important;overflow:visible!important}
+html[data-creation-page-scroll] body>aside{position:static!important;top:auto!important}
+html[data-creation-page-scroll] body main{min-height:0!important}
 html[data-theme] body.studio-embedded main{padding:12px 12px 12px 2px!important}
 html[data-theme] body.studio-embedded :is(#montageWorkspace,#automaticWorkspace){margin:-12px -12px -12px -2px!important}
 html[data-theme] .automatic-frame{background:transparent!important;border:0!important;border-radius:0!important}

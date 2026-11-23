@@ -15,5 +15,18 @@ dialog{background:var(--paper);color:var(--ink);border:1px solid var(--line);bor
 .media-preview-stage{position:relative;display:block;overflow:hidden;min-height:0}.media-preview-stage>video,.media-preview-stage>img{position:absolute;inset:0;display:block;width:100%;height:100%;max-height:100%;object-fit:contain}.media-preview-dialog .dialog-actions{position:sticky;bottom:-24px;background:var(--paper);padding:14px 0;margin-bottom:0;z-index:2}
 .media-card{touch-action:pan-y}.media-drag-ghost{position:fixed;z-index:10000;pointer-events:none;background:#203b32;color:#dffff2;border:1px solid var(--green);border-radius:6px;padding:9px 12px;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 8px 25px #0008;font-size:11px}.dragging-media,.dragging-media *{cursor:grabbing!important;user-select:none}
 #ai-generate{position:static;box-shadow:none}
+.source-tools{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:10px}
+.source-tools .button{min-width:0;padding:6px 4px;font-size:11px;white-space:nowrap}
+.source-tools #ai-candidates-button{margin-top:0}
+.source-setup #ai-candidate-summary{margin:7px 0 0}
+.source-setup .source-actions{flex-wrap:nowrap}
+.source-setup .source-actions .button{min-width:0;padding:6px 9px;font-size:11px}
+.source-setup .source-actions .text-button{padding:4px;font-size:11px;white-space:nowrap}
+.source-preview-dialog{position:fixed;inset:24px 0 auto;z-index:1000;width:min(760px,92vw);max-height:88dvh;overflow:auto;padding:20px;box-shadow:0 16px 60px #0005}
+.dragging-media .source-preview-dialog{opacity:.25;pointer-events:none}
+.source-preview-dialog .media-browser{padding-top:0;border-top:0!important}
+.source-preview-dialog .media-search{margin:0 0 8px}
+.source-preview-dialog .media-grid{grid-template-columns:repeat(4,minmax(0,1fr));max-height:min(50dvh,420px);overscroll-behavior:contain}
+@media(max-width:650px){.source-preview-dialog .media-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 #media-preview-range{margin:14px 0 8px;color:#b7e6d5;font-size:12px;line-height:1.6;min-height:24px}
 @media(min-width:901px){.player-controls{padding:2px 0;margin-top:6px}.preview-notice{line-height:1.5;margin:5px 0}.render-panel.completed{min-height:0}.render-panel.completed #download-button{margin:0}.render-panel.completed .render-heading{min-height:0}.preview-stage{height:clamp(150px,25vh,330px)}}

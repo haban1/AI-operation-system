@@ -34,9 +34,9 @@ test('platform routes use bound Windows agent while media stays in container', a
   assert.equal(bootstrap.data.localAgent.online, true);
   assert.equal(bootstrap.data.localAgent.executionHost, 'Windows Chrome');
   assert.equal(JSON.stringify(bootstrap.data).includes(token), false);
-  const precheck = await jsonRequest(runtime.base, '/api/local-agent/precheck', { method: 'POST', body: {} });
+  const precheck = await jsonRequest(runtime.base, '/api/local-agent/material-info', { method: 'POST', body: {} });
   assert.equal(precheck.response.status, 503); // no material agent in this test
-  assert.equal(calls.some(item => item.path === '/precheck'), false);
+  assert.equal(calls.some(item => item.path === '/material-info'), false);
   validBinding = false;
   const blocked = await jsonRequest(runtime.base, '/api/local-agent/platforms/douyin/open-login', { method: 'POST', body: {} });
   assert.equal(blocked.response.status, 503);

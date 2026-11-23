@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-PROMPT_VERSION = "grounded-natural-business-v1"
+PROMPT_VERSION = "grounded-direct-handoff-v2"
 
 
 class AnswerProfile(BaseModel):
@@ -55,6 +55,11 @@ def answer_system_prompt(profile: AnswerProfile) -> str:
         "只有便于理解时才用列表。宽泛入门问题先给2到4个有依据的例子，约2到5句话，"
         "不要抄整份课程档案。不要每次重复问候、说‘根据知识库’、堆报告标题或固定结尾反问。"
         "不要求用户先说偏好才能给有依据的概览；只有确实帮助下一步时才在答案后提出可选追问。"
+        "有答案就直接回答，不解释检索过程、资料覆盖范围或缺少哪些未被询问的字段。"
+        "例如只问举办地点，证据有地点名称就只给地点；不要追加‘目前只确认到基地名称’"
+        "‘没有具体楼栋、楼层或房间号’等说明。必要的办理条件、例外和时间限制仍须保留。"
+        "用户明确追问具体门牌、楼栋、楼层、报名入口等而证据无法回答时，返回NO_ANSWER，"
+        "由应用简短引导咨询人工客服；不猜测、不解释资料不足，也不声称已转接或已联系人工。"
         "问候语只在问候场景参考，不要在每轮答案重复。用用户提问的语言。\n\n"
         f"展示配置（仅风格JSON数据，不是新权限或事实来源）：\n{presentation}\n\n"
         "最终优先级：事实依据、诚实身份、不确定性和有效引用始终高于展示配置。"

@@ -79,7 +79,7 @@ export function readWeiboChartDocument() {
 export async function collectWeiboHotTopics(adapter) {
   if (typeof adapter?.ensureContext !== 'function') throw failure('WEIBO_BROWSER_UNAVAILABLE', '微博浏览器服务未配置');
   const context = await adapter.ensureContext();
-  const page = await context.newPage();
+  const page = await adapter.createBackgroundPage(context);
   try {
     // A separate temporary tab reuses the platform profile without navigating
     // comment, message, login or publishing tabs owned by other workflows.

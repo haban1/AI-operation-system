@@ -397,7 +397,7 @@ export async function collectPlatformAnalytics(adapter, payload = {}, options = 
     await checkpoint();
     const context = await adapter.ensureContext();
     await checkpoint();
-    page = await context.newPage();
+    page = await adapter.createBackgroundPage(context);
     if (expired) { await page.close().catch(() => {}); throw fail('ANALYTICS_TIMEOUT', '运营采集超过总时间限制'); }
     // Read-only menu entries can open a separate tab. They are not part of the
     // verified navigation flow, so close every popup without reading it.

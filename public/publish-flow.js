@@ -15,20 +15,28 @@ export function setupPublishFlow(form){
   const title=form.querySelector('#publishTitle'),body=form.querySelector('#publishBody');
   const titleLabel=title.previousElementSibling,bodyLabel=body.previousElementSibling;
   titleLabel.htmlFor=title.id;bodyLabel.htmlFor=body.id;
+  media.append(element('h3','publish-field-heading','素材'));
   for(const selector of ['.library-publish-actions','#materialFile','#materialPreview','.preview-local-path']){const item=editor.querySelector(selector);if(item)media.append(item)}
+  copy.append(element('h3','publish-field-heading','发布文案'));
   copy.append(titleLabel,title,bodyLabel,body);
-  for(const selector of ['.audio-copy-actions','#audioCopyBox','#contentOriginCard']){const item=form.querySelector(selector);if(item)copy.append(item)}
+  for(const selector of ['.audio-copy-actions','#contentOriginCard']){const item=form.querySelector(selector);if(item)copy.append(item)}
   const fields=element('div','publish-flow-fields');fields.append(media,copy);editor.append(fields);
+  const copyStatus=form.querySelector('#audioCopyBox');if(copyStatus)editor.append(copyStatus);
   const origin=copy.querySelector('#contentOriginCard');origin.classList.add('publish-flow-origin');
 
   const notes=accounts.querySelector('.preview-details');
-  const blocked=[...accounts.querySelectorAll('.publish-platform-card.is-blocked')];
-  const available=[...accounts.querySelectorAll('.publish-platform-card.is-runnable')];
-  const accountGrid=element('div','publish-flow-accounts');for(const card of available)accountGrid.append(card);
+  const cards=[...accounts.querySelectorAll('.publish-platform-card')];
+  const accountGrid=element('div','publish-flow-accounts');
+  for(const card of cards){
+    if(card.querySelector('.platform-check')?.disabled){
+      const badge=card.querySelector('.badge');
+      if(badge){badge.title=card.querySelector('small')?.textContent||badge.textContent;badge.textContent='不可用'}
+      card.querySelector('small')?.remove();
+    }
+    accountGrid.append(card);
+  }
   accounts.querySelector('.panel-head').after(accountGrid);
-  if(!available.length)accountGrid.append(element('p','muted','暂无可发布的账号，请先检查平台状态。'));
-  if(notes){for(const card of blocked)notes.append(card);notes.querySelector('summary').textContent=blocked.length?`不可用账号与说明（${blocked.length}）`:'平台说明'}
-  else if(blocked.length){const details=element('details','preview-details'),summary=element('summary','',`不可用账号（${blocked.length}）`);details.append(summary,...blocked);accounts.append(details)}
+  notes?.remove();
 
   const summary=element('div','publish-flow-summary');
   const values={};
@@ -45,7 +53,8 @@ export function setupPublishFlow(form){
   const error=element('p','publish-flow-error');error.hidden=true;error.setAttribute('role','alert');
   const actions=form.querySelector('.preview-publish-buttons');actions.classList.add('publish-flow-final');
   footer.append(navigation,next,actions);form.querySelector('.publish-grid').after(error,footer);
-  const submit=form.querySelector('#publishSubmitButton'),schedule=form.querySelector('#scheduledPublishButton span');
+  form.querySelector('#publishSubmitButton').textContent='确认发布';
+  form.querySelector('#scheduledPublishButton span').textContent='定时发布';
   let step=1;
   const contentFields=['materialPath','publishTitle','publishBody','contentOrigin'].map(id=>form.querySelector('#'+id));
   const chosen=()=>[...form.querySelectorAll('.platform-check:checked:not(:disabled)')];
@@ -54,9 +63,7 @@ export function setupPublishFlow(form){
     buttons.forEach((button,index)=>{button.classList.toggle('is-active',step===index+1);button.classList.toggle('is-complete',complete[index]);if(step===index+1)button.setAttribute('aria-current','step');else button.removeAttribute('aria-current')});
     values.title.textContent=title.value.trim()||'未填写标题';
     values.accounts.textContent=chosen().map(check=>check.closest('label').querySelector('.publish-platform-title b')?.textContent.trim()).filter(Boolean).join('、')||'未选择账号';
-    const automatic=form.querySelector('#autoPublish').checked;
-    values.mode.textContent=automatic?'自动提交到平台':'创建草稿任务';
-    submit.textContent=automatic?'确认发布':'创建草稿任务';schedule.textContent=automatic?'定时发布':'定时创建草稿';
+    values.mode.textContent='确认后发布';
   };
   const show=(value,focus=false)=>{
     step=value;form.dataset.publishStep=String(step);error.hidden=true;

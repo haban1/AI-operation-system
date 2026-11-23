@@ -1,3 +1,4 @@
+import { capturePageEvidence } from '../browser-control/collection-pages.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -1612,7 +1613,7 @@ export class BilibiliAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       }, null, 2),
       'utf8'
     );
-    await page.screenshot({ path: coverStateScreenshotPath, fullPage: false }).catch(() => {});
+    await capturePageEvidence(page, { path: coverStateScreenshotPath, fullPage: false }).catch(() => {});
     const draftFingerprintState = this.writeDraftFingerprintState(payload, 'DRAFT_READY', { coverConfirmedAt: new Date().toISOString(), coverStatePath });
     if (payload.prepareOnly === true) {
       return { status: 'SUCCESS', result: await this.evidence(payload, '\u5df2\u786e\u8ba4B\u7ad9\u65e2\u6709\u8349\u7a3f\u5c01\u9762\u771f\u6b63\u4fdd\u5b58\u5230\u4e3b\u8868\u5355\uff0c\u672a\u6267\u884c\u6700\u7ec8\u6295\u7a3f', page, 'existing_draft_cover_ready', { submissionStatus: 'NOT_SUBMITTED', submitAttempted: false, expectedTitle, expectedMaterial, declaration, coverState, coverStatePath, coverStateScreenshotPath, draftFingerprintState }) };

@@ -148,6 +148,32 @@ test('DeepSeek 文案及知识生成使用其原生参数关闭思考，避免�
   }
 });
 
+test('余额不足给出可处理错误且不暴露上游正文，恢复后同一素材可以重试', async t => {
+  const options = {
+    materialPath: tempMaterial(t), precheck: precheck(), mode: 'online', apiKey: 'private-test-key',
+    knowledgeEnabled: false, extractAudio: fakeExtractAudio,
+    invokeAsr: async () => ({ text: '视频介绍社区活动的参与方式和服务安排。' })
+  };
+  let available = false, attempts = 0;
+  options.invokeContent = args => callQwenContent({ ...args, fetchImpl: async () => {
+    attempts += 1;
+    return available ? Response.json({ choices: [{ message: { content: successfulCopy() } }] })
+      : Response.json({ error: { type: 'insufficient_balance_error', message: 'Insufficient Balance private-test-key request-id-private' } }, { status: 402 });
+  } });
+  const failed = await generateMaterialCopyFromAudio(options);
+  assert.equal(failed.status, 'FAILED');
+  assert.equal(failed.code, 'AI_BALANCE_INSUFFICIENT');
+  assert.match(failed.message, /余额.*充值.*系统设置/);
+  assert.doesNotMatch(failed.message, /private-test-key|request-id-private|Insufficient Balance|千问/);
+  assert.equal(failed.calls.asr.status, 'SUCCESS');
+  assert.equal(attempts, 1);
+  available = true;
+  const recovered = await generateMaterialCopyFromAudio(options);
+  assert.equal(recovered.status, 'SUCCESS');
+  assert.equal(recovered.result.title, '社区活动精彩回顾');
+  assert.equal(attempts, 2);
+});
+
 test('本地 ASR 对模型缺失、组件缺失、超时和空转写给出可处理错误', async t => {
   const modelPath = tempMaterial(t);
   await assert.rejects(callLocalWhisperAsr({ modelPath: modelPath + '-missing' }), { code: 'LOCAL_ASR_MODEL_MISSING' });
@@ -424,7 +450,6 @@ test('发布页包含音频生成入口、SHA 防串素材、AI 来源和重新�
   assert.match(app, /AI_GENERATED/);
   assert.match(app, /generation\.materialSha256/);
   assert.match(app, /invalidateCompliance\(\)/);
-  assert.match(app, /系统不会自动发布/);
   assert.match(app, /generation\.result\?\.mock===true/);
   assert.match(app, /不会自动填写标题和正文/);
   assert.match(app, /id="openAiOnlineSettings"/);

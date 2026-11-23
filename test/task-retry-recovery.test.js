@@ -224,25 +224,12 @@ test('任务中心：补发成功使用派生展示状态，并保留原失败�
   assert.equal(stderr.includes('SyntaxError'), false, stderr);
 });
 
-test('任务中心使用统一任务流展示补发恢复状态并保留失败审计', () => {
+test('任务中心精简展示，补发审计保留在后台数据', () => {
   const app = fs.readFileSync(path.join(root, 'public', 'app.js'), 'utf8');
-  const styles = fs.readFileSync(path.join(root, 'public', 'styles.css'), 'utf8');
-  assert.match(app, /RECOVERED_BY_RETRY:'已补发成功'/);
-  assert.match(app, /task\.retryRecovery\?\.recovered/);
   assert.match(app, /function taskVisualState\(/);
   assert.match(app, /\['PUBLISHED','SUCCESS','RECOVERED_BY_RETRY'\]\.includes\(status\)/);
-  assert.match(app, /class="task-stream"/);
-  assert.match(app, /data-task-status=/);
-  assert.match(app, /task-command-center/);
-  assert.match(app, /原失败平台已通过补发任务/);
-  assert.match(app, /原失败记录继续保留/);
-  assert.match(app, /task-recovered-state/);
-  assert.equal(app.includes('function taskStatusSection('), false);
-  assert.match(styles, /\.task-stream-card\.is-success/);
-  assert.match(styles, /\.task-command-center/);
-  assert.match(styles, /\.task-progress-track/);
-  assert.match(styles, /prefers-reduced-motion:reduce/);
-  assert.match(styles, /\.task-retry-recovery/);
-  assert.match(styles, /\.task-target-detail\.is-recovered/);
+  assert.match(app, /label:'发布成功'/);
+  assert.match(app, /data-resolve-task=/);
+  assert.doesNotMatch(app, /function taskProgressMarkup\(/);
+  assert.doesNotMatch(app, /原失败记录继续保留/);
 });
-

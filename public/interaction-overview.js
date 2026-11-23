@@ -1,16 +1,19 @@
 import { platformLogo } from './platform-icons.js?v=20261111-v2';
+import { platformAccountLabel } from './account-identity.js?v=20261113';
 import { patchBackgroundContent } from './background-dom.js?v=20261112-refresh';
 
 export function interactionAccountName(account) {
-  const platform = String(account?.platform_name || account?.platform_code || '');
-  const nickname = String(account?.login_status || '').toUpperCase() === 'READY' ? String(account.platform_user_name || '').trim() : '';
-  return nickname ? `${nickname} · ${platform}` : platform;
+  return platformAccountLabel(account);
 }
 
 function accountStatus(account, runtimes) {
   if (Number(account.enabled) === 0 || account.platform_effective_state === 'STOPPED') return ['muted', '已暂停'];
   if (account.login_status !== 'READY') return ['warn', account.login_status === 'UNKNOWN' ? '待检查登录' : '需登录'];
-  if (runtimes.some(item => ['ERROR', 'FAILED', 'DEGRADED'].includes(item.state))) return ['warn', '采集需检查'];
+  const problems = runtimes.filter(item => ['ERROR', 'FAILED', 'DEGRADED'].includes(item.state));
+  if (problems.length) return ['warn', problems.map(item => {
+    const name = item.channel_type === 'COMMENT' ? '评论' : item.channel_type === 'PRIVATE_MESSAGE' ? '私信' : '采集';
+    return name + ({ VERIFY_REQUIRED:'需验证', LOGIN_REQUIRED:'需登录', NAVIGATION_TIMEOUT:'采集超时' }[item.last_error_code] || '同步未完成');
+  }).join(' · ')];
   if (runtimes.some(item => ['QUEUED', 'RUNNING'].includes(item.state))) return ['busy', '采集中'];
   if (['COMMENT', 'PRIVATE_MESSAGE'].every(channel => runtimes.some(item => item.channel_type === channel && item.last_success_at))) return ['ok', '已同步'];
   return ['muted', runtimes.some(item => item.last_success_at) ? '部分已采集' : '未完成采集'];

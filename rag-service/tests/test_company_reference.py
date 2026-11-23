@@ -8,7 +8,7 @@ TITLES = ["Acme启航公司介绍", "启航公司介绍(1)", "启航业务与服
 
 @pytest.mark.parametrize("question", [
     "你们是什么公司", "介绍一下你们公司", "你们公司主要做什么业务", "你们是做什么的",
-    "你们主要提供什么服务", "贵公司提供哪些服务", "公司介绍", "业务简介",
+    "你们主要提供什么服务", "贵公司提供哪些服务", "公司介绍", "业务简介", "公司业务",
     "你们能提供哪些服务", "你们可以提供什么服务", "贵司能提供什么服务", "那你们能提供什么服务",
 ])
 def test_scoped_company_reference_keeps_question_and_names_only_search_object(question):
@@ -123,7 +123,8 @@ async def test_company_reference_is_scoped_and_survives_unavailable_rewrite_mode
 
 
 @pytest.mark.parametrize("score,expected", [(0.95, "ANSWERED"), (0.1, "NO_ANSWER")])
-async def test_company_reference_uses_same_rerank_and_original_evidence_gate(service, monkeypatch, score, expected):
+@pytest.mark.parametrize("question,resolved", [("你们是什么公司", "启航是什么公司"), ("公司业务", "启航公司业务")])
+async def test_company_reference_uses_same_rerank_and_original_evidence_gate(service, monkeypatch, score, expected, question, resolved):
     service.llm.enabled = False
     calls, generated = [], []
     monkeypatch.setattr(service.retriever, "scope_vocabulary", lambda scope: ["启航公司介绍"])
@@ -141,17 +142,17 @@ async def test_company_reference_uses_same_rerank_and_original_evidence_gate(ser
     monkeypatch.setattr(service, "_retrieve", retrieve)
     monkeypatch.setattr(service, "_generate", generate)
     response = await service.run_query(
-        question="你们是什么公司",
+        question=question,
         snapshot=Snapshot(conversationKey="company", conversationVersion=0, inputFingerprint="company"),
         source=SourceInfo(), knowledge_base_id="main-business-kb", trace_id="company", request_id="company",
         debug=True,
     )
     assert response.result == expected
-    assert all(call[1]["rerank_query"] == "启航是什么公司" for call in calls)
+    assert all(call[1]["rerank_query"] == resolved for call in calls)
     assert response.diagnostics["evidenceGate"]["threshold"] == 0.38
     if expected == "ANSWERED":
-        assert generated[0]["question"] == "你们是什么公司"
-        assert generated[0]["resolved_question"] == "启航是什么公司"
+        assert generated[0]["question"] == question
+        assert generated[0]["resolved_question"] == resolved
         assert response.grounding.sourceReferences[0].chunkId == "chunk-1"
     else:
         assert not generated

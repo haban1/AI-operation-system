@@ -468,8 +468,10 @@ export class PlatformWebAccessManager {
       '--remote-allow-origins=*',
       '--no-first-run',
       '--no-default-browser-check',
-      '--start-maximized',
-      'about:blank'
+      '--no-startup-window',
+      '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding',
+      '--disable-backgrounding-occluded-windows'
     ];
     let launchedProcess;
     try {

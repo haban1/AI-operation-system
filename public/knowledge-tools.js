@@ -1,7 +1,7 @@
 let activeRequest;
 let revision = 0;
 const chat = { turns: [], draft: '', platform: 'DOUYIN', channelType: 'DIRECT_MESSAGE', sessionId: null };
-const noAnswerText = '当前知识不足以可靠回答，可检查知识资料或换一种问法。';
+const noAnswerText = '这个问题建议向人工客服咨询一下。';
 let sessionSequence = 0;
 
 function createTestSessionId() {
@@ -82,10 +82,11 @@ export function renderRagPlayground(root, options) {
     <form id="ragTestForm"><label for="ragTestQuestion">测试问题</label><textarea id="ragTestQuestion" maxlength="4000" rows="3" required placeholder="输入问题，查看知识库会如何回答…"></textarea><div class="knowledge-test-submit"><p id="ragTestStatus" role="status" aria-live="polite"></p><button class="btn" type="submit">开始测试</button></div></form></section></section>`;
   const messages = root.querySelector('#ragTestMessages');
   const display = () => {
-    messages.innerHTML = chat.turns.length ? chat.turns.map(({ question, response }) => {
+    messages.innerHTML = chat.turns.length ? chat.turns.map(({ question, response: rawResponse, presentation }) => {
+      const response = rawResponse || { result: 'NOT_QUERIED' };
       const sources = response.grounding?.sourceReferences || [];
       const answered = response.result === 'ANSWERED';
-      return `<article class="knowledge-test-turn"><div class="knowledge-test-question"><b>我的提问</b><p>${esc(question)}</p></div><div class="knowledge-test-answer"><b>${answered ? '知识库回答' : '未找到可靠答案'}</b><p>${esc(answered ? response.answer?.text || '' : noAnswerText)}</p>
+      return `<article class="knowledge-test-turn"><div class="knowledge-test-question"><b>我的提问</b><p>${esc(question)}</p></div><div class="knowledge-test-answer"><b>${answered ? '知识库回答' : presentation?.kind === 'SOCIAL' ? '日常回应' : presentation?.kind === 'CLARIFICATION' ? '确认一下' : '咨询建议'}</b><p>${esc(presentation?.text || (answered ? response.answer?.text || '' : noAnswerText))}</p>
         ${sources.length ? `<details><summary>查看引用来源（${sources.length}）</summary>${sources.map(source => `<div class="knowledge-test-source"><strong>${esc(source.title || source.documentId)}</strong><small>${esc([source.page && '第 ' + source.page + ' 页', source.sheet, source.rowStart && '第 ' + source.rowStart + ' 行'].filter(Boolean).join(' · '))}</small><p>${esc(source.excerpt || '')}</p></div>`).join('')}</details>` : ''}
         <details><summary>测试详情</summary><dl><dt>结果</dt><dd>${esc(response.result)}</dd>${response.reasonCode ? `<dt>原因</dt><dd>${esc(response.reasonCode)}</dd>` : ''}<dt>耗时</dt><dd>${esc(response.meta?.latencyMs ?? '—')} ms</dd><dt>知识索引</dt><dd>${esc(response.meta?.knowledgeVersion || '—')}</dd><dt>追踪 ID</dt><dd>${esc(response.traceId || '—')}</dd></dl></details></div></article>`;
     }).join('') : '<div class="empty">输入一个问题，开始测试知识库问答效果。</div>';
@@ -110,16 +111,16 @@ export function renderRagPlayground(root, options) {
     const current = () => isCurrent() && revision === generation;
     const controller = new AbortController(); activeRequest = controller;
     form.querySelector('button').disabled = true; question.disabled = true; platform.disabled = true; channel.disabled = true;
-    status.textContent = '正在检索知识并生成回答…';
+    status.textContent = '正在理解问题并生成回答…';
     // Include the actual displayed no-answer response so topic continuity is honest.
     const turns = chat.turns.slice(-3);
-    let context = turns.flatMap(turn => [{ role: 'USER', text: turn.question }, { role: 'ASSISTANT', text: turn.response.answer?.text || noAnswerText }]);
+    let context = turns.flatMap(turn => [{ role: 'USER', text: turn.question }, { role: 'ASSISTANT', text: turn.presentation?.text || turn.response?.answer?.text || noAnswerText }]);
     while (context.reduce((n, item) => n + [...item.text].length, 0) > 12000) context.splice(0, 2);
     try {
       const result = await api('/api/rag/test-query', { method: 'POST', signal: controller.signal, body: JSON.stringify({ text, sessionId: chat.sessionId, platform: chat.platform, channelType: chat.channelType, context: chat.channelType === 'COMMENT' ? [] : context }) });
       if (!current()) return;
-      if (!['ANSWERED', 'NO_ANSWER'].includes(result.response?.result)) throw new Error('测试服务未返回有效结果');
-      chat.turns.push({ question: text, response: result.response });
+      if (!['ANSWERED', 'NO_ANSWER'].includes(result.response?.result) && !(result.response === null && ['SOCIAL', 'CLARIFICATION', 'HUMAN_GUIDANCE'].includes(result.presentation?.kind) && result.presentation.text)) throw new Error('测试服务未返回有效结果');
+      chat.turns.push({ question: text, response: result.response, presentation: result.presentation });
       chat.turns = chat.turns.slice(-30);
       chat.draft = ''; question.value = ''; display(); messages.scrollTop = messages.scrollHeight;
       status.textContent = '测试完成'; question.disabled = false; question.focus();

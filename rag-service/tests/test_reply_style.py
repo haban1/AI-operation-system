@@ -91,6 +91,9 @@ async def test_reply_style_applies_to_both_backends_without_relaxing_answer_cont
     assert "答清用户问的部分就停" in system and "不顺带介绍目标、理念、价值" in system
     assert "常用词和具体动作" in system and "用户询问这些术语本身时除外" in system
     assert "办理条件" in system and "例外必须保留" in system
+    assert "有答案就直接回答" in system and "缺少哪些未被询问的字段" in system
+    assert "目前只确认到基地名称" in system and "必要的办理条件、例外和时间限制仍须保留" in system
+    assert "由应用简短引导咨询人工客服" in system and "不声称已转接或已联系人工" in system
     assert "不要声称自己是真人" in system and "证据不足仍返回NO_ANSWER" in system
     assert "NO_ANSWER" in system and "citation_ids" in system
     assert "口语化和简短要求仅适用于answer" in system

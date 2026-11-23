@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { cornerBranding } from './branding.mjs';
 import { montageTemplates, buildMontageHtml } from './montage15.mjs';
 
 // The unchanged upstream files are retained under templates/upstream/.
@@ -272,6 +273,7 @@ export function buildHtml(project, assets = [], {
   const template = project?.templateSnapshot || getTemplate(project?.templateId);
   if (!template) throw new TypeError(`Unknown template: ${String(project?.templateId ?? '')}`);
   if (template.engine === 'montage15') return buildMontageHtml(template, project, assets, {assetPrefix, gsapUrl, interactive, templateAudioPrefix});
+  const branding = cornerBranding(template.width, template.height);
   const fields = { ...template.defaults, ...(project.fields ?? {}) };
   const accent = /^#(?:[\da-f]{3}|[\da-f]{6}|[\da-f]{8})$/i.test(String(fields.accent))
     ? String(fields.accent) : template.defaults.accent;
@@ -317,7 +319,8 @@ export function buildHtml(project, assets = [], {
 <body>
 <div id="root" class="${template.id}" data-composition-id="main" data-start="0" data-duration="${duration}" data-width="${template.width}" data-height="${template.height}" data-fps="${template.fps}" style="--accent:${accent};--title-size:${titleSize}px">
   <div class="canvas-decoration"></div>
-  <div class="brand-line"><div class="brand-name"><span class="brand-dot"></span><span>${escapeHtml(fields.brand)}</span></div><span class="edition">15 SEC.</span></div>
+  ${branding.html}
+  <div class="brand-line" style="left:${branding.textLeft}px"><div class="brand-name"><span class="brand-dot"></span><span>${escapeHtml(fields.brand)}</span></div><span class="edition">15 SEC.</span></div>
   <div class="title-block"><h1 class="headline" style="max-height:none">${escapeHtml(fields.title)}</h1><p class="subtitle" style="max-height:none;font-size:${subtitleSize}px">${escapeHtml(fields.subtitle)}</p></div>
   ${visual}
   <div class="film-footer"><div class="footer-note"><span>${template.id === 'warm-grain' ? '每个细节，都值得留下' : '精彩，从这一刻开始'}</span><span class="footer-arrow">↗</span></div><div class="progress-track"><span class="progress-piece"><i id="progress-1"></i></span><span class="progress-piece"><i id="progress-2"></i></span><span class="progress-piece"><i id="progress-3"></i></span></div></div>

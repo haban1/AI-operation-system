@@ -249,12 +249,14 @@ function makeLoginStatePage(url, { bodyText = '', visibleSelectors = [] } = {}) 
   };
 }
 
-test('微博登录状态：newlogin 明确判定为未登录', async () => {
+test('微博登录状态：仅有游客页地址不能证明退出，有可见登录表单才计入退出', async () => {
   const adapter = makeAdapter();
   const result = await adapter.inspectLoginState(makeLoginStatePage(
     'https://weibo.com/newlogin?tabtype=weibo&gid=102803&openLoginLayer=0&url=https://weibo.com/'
   ));
-  assert.deepEqual(result, { state: 'LOGIN', evidence: ['login-url'] });
+  assert.deepEqual(result, { state: 'UNKNOWN', evidence: ['login-redirect-unconfirmed'] });
+  const form = 'form[action*="login" i]';
+  assert.equal((await adapter.inspectLoginState(makeLoginStatePage('https://weibo.com/newlogin', {visibleSelectors:[form]}))).state, 'LOGIN');
 });
 
 test('微博登录状态：首页无可靠账号证据时保持无法确认', async () => {
@@ -369,6 +371,18 @@ test('微博主动登录检查以私信受保护页面为主证据并复核采�
   assert.equal(result.loggedIn, true);
   assert.equal(result.operational, true);
   assert.match(result.message, /采集回复可用/);
+  let probes = 0;
+  page.goto = async url => { currentUrl = url; probes++; };
+  const old = makeLoginStatePage('https://weibo.com/newlogin', {visibleSelectors:['[class*="loginBox"]']});
+  adapter.context = { pages: () => [old] };
+  assert.equal((await adapter.checkLogin()).state, 'READY');
+  assert.equal((await adapter.recheckLogin()).state, 'READY');
+  assert.equal(probes, 2);
+  adapter.inspectFunctionalCapabilities = async () => ({comment:{state:'LOGIN_REQUIRED'}, privateMessage:{state:'READY'}});
+  const mixed = await adapter.checkLogin();
+  assert.equal(mixed.state, 'UNKNOWN');
+  assert.equal(mixed.identityLoggedIn, true);
+  assert.equal(mixed.operational, false);
 });
 
 test('微博评论行会同时提取评论ID和所属作品ID', async () => {

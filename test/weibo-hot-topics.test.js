@@ -56,7 +56,8 @@ test('uses existing context, closes only its temporary tab on success or failure
       return { status: () => 200 };
     }, evaluate: async () => chart, locator: () => ({ first: () => ({ waitFor: async () => {} }) }),
     url: () => WEIBO_HOT_TOPICS_URL, close: async () => { closed++; } };
-    const adapter = { ensureContext: async () => ({ newPage: async () => { opened++; return page; } }) };
+    const context = { newPage: () => assert.fail('hot topics must not open a visible tab') };
+    const adapter = { ensureContext: async () => context, createBackgroundPage: async target => { assert.equal(target, context); opened++; return page; } };
     if (fails) await assert.rejects(collectWeiboHotTopics(adapter), { code: 'WEIBO_BROWSER_REQUEST_FAILED' });
     else assert.equal((await collectWeiboHotTopics(adapter)).data.realtime.length, 2);
     assert.equal(opened, 1); assert.equal(closed, 1);

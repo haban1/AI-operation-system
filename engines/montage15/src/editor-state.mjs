@@ -1,6 +1,7 @@
 import { fail, validId } from './errors.mjs';
 
 export const editableFields = ['title', 'subtitle', 'brand', 'accent', 'beat1', 'beat2', 'beat3'];
+export const fieldsForTemplate = template => [...editableFields, ...['beat4', 'beat5'].filter(key => Object.hasOwn(template?.defaults || {}, key))];
 export const editableSettings = ['titles', 'brand', 'intensity', 'textOffset', 'layerOrder'];
 
 function limitedText(value, maximum, label) {
@@ -26,7 +27,7 @@ export function validateLocks(value, template) {
   if (typeof value.audio !== 'boolean') fail(422, 'INVALID_LOCKS', '音乐锁定状态不正确');
   return {
     slots: identifiers(value.slots, new Set(template.slots.map(slot => slot.id)), '画面锁定'),
-    fields: identifiers(value.fields, new Set(editableFields), '文案锁定'),
+    fields: identifiers(value.fields, new Set(fieldsForTemplate(template)), '文案锁定'),
     audio: value.audio,
     settings: identifiers(value.settings, new Set(editableSettings), '动效锁定'),
   };
@@ -78,7 +79,7 @@ export function validateScope(input, template) {
   const scope = input || { kind: 'all', ids: [] };
   if (!scope || typeof scope !== 'object' || Array.isArray(scope) || Object.keys(scope).some(key => !['kind', 'ids'].includes(key))) fail(422, 'INVALID_SCOPE', '请选择重做范围');
   if (!['all', 'slots', 'fields', 'audio', 'instruction'].includes(scope.kind)) fail(422, 'INVALID_SCOPE', '不支持此重做范围');
-  const allowed = new Set(scope.kind === 'slots' ? template.slots.map(slot => slot.id) : scope.kind === 'fields' ? editableFields : []);
+  const allowed = new Set(scope.kind === 'slots' ? template.slots.map(slot => slot.id) : scope.kind === 'fields' ? fieldsForTemplate(template) : []);
   const ids = identifiers(scope.ids || [], allowed, '重做范围');
   if (['slots', 'fields'].includes(scope.kind) && !ids.length) fail(422, 'INVALID_SCOPE', '请选择要重做的画面或文案');
   return { kind: scope.kind, ids };

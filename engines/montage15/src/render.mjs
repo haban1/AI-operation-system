@@ -8,6 +8,7 @@ import { hashFile, probe, exec, FFMPEG } from './media.mjs';
 import { buildHtml, getTemplate } from './templates.mjs';
 import { writeJson } from './store.mjs';
 import { templateAudio, audioMixFilters } from './audio.mjs';
+import { brandingFingerprint } from './branding.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ENGINE_VERSION = '0.9.27';
@@ -51,7 +52,7 @@ export class RenderQueue {
     }
     const builtInAudio = await Promise.all(templateAudio(template, project).map(async a => ({...a,
       sha256: await hashFile(path.join(ROOT, 'templates/montage15/audio', a.file)) })));
-    const fingerprint = digest({ project, builtInAudio, audioMixVersion: 1, assetHashes: relevant.map(a => [a.id, a.mediaSha256]), engine: ENGINE_VERSION });
+    const fingerprint = digest({ project, builtInAudio, brandingFingerprint, audioMixVersion: 1, assetHashes: relevant.map(a => [a.id, a.mediaSha256]), engine: ENGINE_VERSION });
     const inFlight = (await this.store.all('jobs')).find(j => j.fingerprint === fingerprint && ['queued', 'rendering'].includes(j.status));
     if (inFlight) return inFlight;
     if (this.queue.length >= 3) fail(429, 'QUEUE_FULL', '已有多个导出任务，请等待当前任务完成');
@@ -100,7 +101,7 @@ export class RenderQueue {
         if (await hashFile(target) !== audio.sha256) throw new Error('内置音轨已发生变化，请重新发起导出');
       }
       await fs.writeFile(path.join(directory, 'index.html'), buildHtml(job.project, copiedAssets, { gsapUrl: 'vendor/gsap.min.js', interactive: false, templateAudioPrefix: 'assets' }));
-      await writeJson(path.join(directory, 'input-snapshot.json'), { project: job.project, engineVersion: ENGINE_VERSION,
+      await writeJson(path.join(directory, 'input-snapshot.json'), { project: job.project, engineVersion: ENGINE_VERSION, brandingFingerprint,
         assetHashes: job.assets.map(a => ({ id: a.id, sha256: a.mediaSha256 })), builtInAudio: job.builtInAudio, fingerprint: job.fingerprint });
       await this.update(job, { progress: 0.08, message: '正在本机逐帧渲染，请保持服务运行' });
       if (job.status === 'cancelled') return;

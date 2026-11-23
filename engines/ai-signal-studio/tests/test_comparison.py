@@ -304,7 +304,7 @@ class ComparisonTests(unittest.TestCase):
             def task(*args):
                 try:original(*args)
                 finally:finished.set()
-            stack.enter_context(patch.object(app,'task',side_effect=task))
+            stack.enter_context(patch.object(app,'run_task',side_effect=task))
             server=ThreadingHTTPServer(('127.0.0.1',0),app.Handler)
             thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
             base=f'http://127.0.0.1:{server.server_port}'

@@ -1,0 +1,140 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright-core';
+import { existsSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { startWorkbench } from '../engines/montage15/src/server.mjs';
+import { cleanupDir, startServer, stopChild } from './helpers/runtime.js';
+
+const exe=[process.env.CHROME_EXECUTABLE_PATH,'C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/chromium'].find(p=>p&&existsSync(p));
+test('编辑预览从嵌套工作台全屏，保留画面、控制栏和进度', {skip:!exe}, async t=>{
+  const dataDir=await mkdtemp(path.join(os.tmpdir(),'montage-preview-'));
+  const app=await startWorkbench({port:0,dataDir});
+  t.after(async()=>{await app.close();app.server.close();await rm(dataDir,{recursive:true,force:true});});
+  const browser=await chromium.launch({executablePath:exe,headless:true});
+  t.after(()=>browser.close());
+  const page=await browser.newPage({viewport:{width:1440,height:900}});
+  const {sessionToken}=await (await page.request.get(app.url+'/api/bootstrap')).json();
+  const {project}=await (await page.request.post(app.url+'/api/projects',{headers:{Origin:app.url,'x-workbench-token':sessionToken},data:{name:'预览',templateId:'perspective-flow',format:'landscape'}})).json();
+  await page.route('**/outer',r=>r.fulfill({contentType:'text/html',body:'<iframe width="1000" height="700" sandbox="allow-scripts allow-same-origin allow-forms allow-modals" src="/studio-frame"></iframe>'}));
+  await page.route('**/studio-frame',r=>r.fulfill({contentType:'text/html',body:'<iframe width="950" height="650" allow="autoplay" src="/?project='+project.id+'"></iframe>'}));
+  await page.goto(app.url+'/outer');
+  const editor=page.frameLocator('iframe').frameLocator('iframe');
+  const source=editor.locator('#preview-frame');
+  await source.waitFor();
+  const initialWidth=(await source.boundingBox()).width;
+  const url=await source.getAttribute('src');
+  await editor.getByRole('button',{name:'全屏预览'}).click();
+  const exit=editor.getByRole('button',{name:'退出全屏'});
+  await exit.waitFor();
+  assert.equal(await exit.evaluate(el=>el.ownerDocument.fullscreenElement.id),'editor-preview');
+  assert.ok((await source.boundingBox()).width>initialWidth*1.5);
+  await editor.locator('#timeline').fill('120');
+  await exit.click();
+  await editor.getByRole('button',{name:'全屏预览'}).waitFor();
+  assert.equal(await source.getAttribute('src'),url);
+  assert.equal(await editor.locator('#timeline').inputValue(),'120');
+  await source.evaluate(el=>Object.defineProperty(el.ownerDocument,'fullscreenEnabled',{value:false}));
+  await editor.getByRole('button',{name:'全屏预览'}).click();
+  await exit.press('Escape');
+  await editor.getByRole('button',{name:'全屏预览'}).waitFor();
+});
+test('自动保存最后一次编辑，生成后入库，失败只重试入库', {skip:!exe}, async t=>{
+  const dataDir=await mkdtemp(path.join(os.tmpdir(),'montage-auto-'));
+  const app=await startWorkbench({port:0,dataDir});
+  t.after(async()=>{await app.close();app.server.close();await rm(dataDir,{recursive:true,force:true});});
+  const browser=await chromium.launch({executablePath:exe,headless:true});
+  t.after(()=>browser.close());
+  const page=await browser.newPage();
+  const bootstrap=await (await page.request.get(app.url+'/api/bootstrap')).json();
+  const creation=await page.request.post(app.url+'/api/projects',{headers:{Origin:app.url,'x-workbench-token':bootstrap.sessionToken},data:{name:'测试剪辑',templateId:'perspective-flow',format:'landscape'}});
+  assert.equal(creation.status(),201);
+  const {project}=await creation.json();
+  await page.goto(app.url+'?project='+project.id);
+  await page.waitForFunction(()=>document.querySelector('#project-name').value==='测试剪辑');
+  assert.equal(await page.locator('#save-button,#save-bottom-button').count(),0);
+  await page.locator('#project-name').evaluate(el=>{el.value='第一稿';el.dispatchEvent(new Event('input'));el.value='第二稿';el.dispatchEvent(new Event('input'));});
+  await page.waitForFunction(()=>document.querySelector('#save-status').textContent==='已自动保存');
+  const saved=await(await page.request.get(app.url+'/api/projects/'+project.id)).json();
+  assert.equal(saved.project.name,'第二稿');
+  // Use template color cards so the UI is valid without reading a user's media.
+  await page.locator('#setting-colorCards').evaluate(el=>{el.checked=true;el.dispatchEvent(new Event('change'));});
+  let renders=0, receives=0;
+  const job={id:'fixture-job-1',projectId:project.id,revision:saved.project.revision,status:'queued',progress:0};
+  await page.route('**/api/projects/*/render',r=>{renders++;return r.fulfill({json:{job}});});
+  const materialIds=['a'.repeat(32),'b'.repeat(32)];
+  await page.route('**/api/jobs/fixture-job-*',r=>r.fulfill({json:{job:{...job,status:'succeeded',progress:1}}}));
+  await page.route('**/api/studio/outputs/confirm',r=>{
+    const id='montage-'+job.id;
+    assert.deepEqual(r.request().postDataJSON(),{ids:[id]});
+    receives++;
+    return r.fulfill({status:receives===1?503:200,json:{results:[{id,ok:true,status:'approved',materialId:receives===2?null:materialIds[renders-1]}]}});
+  });
+  await page.locator('#render-button').click();
+  await page.getByRole('button',{name:'重试入库'}).click();
+  await page.waitForFunction(()=>document.querySelector('#render-message').textContent.includes('未收到这条成片的入库确认'));
+  assert.equal(await page.locator('#output-ready-dialog').isVisible(),false);
+  await page.getByRole('button',{name:'重试入库'}).click();
+  await page.waitForFunction(()=>document.querySelector('#render-message').textContent==='已放入成片库');
+  assert.equal(renders,1);
+  assert.equal(receives,3);
+  const originalUrl=page.url();
+  const clip=fileURLToPath(new URL('../bundled/content-library/media/f3d5211ee02ca61ea5bf6677ff39ac99e761b6e713f831eecbf7261fc1b5e9de.mp4',import.meta.url));
+  await page.route('**/api/content-library/*/media',r=>r.fulfill({path:clip,contentType:'video/mp4'}));
+  await page.getByRole('button',{name:'全屏播放'}).click();
+  await page.waitForFunction(()=>{
+    const video=document.querySelector('#output-player');
+    return document.fullscreenElement===video && video.currentTime>0 && video.videoWidth>0;
+  });
+  assert.equal(await page.locator('#output-player').getAttribute('src'),'/api/content-library/'+materialIds[0]+'/media');
+  await page.evaluate(()=>document.exitFullscreen());
+  await page.waitForFunction(()=>!document.fullscreenElement && document.querySelector('#output-ready-dialog').open);
+  await page.getByRole('button',{name:'继续修改'}).click();
+  await page.waitForFunction(()=>document.querySelector('#output-player').paused && !document.querySelector('#output-player').hasAttribute('src'));
+  assert.equal(page.url(),originalUrl);
+  assert.equal(await page.locator('#project-name').inputValue(),'第二稿');
+  job.id='fixture-job-2';
+  await page.locator('#render-button').click();
+  await page.evaluate(()=>Object.defineProperty(document,'fullscreenEnabled',{value:false}));
+  await page.getByRole('button',{name:'全屏播放'}).click();
+  await page.waitForFunction(()=>!document.fullscreenElement && document.querySelector('#output-player').currentTime>0);
+  assert.equal(await page.locator('#output-player').getAttribute('src'),'/api/content-library/'+materialIds[1]+'/media');
+  await page.route('**/?publishMaterial=*',r=>r.fulfill({contentType:'text/html',body:'<title>发布测试</title>'}));
+  await page.getByRole('button',{name:'发布成片'}).click();
+  await page.waitForURL(app.url+'/?publishMaterial='+materialIds[1]+'#publishing');
+  assert.equal(receives,4);
+});
+
+test('独立混剪进入发布内容，准确预填视频且不提交任务', {skip:!exe},async t=>{
+  const runtime=await startServer();
+  t.after(async()=>{await stopChild(runtime.child);cleanupDir(runtime.dir);});
+  const browser=await chromium.launch({executablePath:exe,headless:true});
+  t.after(()=>browser.close());
+  const page=await browser.newPage();
+  const id='b'.repeat(32), media='/api/content-library/'+id+'/media';
+  const writes=[];
+  page.on('request',r=>{if(r.method()==='POST'&&r.url().includes('/api/publish'))writes.push(r.url());});
+  await page.route('**/api/content-library/'+id+'/publish-draft',r=>r.fulfill({json:{
+    title:'第二条测试成片',materialPath:'fixture/second.mp4',mediaUrl:media,mediaType:'video',meta:{}
+  }}));
+  await page.goto(runtime.base+'/?publishMaterial='+id+'#publishing');
+  await page.waitForFunction(()=>document.querySelector('#materialPath')?.value==='fixture/second.mp4');
+  assert.equal(await page.locator('#publishTitle').inputValue(),'第二条测试成片');
+  assert.equal(await page.locator('#materialPreview video').getAttribute('src'),media);
+  assert.equal(new URL(page.url()).searchParams.has('publishMaterial'),false);
+  // Exercise both real iframe listeners with a second (different) library draft.
+  const embeddedId='c'.repeat(32);
+  await page.route('**/video-workbench/montage/',r=>r.fulfill({contentType:'text/html',body:'<button>测试成片</button>'}));
+  await page.route('**/api/content-library/'+embeddedId+'/publish-draft',r=>r.fulfill({json:{
+    title:'工作台内成片',materialPath:'fixture/embedded.mp4',mediaUrl:'/api/content-library/'+embeddedId+'/media',mediaType:'video',meta:{}
+  }}));
+  await page.goto(runtime.base+'/#studio');
+  const editor=page.frameLocator('.signal-workbench-frame').frameLocator('#montageFrame');
+  await editor.getByText('测试成片').evaluate((_,id)=>parent.postMessage({type:'content-library:publish',id},location.origin),embeddedId);
+  await page.waitForFunction(()=>document.querySelector('#materialPath')?.value==='fixture/embedded.mp4');
+  assert.equal(await page.locator('#publishTitle').inputValue(),'工作台内成片');
+  assert.deepEqual(writes,[]);
+});

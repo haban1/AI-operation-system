@@ -653,8 +653,8 @@ test('Bilibili management lookup blocks multiple exact title records', async () 
       const element = {
         tagName: 'SPAN',
         className: 'title',
-        innerText: callbackTitle,
-        textContent: callbackTitle,
+        innerText: expectedTitle,
+        textContent: expectedTitle,
         parentElement: record,
         getAttribute() { return null; },
         closest() { return null; },

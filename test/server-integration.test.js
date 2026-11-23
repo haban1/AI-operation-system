@@ -1793,13 +1793,13 @@ test('material preview capability URL streams media without exposing the shared 
   });
 
   await waitForAgent(base);
-  const precheck = await request(base, '/precheck', {
+  const precheck = await request(base, '/material-info', {
     method: 'POST',
     headers: { 'X-Agent-Token': agentToken, Origin: origin },
     body: JSON.stringify({ materialPath, platforms: [] })
   });
   assert.equal(precheck.response.status, 200, JSON.stringify(precheck.data));
-  assert.equal(precheck.data.precheck.meta.type, 'image');
+  assert.equal(precheck.data.materialMeta.type, 'image');
   assert.match(precheck.data.previewUrl, /^\/material-preview\/[0-9a-f-]+$/i);
 
   const materialBytes = fs.readFileSync(materialPath);

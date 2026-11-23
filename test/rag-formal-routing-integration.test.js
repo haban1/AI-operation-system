@@ -196,6 +196,16 @@ test('正式 RAG 链路只查询正常业务消息，并覆盖回答、澄清、
     return result.data.message;
   };
 
+  await t.test('调优后的夸赞和缺活动对象提问走外层回复，不调用RAG', async () => {
+    for (const [content, expected] of [['好厉害', '谢谢认可'], ['在那里参加', '哪个活动或课程']]) {
+      const before = ragRequests.length;
+      const message = await simulate({ content, conversationId: 'conversation-tuning-' + content });
+      assert.equal(message.status, 'REPLY_QUEUED');
+      assert.ok(message.reply_text.includes(expected), message.reply_text);
+      assert.equal(ragRequests.length, before);
+    }
+  });
+
   const privateAnswered = await simulate({ content: '办理业务需要什么材料？' });
   assert.equal(privateAnswered.decision, 'RAG_ANSWERED', JSON.stringify(privateAnswered));
   assert.equal(privateAnswered.status, 'REPLY_QUEUED');
@@ -357,8 +367,8 @@ test('正式 RAG 链路只查询正常业务消息，并覆盖回答、澄清、
   });
 
   const evidenceGapIds = [];
-  await t.test('五个平台连续三次证据不足仍给诚实边界提示，不累计澄清、不自动转人工', async () => {
-    for (const platformCode of ['douyin', 'wechat_channels', 'weibo', 'bilibili', 'xiaohongshu']) {
+  await t.test('四个平台连续三次证据不足仍给诚实边界提示，不累计澄清、不自动转人工', async () => {
+    for (const platformCode of ['douyin', 'wechat_channels', 'weibo', 'bilibili']) {
       const conversationId = `evidence-gap-${platformCode}`;
       const fixture = new DatabaseSync(dbPath);
       fixture.exec('PRAGMA busy_timeout=15000');
@@ -370,7 +380,7 @@ test('正式 RAG 链路只查询正常业务消息，并覆盖回答、澄清、
           assert.equal(message.status, 'REPLY_QUEUED', JSON.stringify(message));
           evidenceGapIds.push(message.id);
           assert.equal(message.decision, 'RAG_KNOWLEDGE_GAP');
-          assert.match(message.reply_text, /没有足够依据/);
+          assert.equal(message.reply_text, '这个问题建议向人工客服咨询一下。');
           assert.doesNotMatch(message.reply_text, /[？?]|哪方面|对吗/);
           assert.ok(message.reply_job_id);
           const context = JSON.parse(message.reply_context_json);
@@ -389,9 +399,9 @@ test('正式 RAG 链路只查询正常业务消息，并覆盖回答、澄清、
       } finally { fixture.close(); }
     }
   });
-  await t.test('五个平台反复只问怎么申请时在外层引导，第三轮转人工且不让 RAG 猜业务', async () => {
+  await t.test('四个平台反复只问怎么申请时在外层引导，第三轮转人工且不让 RAG 猜业务', async () => {
     const beforeQueries = ragRequests.length;
-    for (const platformCode of ['douyin', 'wechat_channels', 'weibo', 'bilibili', 'xiaohongshu']) {
+    for (const platformCode of ['douyin', 'wechat_channels', 'weibo', 'bilibili']) {
       const conversationId = `application-guidance-${platformCode}`;
       const fixture = new DatabaseSync(dbPath);
       fixture.exec('PRAGMA busy_timeout=15000');

@@ -18,6 +18,7 @@ COPY app.py config.example.json ./
 COPY scripts ./scripts
 COPY web ./web
 COPY video/src ./video/src
+COPY video/public/branding ./video/public/branding
 COPY video/tsconfig.json ./video/tsconfig.json
 RUN cd video && npm run check
 RUN mkdir -p runs data runtime-config video/public/runs

@@ -8,6 +8,8 @@ import { reviewPublishContent } from '../src/services/content-compliance.js';
 import { BUSINESS_RISK_KEYWORDS } from '../src/services/decision.js';
 import { withExtractedAudio } from './material-audio-extractor.js';
 import { callLocalWhisperAsr } from './local-whisper-asr.js';
+import { aiHttpError } from '../src/services/ai-http-error.js';
+import { requestAi } from '../src/services/ai-request.js';
 
 const RULE_VERSION = 'audio-copy-2026.08.24.3';
 const PROMPT_VERSION = 'audio-copy-prompt-2026.08.24.3';
@@ -196,7 +198,7 @@ export async function callQwenAsr({ audioBuffer, mimeType = 'audio/mpeg', model,
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
   try {
-    const response = await fetchImpl(`${baseUrl}/chat/completions`, {
+    const data = await requestAi(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
@@ -206,9 +208,10 @@ export async function callQwenAsr({ audioBuffer, mimeType = 'audio/mpeg', model,
         asr_options: { language: 'zh' }
       }),
       signal: controller.signal
+    }, fetchImpl, async response => {
+      if (!response.ok) throw await aiHttpError(response, { operation: '语音识别', code: 'ASR_HTTP_ERROR' });
+      return response.json();
     });
-    if (!response.ok) throw Object.assign(new Error(`千问语音识别 API 返回 ${response.status}: ${(await response.text()).slice(0, 500)}`), { code: 'ASR_HTTP_ERROR' });
-    const data = await response.json();
     const transcript = messageText(data?.choices?.[0]?.message?.content || data?.output?.text);
     if (!transcript) throw Object.assign(new Error('千问语音识别未返回转写文本'), { code: 'ASR_EMPTY_TRANSCRIPT' });
     return { text: transcript, model: data.model || model, usage: data.usage || null, elapsedMs: Date.now() - startedAt };
@@ -224,12 +227,12 @@ export async function callMaterialAsr(options) {
 }
 
 export async function callQwenContent({ transcript, platformCodes = [], variationHint = '信息摘要型', previousCopy = null, repairContent = null, safetyRewrite = null, model, apiKey, baseUrl = config.qwenBaseUrl, timeoutMs = config.audioContentTimeoutMs, fetchImpl = globalThis.fetch }) {
-  if (!apiKey) throw Object.assign(new Error('未配置千问 API Key'), { code: 'AI_KEY_MISSING' });
+  if (!apiKey) throw Object.assign(new Error('未配置 AI API Key'), { code: 'AI_KEY_MISSING' });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
   try {
-    const response = await fetchImpl(`${baseUrl}/chat/completions`, {
+    const data = await requestAi(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
@@ -245,11 +248,12 @@ export async function callQwenContent({ transcript, platformCodes = [], variatio
             : contentPrompt({ transcript, platformCodes, variationHint, previousCopy }) }]
       }),
       signal: controller.signal
+    }, fetchImpl, async response => {
+      if (!response.ok) throw await aiHttpError(response, { operation: '文案生成', code: 'CONTENT_HTTP_ERROR' });
+      return response.json();
     });
-    if (!response.ok) throw Object.assign(new Error(`千问文案生成 API 返回 ${response.status}: ${(await response.text()).slice(0, 500)}`), { code: 'CONTENT_HTTP_ERROR' });
-    const data = await response.json();
     const content = data?.choices?.[0]?.message?.content;
-    if (!messageText(content)) throw Object.assign(new Error('千问文案生成未返回内容'), { code: 'CONTENT_EMPTY_RESPONSE' });
+    if (!messageText(content)) throw Object.assign(new Error('文案生成未返回内容'), { code: 'CONTENT_EMPTY_RESPONSE' });
     return { content, model: data.model || model, usage: data.usage || null, elapsedMs: Date.now() - startedAt };
   } finally {
     clearTimeout(timer);
@@ -286,12 +290,12 @@ function knowledgeRepairPrompt(content) {
 }
 
 export async function callQwenKnowledge({ transcript, repairContent = null, model, apiKey, baseUrl = config.qwenBaseUrl, timeoutMs = config.audioKnowledgeTimeoutMs, fetchImpl = globalThis.fetch }) {
-  if (!apiKey) throw Object.assign(new Error('未配置千问 API Key'), { code: 'AI_KEY_MISSING' });
+  if (!apiKey) throw Object.assign(new Error('未配置 AI API Key'), { code: 'AI_KEY_MISSING' });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
   try {
-    const response = await fetchImpl(`${baseUrl}/chat/completions`, {
+    const data = await requestAi(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
@@ -303,9 +307,10 @@ export async function callQwenKnowledge({ transcript, repairContent = null, mode
         messages: [{ role: 'user', content: repairContent === null ? knowledgePrompt(transcript) : knowledgeRepairPrompt(repairContent) }]
       }),
       signal: controller.signal
+    }, fetchImpl, async response => {
+      if (!response.ok) throw await aiHttpError(response, { operation: '知识内容生成', code: 'KNOWLEDGE_HTTP_ERROR' });
+      return response.json();
     });
-    if (!response.ok) throw Object.assign(new Error(`千问知识内容生成 API 返回 ${response.status}: ${(await response.text()).slice(0, 500)}`), { code: 'KNOWLEDGE_HTTP_ERROR' });
-    const data = await response.json();
     if (data?.choices?.[0]?.finish_reason === 'length') {
       throw Object.assign(new Error('知识内容生成未完成，未保存不完整草稿，请重新生成或拆分视频后重试。'), {
         code: 'KNOWLEDGE_OUTPUT_INCOMPLETE',
@@ -315,7 +320,7 @@ export async function callQwenKnowledge({ transcript, repairContent = null, mode
       });
     }
     const content = data?.choices?.[0]?.message?.content;
-    if (!messageText(content)) throw Object.assign(new Error('千问知识内容生成未返回内容'), { code: 'KNOWLEDGE_EMPTY_RESPONSE' });
+    if (!messageText(content)) throw Object.assign(new Error('知识内容生成未返回内容'), { code: 'KNOWLEDGE_EMPTY_RESPONSE' });
     return { content, model: data.model || model, usage: data.usage || null, elapsedMs: Date.now() - startedAt };
   } finally {
     clearTimeout(timer);
@@ -380,7 +385,7 @@ export async function generateMaterialCopyFromAudio({
     if (knowledgeOnly) return fail('KNOWLEDGE_ONLINE_REQUIRED', '请开启在线 AI 后重新生成视频知识草稿');
     return { ...buildMockAudioContentGeneration({ materialSha256, platformCodes: normalizedPlatforms }), ruleVersion: RULE_VERSION };
   }
-  if (!apiKey) return fail('AI_KEY_MISSING', '未配置千问 API Key，仍可人工填写标题和正文');
+  if (!apiKey) return fail('AI_KEY_MISSING', '未配置 AI API Key，仍可人工填写标题和正文');
   if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) return fail('MATERIAL_NOT_FOUND', '本地素材不存在');
   if (meta.type !== 'video') return fail('MATERIAL_NOT_VIDEO', '只有视频素材可根据音频生成文案');
   if (meta.hasAudio !== true) return fail('MATERIAL_AUDIO_MISSING', '视频中未检测到音轨');
@@ -435,12 +440,12 @@ export async function generateMaterialCopyFromAudio({
     if (!knowledgeOnly) {
       const contentKey = `${PROMPT_VERSION}:${contentModel}:${hash(transcript)}:${normalizedPlatforms.join(',')}`;
       let contentResponse;
+      const contentStartedAt = Date.now();
       try {
         if (!force) normalized = cacheGet(contentCache, contentKey, cacheMaxAgeMs);
         if (normalized) {
           calls.content = statusCall({ status: 'SKIPPED', model: contentModel, errorCode: 'CACHE_HIT', errorMessage: '复用缓存文案结果', cached: true });
         } else {
-          const contentStartedAt = Date.now();
           contentResponse = await invokeContent({ transcript, platformCodes: normalizedPlatforms, variationHint, previousCopy, model: contentModel, apiKey, baseUrl, timeoutMs: Math.min(config.audioContentTimeoutMs, remainingMs()) });
           try {
             normalized = normalizeGeneratedCopy(parseModelJson(contentResponse.content), { platformCodes: normalizedPlatforms });
@@ -482,7 +487,7 @@ export async function generateMaterialCopyFromAudio({
           cacheSet(contentCache, contentKey, normalized);
         }
       } catch (error) {
-        calls.content = statusCall({ status: 'FAILED', model: contentResponse?.model || contentModel, usage: contentResponse?.usage || null, elapsedMs: contentResponse?.elapsedMs || 0, errorCode: error.code || 'CONTENT_GENERATION_FAILED', errorMessage: abortMessage(error, '文案生成失败') });
+        calls.content = statusCall({ status: 'FAILED', model: contentResponse?.model || contentModel, usage: contentResponse?.usage || null, elapsedMs: Date.now() - contentStartedAt, errorCode: error.code || 'CONTENT_GENERATION_FAILED', errorMessage: abortMessage(error, '文案生成失败') });
         return fail(calls.content.errorCode, calls.content.errorMessage);
       }
     }

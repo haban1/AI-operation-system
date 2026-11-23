@@ -26,6 +26,7 @@
     asset(id) { return this.state.assets.find(asset => asset.id === id) || this.candidates().find(asset => asset.id === id); }
 
     home() {
+      $('source-preview').close();
       document.body.classList.add('is-home');
       $('project-home').hidden = false;
       const url = new URL(location.href); url.searchParams.delete('project'); url.searchParams.delete('new'); url.searchParams.set('home', '1'); history.replaceState(null, '', url);
@@ -57,11 +58,11 @@
         const asset = project.slots.map(slot => this.state.assets.find(asset => asset.id === slot.assetId)).find(Boolean);
         const image = asset?.thumbnailUrl || this.resource('/posters/' + project.templateId + '.jpg');
         const template = this.state.templateCatalog.find(item => item.id === project.templateId);
-        return `<button class="home-project" data-open-project="${esc(project.id)}" aria-label="进入工程 ${esc(project.name)}"><div class="project-cover"><img loading="lazy" src="${esc(image)}" alt=""><span>15 秒 · ${project.width > project.height ? '16:9' : '9:16'}</span></div><div class="project-card-copy"><strong>${esc(project.name)}</strong><p><span>${esc(template?.name.replace(/^\d+ · /,'') || '混剪工程')}</span><span>${new Date(project.updatedAt).toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'})} · 进入工程 →</span></p></div></button>`;
-      }).join('') || '<p class="section-help">暂无匹配工程。选择上方模板即可新建。</p>';
+        return `<button class="home-project" data-open-project="${esc(project.id)}" aria-label="进入视频 ${esc(project.name)}"><div class="project-cover"><img loading="lazy" src="${esc(image)}" alt=""><span>15 秒 · ${project.width > project.height ? '16:9' : '9:16'}</span></div><div class="project-card-copy"><strong>${esc(project.name)}</strong><p><span>${esc(template?.name.replace(/^\d+ · /,'') || '混剪视频')}</span><span>${new Date(project.updatedAt).toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'})} · 进入视频 →</span></p></div></button>`;
+      }).join('') || '<p class="section-help">暂无匹配视频。选择上方模板即可新建。</p>';
       $('home-projects').querySelectorAll('[data-open-project]').forEach(button => button.onclick = this.action(() => this.openProject(button.dataset.openProject)));
       const sources = this.state.sourceFolders || [];
-      $('home-source-summary').textContent = sources.length ? `${sources.length} 个素材集 · ${sources.reduce((count,source) => count + source.count,0)} 份素材` : '创建工程时连接文件夹';
+      $('home-source-summary').textContent = sources.length ? `${sources.length} 个素材集 · ${sources.reduce((count,source) => count + source.count,0)} 份素材` : '创建视频时连接文件夹';
     }
 
     newFromTemplate(id) { this.state.templateId = id; this.openNewProjectDialog(); }
@@ -80,6 +81,12 @@
     }
 
     entered() { document.body.classList.remove('is-home'); $('project-home').hidden = true; this.render(); }
+
+    showGallery() {
+      this.galleryOpener = document.activeElement;
+      $('source-preview').show();
+      $('media-search').focus();
+    }
 
     renderGallery() {
       const candidates = this.candidates();
@@ -233,7 +240,7 @@
       if(this.state.workflowBusy) return;
       const asset=await this.ensureAsset(id);
       const project=this.state.project;
-      if(project?.id!==projectId || this.state.workflowBusy) throw Error('工程状态已变化，请重新选择镜头');
+      if(project?.id!==projectId || this.state.workflowBusy) throw Error('视频状态已变化，请重新选择镜头');
       const slot=project.slots.find(item=>item.id===slotId);
       const definition=project.templateSnapshot.slots.find(item=>item.id===slotId);
       const duration=definition.durationFrames/project.fps;
@@ -259,7 +266,11 @@
         if(slotId) this.action(()=>this.replaceAsset(drag.id,slotId,0,drag.projectId))();
       });
       document.addEventListener('pointercancel',()=>this.cancelDrag());
-      document.addEventListener('keydown',event=>{if(event.key==='Escape')this.cancelDrag()});
+      document.addEventListener('keydown',event=>{
+        if(event.key!=='Escape') return;
+        this.cancelDrag();
+        if($('source-preview').open && !document.querySelector('dialog:modal')) $('source-preview').close();
+      });
       $('back-to-projects').onclick=this.action(async()=>{if(this.state.dirty)await this.saveProject({quiet:true});if(!this.state.dirty)this.home();});
       $('project-search').oninput=()=>this.renderHome();
       $('media-search').oninput=()=>this.renderGallery(); $('media-filter').onchange=()=>this.renderGallery();
@@ -286,7 +297,10 @@
       $('media-preview-dialog').addEventListener('close',()=>{++this.previewEpoch;$('media-preview-stage').querySelector('video')?.pause()});
       $('media-preview-start').oninput=()=>this.updatePreviewRange();
       $('media-preview-apply').onclick=this.action(async()=>{const target=this.previewTarget;await this.replaceAsset(target.id,target.slotId,Number($('media-preview-start').value),target.projectId);this.closePreview()});
-      $('shot-browse').onclick=()=>{$('media-search').focus();document.querySelector('.media-browser').scrollIntoView({block:'center'});document.querySelector('.media-browser').classList.add('is-target');setTimeout(()=>document.querySelector('.media-browser').classList.remove('is-target'),1800)};
+      $('source-preview-toggle').onclick=()=>this.showGallery();
+      $('source-preview-close').onclick=()=>$('source-preview').close();
+      $('source-preview').addEventListener('close',()=>{this.cancelDrag();this.galleryOpener?.isConnected && this.galleryOpener.focus()});
+      $('shot-browse').onclick=()=>{this.showGallery();$('media-search').focus();};
       for(const [id,key]of [['shot-inpoint','inPoint'],['shot-focus-x','focusX'],['shot-focus-y','focusY']]) $(id).onchange=()=>{
         if(this.state.workflowBusy)return;
         const {slot,definition,project}=this.selected;

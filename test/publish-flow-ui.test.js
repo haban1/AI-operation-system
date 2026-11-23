@@ -15,7 +15,7 @@ async function isolatedPage(browser, runtime) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
-  const fixture = { writes: [], errors: [], review: 'PASSED', reviewStatus: 'SUCCESS', precheck: 'PASSED', task: null };
+  const fixture = { writes: [], errors: [], review: 'PASSED', reviewStatus: 'SUCCESS', task: null };
   page.on('pageerror', error => fixture.errors.push(error.message));
   await context.route('**/*', async route => {
     const request = route.request(), url = new URL(request.url());
@@ -24,7 +24,7 @@ async function isolatedPage(browser, runtime) {
     if (!['GET', 'HEAD'].includes(request.method())) {
       const body = request.postDataJSON();
       fixture.writes.push({ url: url.pathname, body });
-      if (url.pathname === '/api/local-agent/precheck') return json({ precheck: { overall: fixture.precheck, meta: { type: 'image', format: 'png', width: 1280, height: 720, sha256: 'isolated-sha' }, results: body.platforms.map(platformCode => ({ platformCode, status: fixture.precheck })) }, previewUrl: '/isolated-material.svg' });
+      if (url.pathname === '/api/local-agent/material-info') return json({ materialMeta: { type: 'image', name: 'isolated-material.png', sha256: 'isolated-sha' }, previewUrl: '/isolated-material.svg' });
       if (url.pathname === '/api/local-agent/ai-review') return json({ review: { status: fixture.reviewStatus, overall: fixture.review, findings: [] } });
       if (url.pathname === '/api/local-agent/traffic-prediction') return json({ prediction: { status: 'FAILED', message: '隔离测试不调用模型' } });
       if (url.pathname === '/api/publish/tasks') return json({ task: { id: 9001 } });
@@ -67,8 +67,6 @@ async function prepareReview(page) {
   await page.locator('[data-publish-next]').click();
   await page.locator('.platform-check[data-platform="douyin"]').check();
   await page.locator('[data-publish-next]').click();
-  await page.locator('#runPrecheck').click();
-  await page.waitForFunction(() => document.querySelector('#precheckBox').textContent.includes('平台适配检测通过'));
 }
 
 test('发布三步流程保留草稿、原审核门禁与提交合同', { skip: !chrome }, async t => {
@@ -77,11 +75,15 @@ test('发布三步流程保留草稿、原审核门禁与提交合同', { skip: 
   const browser = await chromium.launch({ executablePath: chrome, headless: true });
   t.after(() => browser.close());
 
-  await t.test('步骤验证、自由返回、账号折叠与排期切换保留草稿', async child => {
+  await t.test('步骤验证、自由返回、平台全部展示与排期切换保留草稿', async child => {
     const { page, context, fixture } = await isolatedPage(browser, runtime);
     child.after(() => context.close());
     assert.equal(await page.locator('[data-publish-stage]:visible').count(), 1);
-    for (const id of ['materialPath', 'publishTitle', 'publishBody', 'materialFile', 'contentOrigin', 'runPrecheck', 'runCompliance', 'warningConfirmed', 'autoPublish', 'scheduledPublishButton', 'publishSubmitButton', 'selectAllPlatforms']) assert.equal(await page.locator('#' + id).count(), 1, id);
+    for (const id of ['materialPath', 'publishTitle', 'publishBody', 'materialFile', 'contentOrigin', 'runCompliance', 'warningConfirmed', 'publishDraftButton', 'scheduledPublishButton', 'publishSubmitButton', 'selectAllPlatforms']) assert.equal(await page.locator('#' + id).count(), 1, id);
+    assert.equal(await page.locator('#runPrecheck').count(), 0);
+    assert.equal(await page.locator('#precheckBox').count(), 0);
+    assert.equal(await page.locator('#runCompliance').isVisible(), false);
+    assert.equal(await page.locator('#autoPublish').count(), 0);
     await page.locator('[data-publish-next]').click();
     assert.equal(await page.locator('#publishForm').getAttribute('data-publish-step'), '1');
     assert.match(await page.locator('.publish-flow-error').innerText(), /选择图片或视频/);
@@ -92,8 +94,10 @@ test('发布三步流程保留草稿、原审核门禁与提交合同', { skip: 
     await page.locator('[data-publish-next]').click();
     assert.match(await page.locator('.publish-flow-error').innerText(), /至少选择/);
     const blocked = page.locator('.platform-check[data-platform="bilibili"]');
-    assert.equal(await blocked.isVisible(), false);
-    await page.locator('#publishStage2 details > summary').click();
+    assert.equal(await blocked.isVisible(), true);
+    assert.equal(await page.locator('#publishStage2 details').count(), 0);
+    assert.equal(await page.locator('.publish-flow-accounts .publish-platform-card').count(), 3);
+    assert.equal(await page.locator('.publish-flow-accounts .is-blocked .badge').innerText(), '不可用');
     assert.equal(await blocked.isDisabled(), true);
     await page.locator('#selectAllPlatforms').click();
     assert.equal(await page.locator('.platform-check:checked').count(), 2);
@@ -102,6 +106,9 @@ test('发布三步流程保留草稿、原审核门禁与提交合同', { skip: 
     await page.locator('.platform-check[data-platform="douyin"]').check();
     await page.locator('[data-publish-next]').click();
     assert.match(await page.locator('.publish-flow-summary').innerText(), /社区服务介绍.*|抖音/);
+    assert.equal(await page.locator('#runPrecheck').count(), 0);
+    assert.equal(await page.locator('#precheckBox').count(), 0);
+    assert.equal(await page.locator('#runCompliance').isVisible(), true);
     await page.locator('[data-workspace-item="schedule"]').click();
     await page.locator('#publishHistory').waitFor();
     assert.equal(await page.locator('.publish-flow-nav').isVisible(), false);
@@ -114,7 +121,7 @@ test('发布三步流程保留草稿、原审核门禁与提交合同', { skip: 
     assert.deepEqual(fixture.errors, []);
   });
 
-  await t.test('缺少预检、审核失败、阻断及未确认警告均不能提交', async child => {
+  await t.test('审核失败、阻断及未确认警告均不能提交', async child => {
     const { page, context, fixture } = await isolatedPage(browser, runtime);
     child.after(() => context.close());
     await page.locator('[data-publish-goto="3"]').click();
@@ -131,8 +138,9 @@ test('发布三步流程保留草稿、原审核门禁与提交合同', { skip: 
       assert.match(await page.locator('#toast').innerText(), message);
     }
     assert.equal(fixture.writes.filter(item => item.url === '/api/publish/tasks').length, 0);
+    assert.equal(await page.locator('#warningConfirmed').isVisible(), true);
     await page.locator('#warningConfirmed').check();
-    await page.locator('#publishSubmitButton').click();
+    await page.locator('#publishDraftButton').click();
     await page.waitForURL('**/#publish-tasks');
     const payload = fixture.writes.find(item => item.url === '/api/publish/tasks').body;
     assert.equal(payload.publishMode, 'DRAFT_ONLY');
@@ -144,23 +152,14 @@ test('发布三步流程保留草稿、原审核门禁与提交合同', { skip: 
     assert.deepEqual(fixture.errors, []);
   });
 
-  for (const scheduled of [false, true]) await t.test(scheduled ? '定时发布沿用原弹窗与载荷' : '明确勾选后才创建 AUTO 任务', async child => {
+  for (const scheduled of [false, true]) await t.test(scheduled ? '定时发布沿用原弹窗与载荷' : '明确点击确认发布才创建 AUTO 任务', async child => {
     const { page, context, fixture } = await isolatedPage(browser, runtime);
     child.after(() => context.close());
     await prepareReview(page);
-    fixture.precheck = 'BLOCKED';
-    await page.locator('#runPrecheck').click();
-    await page.waitForFunction(() => document.querySelector('#precheckBox').textContent.includes('平台适配未通过'));
-    await page.locator('#publishSubmitButton').click();
-    assert.match(await page.locator('#toast').innerText(), /素材格式不符合/);
-    fixture.precheck = 'PASSED';
-    await page.locator('#runPrecheck').click();
-    await page.waitForFunction(() => document.querySelector('#precheckBox').textContent.includes('平台适配检测通过'));
     await page.locator('#runCompliance').click();
     await page.waitForFunction(() => !document.querySelector('#runCompliance').disabled);
-    assert.equal(await page.locator('#autoPublish').isChecked(), false);
-    assert.equal(await page.locator('#publishSubmitButton').innerText(), '创建草稿任务');
-    await page.locator('#autoPublish').check();
+    assert.equal(await page.locator('#autoPublish').count(), 0);
+    assert.equal(await page.locator('#warningConfirmed').isVisible(), false);
     assert.equal(await page.locator('#publishSubmitButton').innerText(), '确认发布');
     if (scheduled) {
       await page.locator('#scheduledPublishButton').click();
@@ -176,12 +175,11 @@ test('发布三步流程保留草稿、原审核门禁与提交合同', { skip: 
     assert.deepEqual(fixture.errors, []);
   });
 
-  await t.test('失败重试带入文案和账号，重新审核且不继承自动发布授权', async child => {
+  await t.test('失败重试带入文案和账号，重新审核后可明确保存草稿', async child => {
     const { page, context, fixture } = await isolatedPage(browser, runtime);
     child.after(() => context.close());
     fixture.task = { id: 8123, title: '失败任务的标题', body: '失败任务的正文', material_path: 'retry-material.png', status: 'FAILED', created_at: '2026-11-10T00:00:00Z', targets: [{ id: 8124, platform_code: 'douyin', account_id: 2, status: 'FAILED' }] };
     await page.locator('[data-publish-goto="3"]').click();
-    await page.locator('#autoPublish').check();
     await page.locator('[data-workspace-item="publish-tasks"]').click();
     await revealControl(page.locator('[data-retry-task="8123"]'));
     await page.locator('[data-retry-task="8123"]').click();
@@ -189,7 +187,7 @@ test('发布三步流程保留草稿、原审核门禁与提交合同', { skip: 
     assert.equal(await page.locator('#publishTitle').inputValue(), fixture.task.title);
     assert.equal(await page.locator('#publishBody').inputValue(), fixture.task.body);
     assert.equal(await page.locator('#materialPath').inputValue(), fixture.task.material_path);
-    assert.equal(await page.locator('#autoPublish').isChecked(), false);
+    assert.equal(await page.locator('#autoPublish').count(), 0);
     await page.locator('#contentOrigin').selectOption('HUMAN_ORIGINAL');
     await page.locator('[data-publish-next]').click();
     assert.equal(await page.locator('.platform-check[data-platform="douyin"]').isChecked(), true);
@@ -198,7 +196,7 @@ test('发布三步流程保留草稿、原审核门禁与提交合同', { skip: 
     assert.match(await page.locator('#toast').innerText(), /先执行 AI/);
     await page.locator('#runCompliance').click();
     await page.waitForFunction(() => !document.querySelector('#runCompliance').disabled);
-    await page.locator('#publishSubmitButton').click();
+    await page.locator('#publishDraftButton').click();
     await page.waitForURL('**/#publish-tasks');
     const payload = fixture.writes.find(item => item.url === '/api/publish/tasks').body;
     assert.equal(payload.retryOfTaskId, 8123);

@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { readMaterialInfo } from './material-info.js';
 
 const extensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.mp4', '.mov']);
 const uploadError = (statusCode, code, message) => Object.assign(new Error(message), { statusCode, code });
@@ -30,7 +31,7 @@ export function validateMaterialUpload(req, url, maxBytes) {
 
 // Each upload gets its own directory; the browser never selects a server path.
 // Stream to disk so large videos do not pass through the JSON body buffer.
-export async function receiveMaterialUpload(req, url, { directory, maxBytes, inspect }) {
+export async function receiveMaterialUpload(req, url, { directory, maxBytes }) {
   const { filename, size } = validateMaterialUpload(req, url, maxBytes);
   const uploadDir = path.join(path.resolve(directory), randomUUID());
   const materialPath = path.join(uploadDir, filename);
@@ -47,13 +48,7 @@ export async function receiveMaterialUpload(req, url, { directory, maxBytes, ins
     await file.close();
     file = null;
     if (received !== size) throw uploadError(400, 'MATERIAL_UPLOAD_INCOMPLETE', '文件上传不完整，请重新选择');
-    const precheck = await inspect({ materialPath, platforms: [] });
-    const extension = path.extname(filename).toLowerCase();
-    const formatExtensions = { jpeg: ['.jpg', '.jpeg'], png: ['.png'], webp: ['.webp'], mp4: ['.mp4'], mov: ['.mov'] };
-    if (!precheck.meta?.parserReady || !formatExtensions[precheck.meta.format]?.includes(extension)) {
-      throw uploadError(422, 'MATERIAL_UPLOAD_INVALID_MEDIA', '文件内容无法解析为所选图片或视频格式，请检查文件是否损坏');
-    }
-    return { materialPath, precheck };
+    return { materialPath, materialMeta: readMaterialInfo(materialPath) };
   } catch (error) {
     await file?.close().catch(() => {});
     await fs.rm(uploadDir, { recursive: true, force: true });

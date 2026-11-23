@@ -163,8 +163,8 @@ test('私信证据不足独立于澄清预算，不把检索失败变成回问�
       assert.equal(result.handoffRequested, false);
       assert.equal(result.handoffOffered, false);
       assert.equal(result.clarificationCandidate, null);
-      assert.match(result.replyText, /没有足够依据/);
-      assert.doesNotMatch(result.replyText, /[？?]|哪方面|兴趣|偏好|INSUFFICIENT_EVIDENCE/);
+      assert.equal(result.replyText, '这个问题建议向人工客服咨询一下。');
+      assert.doesNotMatch(result.replyText, /[？?]|哪方面|兴趣|偏好|INSUFFICIENT_EVIDENCE|检索|依据|资料不足/);
       const progress = businessGuidanceProgress(result, 2);
       assert.deepEqual(progress, { answered: false, guiding: false, attempts: 2 });
     }
@@ -270,8 +270,8 @@ test('宽泛但有意义的业务与学习咨询默认在当前知识范围检�
 
 test('政策对象不明时先确认，已明确的业务和评论仍进入知识检索', () => {
   assert.equal(routeBusinessClarification({ question: '这个有什么政策？' }).matchMethod, 'OUTER_ROUTER');
-  assert.equal(routeBusinessClarification({ question: '港澳社区有什么政策？' }), null);
-  assert.equal(routeBusinessClarification({ question: '这个有什么政策？', context: [{ role: 'USER', text: '我想了解港澳服务社区' }] }), null);
+  assert.equal(routeBusinessClarification({ question: '示例社区有什么政策？' }), null);
+  assert.equal(routeBusinessClarification({ question: '这个有什么政策？', context: [{ role: 'USER', text: '我想了解示例服务社区' }] }), null);
   assert.equal(routeBusinessClarification({ question: '这个有什么政策？', messageType: 'COMMENT' }), null);
   const repeated = routeBusinessClarification({ question: '这个有什么政策？', guidanceAttempt: 3, maxGuidanceAttempts: 3, context: [{ role: 'USER', text: '这个有什么政策？' }] });
   assert.equal(repeated.action, 'HANDOFF');

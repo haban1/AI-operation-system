@@ -36,6 +36,8 @@ for (const { width, cryptoMode } of [
       if (input.text === '等待回答') await new Promise(resolve => { waitQuery = resolve; });
       const missing = input.text === '没有资料';
       data = { response: { result: missing ? 'NO_ANSWER' : 'ANSWERED', answer: missing ? null : { text: '隔离答案 <script>window.injected=true</script>' }, reasonCode: missing ? 'INSUFFICIENT_EVIDENCE' : null, grounding: { sourceReferences: missing ? [] : [{ title: '<img src=x onerror=alert(1)>资料', excerpt: '隔离来源证据' }] }, meta: { latencyMs: 12, knowledgeVersion: 'files-test' }, traceId: 'local-test-trace' } };
+      if (input.text === '好厉害') data = { response: null, presentation: { kind: 'SOCIAL', text: '哈哈，谢谢认可～ <img src=x onerror=alert(1)>' } };
+      if (input.text === '在那里参加') data = { response: null, presentation: { kind: 'CLARIFICATION', text: '你想参加哪个活动或课程呀？' } };
     } else if (path.endsWith('/status')) data = { rag: { enabled: true, configured: true } };
     else { otherRequests.push(path); data = { documents: [] }; }
     await route.fulfill({ json: { ok: true, ...data } }).catch(() => {});
@@ -86,7 +88,17 @@ for (const { width, cryptoMode } of [
   await page.screenshot({ path: `.codex-work/knowledge-playground-20261110/test-${width}.png`, fullPage: true });
   await page.locator('#ragTestQuestion').fill('没有资料');
   await page.locator('#ragTestForm [type=submit]').click();
-  await page.getByText('未找到可靠答案', { exact: true }).waitFor();
+  await page.getByText('咨询建议', { exact: true }).waitFor();
+  await page.getByText('这个问题建议向人工客服咨询一下。', { exact: true }).waitFor();
+  assert.doesNotMatch(await page.locator('#ragTestMessages').innerText(), /当前知识不足|换一种问法|资料还不足/);
+  for (const [question, text] of [['好厉害', '哈哈，谢谢认可～ <img src=x onerror=alert(1)>'], ['在那里参加', '你想参加哪个活动或课程呀？']]) {
+    await page.locator('#ragTestQuestion').fill(question);
+    await page.locator('#ragTestForm [type=submit]').click();
+    await page.getByText(text, { exact: true }).waitFor();
+    assert.equal(await page.locator('.knowledge-test-turn').last().locator('summary', {hasText:'查看引用来源'}).count(), 0);
+  }
+  assert.equal(queries.at(-1).context.at(-1).text, '哈哈，谢谢认可～ <img src=x onerror=alert(1)>');
+  assert.equal(await page.locator('#content img').count(), 0);
   await page.locator('#ragTestChannel').selectOption('COMMENT');
   assert.equal(await page.locator('.knowledge-test-turn').count(), 0);
   await page.locator('#ragTestQuestion').fill('评论问题');
@@ -97,7 +109,7 @@ for (const { width, cryptoMode } of [
   assert.notEqual(commentSessionId, sessionId, 'switching scene starts a new session');
   await page.locator('#ragTestQuestion').fill('等待回答');
   await page.locator('#ragTestForm [type=submit]').click();
-  await page.waitForFunction(() => document.querySelector('#ragTestStatus').textContent.includes('正在检索'));
+  await page.waitForFunction(() => document.querySelector('#ragTestStatus').textContent.includes('正在理解问题'));
   for (let attempt = 0; attempt < 100 && !waitQuery; attempt++) await new Promise(resolve => setTimeout(resolve, 20));
   assert.ok(waitQuery, 'the pending query must reach the test transport');
   await page.locator('#ragTestClear').click();

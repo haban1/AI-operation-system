@@ -219,7 +219,7 @@ class SourceApiTests(unittest.TestCase):
         received=[];done=threading.Event()
         def task(action,payload):
             received.append(payload);app.LOCK.release();done.set()
-        with patch.object(app,'require_ready'),patch.object(app,'task',side_effect=task):
+        with patch.object(app,'require_ready'),patch.object(app,'run_task',side_effect=task):
             with self.post('draft',{'candidate_id':row['id']}) as response:self.assertEqual(response.status,202)
             self.assertTrue(done.wait(2));payload=received[0]
             self.assertNotIn('repo',payload);self.assertEqual(payload['topic']['urls'],[row['url']])

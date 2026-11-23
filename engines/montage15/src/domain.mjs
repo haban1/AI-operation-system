@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { validateBrief, validateLocks } from './editor-state.mjs';
+import { fieldsForTemplate, validateBrief, validateLocks } from './editor-state.mjs';
 import { musicTracks } from './music.mjs';
 import { fail } from './errors.mjs';
 export { AppError, fail, validId } from './errors.mjs';
@@ -44,7 +44,7 @@ export function editProject(current, input, template, assets) {
   };
   let settings;
   if (template.supportsColorCards) {
-    for (const key of ['beat1', 'beat2', 'beat3']) {
+    for (const key of fieldsForTemplate(template).filter(key => key.startsWith('beat'))) {
       nextFields[key] = text(fields[key] ?? current.fields[key] ?? template.defaults[key], '穿插短句', 16);
       if (/[\r\n]/.test(nextFields[key])) fail(422, 'TEXT_LAYOUT', '穿插短句请使用单行文字');
     }

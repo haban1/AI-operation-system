@@ -6,7 +6,7 @@ import { startServer, stopChild, cleanupDir, jsonRequest } from './helpers/runti
 
 test('confirmed platform logout alerts survive unknown states and deduplicate until login recovers', async t => {
   const runtime = await startServer({ env: { WECOM_WEBHOOK_URL: '' } });
-  const db = new DatabaseSync(runtime.dbPath, { readOnly: true, timeout: 15000 });
+  const db = new DatabaseSync(runtime.dbPath, { timeout: 15000 });
   t.after(async () => {
     db.close();
     await stopChild(runtime.child);
@@ -50,6 +50,27 @@ test('confirmed platform logout alerts survive unknown states and deduplicate un
       assert.ok((await sync(expired)).alert);
       assert.equal(notificationCount(), before + 2);
       assert.deepEqual(issues().map(item => item.status), ['RESOLVED', 'OPEN']);
+      if (platformCode === 'wechat_channels') {
+        for (const action of ['manual-resolve','false-positive']) {
+          const issueId = db.prepare("SELECT id FROM issues WHERE related_type='ACCOUNT' AND related_id=? AND status='OPEN' ORDER BY id DESC LIMIT 1").get(String(account.id)).id;
+          const result = await jsonRequest(runtime.base, `/api/issues/${issueId}/${action}`, { method:'POST', body:{} });
+          assert.equal(result.response.status, 200);
+          const count=issues().length, notices=notificationCount();
+          // Move only the isolated fixture's resolution time, never the poll clock.
+          const setAge = ms => db.prepare('UPDATE issues SET resolved_at=? WHERE id=?').run(new Date(Date.now()-ms).toISOString(),issueId);
+          setAge(119*60*1000);
+          await sync(ready);
+          const muted=await sync(expired);
+          assert.equal(muted.account.login_status,'EXPIRED');
+          assert.equal(muted.alert,null);
+          assert.equal(issues().length,count);
+          assert.equal(notificationCount(),notices);
+          setAge(120*60*1000);
+          assert.ok((await sync(expired)).alert);
+          assert.equal(issues().length,count+1);
+          assert.equal(notificationCount(),notices+1);
+        }
+      }
     });
   }
 });

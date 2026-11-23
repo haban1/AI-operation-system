@@ -19,6 +19,16 @@ type RobotContext struct {
 	RefMessageID       int64
 	KnowledgeBaseCodes []string
 	ReceptionVersion   int64
+	// Request-local knowledge context; never exported to skill environment variables.
+	KnowledgeBaseURL string `json:"-"`
+	KnowledgeAPIKey  string `json:"-"`
+	KnowledgeQuery   string
+	KnowledgeHistory []KnowledgeMessage
+}
+
+type KnowledgeMessage struct {
+	Role string `json:"role"`
+	Text string `json:"text"`
 }
 
 // ToEnvVars 将 RobotContext 转换为环境变量键值对

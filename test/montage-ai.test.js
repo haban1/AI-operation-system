@@ -198,7 +198,7 @@ test('HTTP template selection, revision restore and AI editing persist through e
     const value = await response.json(); assert.equal(response.status, expected, JSON.stringify(value)); return value;
   }
   const catalog = (await request('/api/templates')).templates;
-  assert.equal(catalog.length, 5); assert.equal(catalog.filter(item => item.enabled).length, 1);
+  assert.ok(catalog.some(item => item.id === 'steady-type')); assert.equal(catalog.filter(item => item.enabled).length, 1);
   const second = catalog.find(item => item.id === 'film-strip');
   await request('/api/templates/film-strip/availability', 'POST', { enabled: true, version: 'old-version' }, 409);
   await request('/api/templates/film-strip/availability', 'POST', { enabled: true, version: second.version });

@@ -44,7 +44,7 @@ test('the six samples remain pending until human confirmation; duplicate confirm
   assert.equal(received.admittedBy, 'reviewer-one');
   assert.equal(received.sourceId, 'studio:v5-01');
   const draft = await ctx.library.publishDraft(materialId);
-  assert.equal(draft.requiresPrecheck, true);
+  assert.equal(draft.requiresPrecheck, false);
   assert.deepEqual(await readFile(draft.materialPath), ctx.bytes.get('v5-01'));
   const repeated = await ctx.studio.confirmBatch(['v5-01', 'v5-01'], 'reviewer-one');
   assert.equal(repeated.results.length, 1);

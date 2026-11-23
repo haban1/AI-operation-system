@@ -13,6 +13,7 @@ import (
 	"wechat-robot-client/model"
 	"wechat-robot-client/pkg/robotctx"
 	"wechat-robot-client/pkg/support"
+	"wechat-robot-client/pkg/tianheknowledge"
 	"wechat-robot-client/repository"
 	"wechat-robot-client/vars"
 )
@@ -36,9 +37,13 @@ func (t *SearchKnowledgeTool) GetOpenAITool(robotCtx *robotctx.RobotContext) *op
 	if systemPrompt == "" {
 		return nil
 	}
+	description := "检索当前会话绑定的文档，根据用户问题语义搜索最相关的知识内容。问题与文档主题相关时调用此工具获取准确信息。"
+	if robotCtx.KnowledgeBaseURL != "" {
+		description = "查询智慧驱动统一主知识库，回答公司简介、公司业务、产品、课程、政策及其他业务事实时必须调用。支持当前用户连续追问，返回经过依据校验的最终答复。"
+	}
 	tool := openai.ChatCompletionFunctionTool(openai.FunctionDefinitionParam{
 		Name:        "search_document",
-		Description: openai.String("检索当前会话绑定的文档，根据用户问题语义搜索最相关的知识内容。问题与文档主题相关时调用此工具获取准确信息。"),
+		Description: openai.String(description),
 		Parameters: openai.FunctionParameters{
 			"type": "object",
 			"properties": map[string]any{
@@ -54,6 +59,9 @@ func (t *SearchKnowledgeTool) GetOpenAITool(robotCtx *robotctx.RobotContext) *op
 }
 
 func (t *SearchKnowledgeTool) BuildSystemPrompt(ctx context.Context, robotCtx *robotctx.RobotContext) (string, error) {
+	if robotCtx.KnowledgeBaseURL != "" {
+		return "公司简介、公司业务、产品服务、政策、课程及其他业务事实必须先调用 search_document，不能依靠记忆、旧分类说明或自行猜测。该工具查询智慧驱动统一主知识库，支持当前用户的连续追问；公司、你们、我们默认指资料中的服务方。工具会直接给出经过依据校验的最终答复，无依据或服务故障时不可编造补充。", nil
+	}
 	if vars.KnowledgeService == nil && t.KnowledgeService == nil {
 		return "", nil
 	}
@@ -141,6 +149,15 @@ func (t *SearchKnowledgeTool) BuildSystemPrompt(ctx context.Context, robotCtx *r
 }
 
 func (t *SearchKnowledgeTool) ExecuteToolCall(ctx context.Context, robotCtx *robotctx.RobotContext, toolCall openai.ChatCompletionMessageToolCallUnion) (string, bool, error) {
+	if robotCtx.KnowledgeBaseURL != "" {
+		// Use the original user question and scoped history, not model-rewritten
+		// arguments. Return the grounded answer directly without a second rewrite.
+		text, err := tianheknowledge.Query(ctx, robotCtx)
+		if err != nil {
+			return tianheknowledge.Unavailable, true, nil
+		}
+		return text, true, nil
+	}
 	var args struct {
 		Query string `json:"query"`
 	}

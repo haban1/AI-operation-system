@@ -27,6 +27,7 @@ export class SourceFolders {
 
   view(source) {
     return { id: source.id, name: source.name, folderPath: source.folderPath, status: source.status,
+      origin: source.origin || 'server', uploadedCount: source.uploads?.length || 0,
       count: source.items?.length || 0, visualCount: (source.items || []).filter(item => item.visualStatus === 'ready').length, scanned: source.scanned || 0, total: source.total || 0,
       message: source.message, warnings: source.warnings || [], updatedAt: source.updatedAt };
   }
@@ -134,7 +135,7 @@ export class SourceFolders {
       }
       const uniqueItems = [...new Map(items.map(item => [item.sourceSha256, item])).values()];
       const visualCount = uniqueItems.filter(item => item.visualStatus === 'ready').length;
-      await this.store.put('source-folders', { ...source, items: uniqueItems, status: 'ready', message: `已索引 ${uniqueItems.length} 份素材，${visualCount} 份有本机画面线索`, updatedAt: new Date().toISOString() });
+      await this.store.put('source-folders', { ...source, items: uniqueItems, status: 'ready', message: source.origin === 'browser' ? `已准备 ${uniqueItems.length} 份素材` : `已索引 ${uniqueItems.length} 份素材，${visualCount} 份有本机画面线索`, updatedAt: new Date().toISOString() });
     } catch (error) {
       await this.store.put('source-folders', { ...source, status: 'failed', message: '索引失败，请检查文件夹后重新扫描', warnings: [error.message], updatedAt: new Date().toISOString() });
     }

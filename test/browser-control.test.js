@@ -713,6 +713,8 @@ test('Web Access Chrome stdout/stderr 写入平台独立日志并返回具体提
     assert.equal(failure?.detail?.processExitCode, 23);
     assert.match(failure?.detail?.logPath || '', /logs[\\/]web-access-douyin-chrome\.log$/);
     assert.ok(spawnOptions);
+    assert.ok(spawnOptions.args.includes('--no-startup-window'));
+    assert.ok(!spawnOptions.args.includes('--start-maximized') && !spawnOptions.args.includes('about:blank'));
     assert.notEqual(spawnOptions.options.stdio, 'ignore');
     assert.equal(spawnOptions.options.stdio[0], 'ignore');
     assert.equal(spawnOptions.options.stdio[1], spawnOptions.options.stdio[2]);
@@ -939,7 +941,9 @@ test('后台获取平台页面默认不抢前台，只有明确请求时才前�
     });
     adapter.ensureContext = async () => context;
 
-    assert.equal(await adapter.getPage(), page);
+    const background = { ...page, bringToFront: () => assert.fail('采集页不应置前') };
+    adapter.createBackgroundPage = async ctx => { assert.equal(ctx, context); return background; };
+    assert.equal(await adapter.getPage(), background);
     assert.equal(bringToFrontCalls, 0);
 
     assert.equal(await adapter.getPage({ bringToFront: true }), page);

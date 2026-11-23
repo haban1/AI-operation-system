@@ -182,7 +182,7 @@ test('发布请求挂起后离开页面，晚到响应不能建立布局观察�
   });
 });
 
-test('离开发布页后的预检响应不能写入新页面或触发内容生成', { skip: !chromePath }, async t => {
+test('离开发布页后的素材信息响应不能写入新页面或触发内容生成', { skip: !chromePath }, async t => {
   const runtime = await startServer();
   t.after(async () => { await stopChild(runtime.child); cleanupDir(runtime.dir); });
   const browser = await chromium.launch({ headless: true, executablePath: chromePath });
@@ -194,12 +194,12 @@ test('离开发布页后的预检响应不能写入新页面或触发内容生�
 
   await page.route('**/api/local-agent/**', async route => {
     const url = new URL(route.request().url());
-    if (url.pathname === '/api/local-agent/precheck') {
+    if (url.pathname === '/api/local-agent/material-info') {
       precheckEntered.resolve();
       await releasePrecheck.promise;
       return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
         ok: true,
-        precheck: { overall: 'PASSED', meta: { type: 'image', format: 'png', extension: '.png', sha256: 'stale-precheck-sha' }, results: [] },
+        materialMeta: { type: 'image', name: 'old.png', extension: '.png', sha256: 'stale-precheck-sha' },
         previewUrl: null
       }) });
     }
@@ -224,17 +224,17 @@ test('离开发布页后的预检响应不能写入新页面或触发内容生�
   await page.locator('#publishForm').waitFor();
   await revealControl(page.locator('#materialPath'));
   await page.locator('#materialPath').fill('C:\\new-page-image.png');
-  assert.match(await page.locator('#precheckBox').innerText(), /等待上传/);
+  assert.equal(await page.locator('#precheckBox').count(), 0);
 
   releasePrecheck.resolve();
   await delay(350);
-  assert.match(await page.locator('#precheckBox').innerText(), /等待上传/);
+  assert.equal(await page.locator('#precheckBox').count(), 0);
   assert.equal(await page.locator('#materialPreview').getAttribute('class'), 'material-preview material-preview-empty material-picker');
   assert.equal(generationRequests, 0);
   assert.equal(await page.locator('#toast').innerText(), '');
 });
 
-test('同一发布页较慢的旧预检不能覆盖较新的素材与平台选择', { skip: !chromePath }, async t => {
+test('同一发布页较慢的旧素材信息不能覆盖较新的素材与平台选择', { skip: !chromePath }, async t => {
   const runtime = await startServer();
   t.after(async () => { await stopChild(runtime.child); cleanupDir(runtime.dir); });
   const browser = await chromium.launch({ headless: true, executablePath: chromePath });
@@ -267,7 +267,7 @@ test('同一发布页较慢的旧预检不能覆盖较新的素材与平台选�
   await page.route('**/api/local-agent/**', async route => {
     const url = new URL(route.request().url());
     const body = route.request().postDataJSON();
-    if (url.pathname === '/api/local-agent/precheck') {
+    if (url.pathname === '/api/local-agent/material-info') {
       const slow = body.materialPath === 'C:\\slow-a.png';
       if (slow) {
         slowPrecheckEntered.resolve();
@@ -276,8 +276,7 @@ test('同一发布页较慢的旧预检不能覆盖较新的素材与平台选�
       const meta = slow
         ? { type: 'image', name: 'slow-a.png', format: 'png', extension: '.png', sha256: 'slow-a-sha', width: 800, height: 600 }
         : { type: 'image', name: 'fast-b.jpg', format: 'jpeg', extension: '.jpg', sha256: 'fast-b-sha', width: 800, height: 600 };
-      const results = slow ? [{ platformCode: 'douyin', status: 'PASSED' }] : [];
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, precheck: { overall: 'PASSED', meta, results }, previewUrl: null }) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, materialMeta: meta, previewUrl: null }) });
     }
     if (url.pathname === '/api/local-agent/material-content-generation') {
       generationMaterials.push(body.materialPath);
@@ -306,14 +305,14 @@ test('同一发布页较慢的旧预检不能覆盖较新的素材与平台选�
   await revealControl(platform);
   await platform.uncheck();
   await fastGenerationEntered.promise;
-  await page.waitForFunction(() => { const text = document.querySelector('#precheckBox')?.textContent || ''; return text.includes('JPEG') && text.includes('待选择平台'); });
-  assert.match(await page.locator('#precheckBox').innerText(), /待选择平台/);
-  assert.match(await page.locator('#toast').innerText(), /素材基础检测完成/);
+  await page.waitForFunction(() => document.querySelector('#materialPreview')?.textContent.includes('fast-b.jpg'));
+  assert.equal(await page.locator('#precheckBox').count(), 0);
+  assert.equal(await page.locator('#runPrecheck').count(), 0);
 
   releaseSlowPrecheck.resolve();
   await delay(300);
-  assert.match(await page.locator('#precheckBox').innerText(), /JPEG/);
-  assert.match(await page.locator('#precheckBox').innerText(), /待选择平台/);
-  assert.match(await page.locator('#toast').innerText(), /素材基础检测完成/);
+  assert.match(await page.locator('#materialPreview').innerText(), /fast-b.jpg/);
+  assert.equal(await page.locator('#precheckBox').count(), 0);
+  assert.equal(await page.locator('#runPrecheck').count(), 0);
   assert.deepEqual(generationMaterials, ['C:\\fast-b.jpg']);
 });

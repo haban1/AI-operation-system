@@ -256,6 +256,6 @@ test('authenticated main-system mount serves six bundled videos and prefixed med
     assert.equal(list.items.filter(item => item.status === 'pending').length, 5);
     const draft = await fetch(base + `/api/content-library/${materialId}/publish-draft`, { headers: { Cookie: cookie } });
     assert.equal(draft.status, 200);
-    assert.equal((await draft.json()).requiresPrecheck, true);
+    assert.equal((await draft.json()).requiresPrecheck, false);
   });
 });

@@ -8,6 +8,7 @@ import { businessSubjectClarificationReply } from './rag-clarification.js';
 import { ragQuestionForMessage } from './message-source-context.js';
 import { isAiReplyTimeout } from './ai-reply-error.js';
 import { commentHandoffCopy } from './comment-handoff-copy.js';
+import { knowledgeConsultationReply } from './knowledge-reply-text.js';
 
 const PLATFORM_MAP = Object.freeze({
   douyin: 'DOUYIN',
@@ -177,9 +178,7 @@ export function formalRagReplyResult(response, { platformCode = '', messageType 
     };
     return {
       action: 'REPLY', decision: 'RAG_KNOWLEDGE_GAP',
-      replyText: script === 'traditional'
-        ? '這次檢索還沒有足夠依據確認這個問題，暫時無法給出可靠答覆。如需進一步核實，可以輸入「轉人工」。'
-        : '这次检索还没有足够依据确认这个问题，暂时无法给出可靠答复。如需进一步核实，可以输入“转人工”。',
+      replyText: knowledgeConsultationReply(question, { context, script }),
       confidence: 0, reason: `RAG 检索或证据不足：${status}`,
       responseMode: 'FORMAL_RAG_KNOWLEDGE_GAP', guidanceAttempt: 0,
       maxGuidanceAttempts: safeMax, handoffOffered: false, handoffRequested: false,

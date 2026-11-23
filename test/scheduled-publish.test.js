@@ -7,7 +7,6 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import sharp from 'sharp';
-import { precheckMaterial } from '../agent/precheck.js';
 
 const root = path.resolve(import.meta.dirname, '..');
 
@@ -85,9 +84,8 @@ test('定时发布：本地时间持久化、到点只创建一次正式任务�
 
   const title = '社区活动定时发布';
   const body = '本周社区活动开放报名，请以官方页面的最新安排为准。';
-  const precheck = await precheckMaterial({ materialPath, title, body, platforms: ['douyin'] });
   const scheduled = new Date(Date.now() + 6500); scheduled.setMilliseconds(0);
-  const payload = { title, body, materialPath, targets: [{ platformCode: 'douyin', accountId: account.id }], precheck, complianceConfirmed: true, managementConfirmed: true, publishMode: 'AUTO', scheduledAt: scheduled.toISOString(), scheduledLocal: localText(scheduled), timezoneOffsetMinutes: scheduled.getTimezoneOffset() };
+  const payload = { title, body, materialPath, targets: [{ platformCode: 'douyin', accountId: account.id }], complianceConfirmed: true, managementConfirmed: true, publishMode: 'AUTO', scheduledAt: scheduled.toISOString(), scheduledLocal: localText(scheduled), timezoneOffsetMinutes: scheduled.getTimezoneOffset() };
 
   const created = await request(base, '/api/publish/schedules', { method: 'POST', body: JSON.stringify(payload) });
   assert.equal(created.response.status, 201, JSON.stringify(created.data));

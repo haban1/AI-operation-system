@@ -40,7 +40,7 @@ test('main-system montage keeps auth, revision recovery, library references and 
   for(const p of ['/video-workbench/index.html',mount+'/',mount+'/app.js',mount+'/api/bootstrap',mount+'/template-audio/perspective-flow-music.wav'])assert.equal((await fetch(base+p)).status,401,p);
   await login();
   await t.test('mounted shell, assets and accepted template are reachable',async()=>{
-    const b=await request(mount+'/api/bootstrap');assert.deepEqual(b.templates.map(t=>t.id),['perspective-flow','prism-pulse']);assert.equal(b.templates[0].status,'accepted');assert.equal(b.integration.status,'internal-system');
+    const b=await request(mount+'/api/bootstrap');assert.deepEqual(b.templates.map(t=>t.id),['perspective-flow','prism-pulse','steady-type']);assert.ok(b.templates.every(template=>template.status==='accepted'));assert.equal(b.integration.status,'internal-system');
     const status=await request('/api/creative-workbench/status');assert.equal(status.services.find(s=>s.id==='editing').url,mount+'/');
     for(const p of ['/video-workbench/index.html','/video-workbench/content-integration.css',mount+'/',mount+'/app.js',mount+'/styles.css',mount+'/workflow.js',mount+'/workflow.css',mount+'/production.js',mount+'/integration-theme.css',mount+'/vendor/gsap.min.js',mount+'/template-audio/prism-pulse-music.wav'])assert.equal((await fetch(base+p,{headers:{Cookie:cookie}})).status,200,p);
     for(const p of ['/dev-notes/README.md','/AGENTS.md','/package.json','/.local/','/samples'])assert.equal((await fetch(base+mount+p,{headers:{Cookie:cookie}})).status,404,p);
@@ -52,7 +52,7 @@ test('main-system montage keeps auth, revision recovery, library references and 
     const legacy=await request('/video-workbench/api/studio/bootstrap');
     assert.equal(legacy.automaticUrl,'/integrations/ai-signal/');assert.ok(Array.isArray(legacy.collections));
     assert.ok(Array.isArray((await request('/video-workbench/api/studio/materials')).items));
-    assert.equal((await request(mount+'/api/bootstrap')).templates.length,2);
+    assert.equal((await request(mount+'/api/bootstrap')).templates.length,3);
   });
   let project;
   await t.test('library import uses a trusted ID and retains source bytes without approval',async()=>{

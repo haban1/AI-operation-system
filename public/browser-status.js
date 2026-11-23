@@ -1,3 +1,4 @@
+import { platformAccountLabel } from './account-identity.js?v=20261113';
 const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const format=value=>value?new Date(value).toLocaleString('zh-CN',{hour12:false}):'暂无检查记录';
 
@@ -18,7 +19,7 @@ export function browserStatusModel(bootstrap={}){
     const age=Date.now()-new Date(account?.login_checked_at).getTime();
     const recent=age>=0&&age<15*60*1000;
     const login=account?.login_source==='LOCAL_AGENT'&&recent?account.login_status:'UNKNOWN';
-    const base={code:platform.code,key:enabled.length>1?`${platform.code}:${account.id}`:platform.code,accountId:account?.id||'',name:platform.name||platform.display_name||platform.code,account:account?.display_name||'',checkedAt:account?.login_checked_at||null};
+    const base={code:platform.code,key:enabled.length>1?`${platform.code}:${account.id}`:platform.code,accountId:account?.id||'',name:platformAccountLabel(account,platform.name||platform.display_name||platform.code),account:'',checkedAt:account?.login_checked_at||null};
     const result=(kind,label,tone='neutral')=>({...base,kind,label,tone});
     if(platform.lifecycle_state==='PLANNED')return result('planned','未接入');
     if(paused)return result('paused','已暂停');

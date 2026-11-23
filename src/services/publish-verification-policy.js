@@ -138,7 +138,17 @@ export function validatePlatformResultProvenance(platformCode, result = {}) {
 
   const reviewStatus = clean(result.reviewStatus).toUpperCase();
   const matchedRecordStatus = clean(result.matchedRecord?.reviewStatus).toUpperCase();
-  if (reviewStatus && matchedRecordStatus && reviewStatus !== matchedRecordStatus) {
+  // SYNCING describes a confirmed submission awaiting readable platform status.
+  // Its raw candidate may legitimately remain UNKNOWN; never promote that
+  // evidence to a terminal status or accept an ambiguous/unconfirmed result.
+  const pendingConfirmedSubmission = reviewStatus === 'SYNCING'
+    && matchedRecordStatus === 'UNKNOWN'
+    && result.stage === 'verify'
+    && result.syncPending === true
+    && clean(result.submissionStatus).toUpperCase() === 'SUBMITTED'
+    && result.matchedRecord?.matched === true
+    && result.matchedRecord?.ambiguous !== true;
+  if (reviewStatus && matchedRecordStatus && reviewStatus !== matchedRecordStatus && !pendingConfirmedSubmission) {
     return {
       ok: false,
       reason: 'REVIEW_STATUS_EVIDENCE_MISMATCH',

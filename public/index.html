@@ -4,29 +4,27 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta name="theme-color" content="#080d12" />
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-  <link rel="shortcut icon" href="/favicon.ico" />
-  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20261119-original" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png?v=20261119-original" />
+  <link rel="shortcut icon" href="/favicon.ico?v=20261119-original" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20261119-original" />
   <title>智慧驱动</title>
   <script src="/theme.js?v=20261111-v2"></script>
   <link rel="stylesheet" href="/styles.css?v=20261102-platform-base-theme-20261111" />
   <link rel="stylesheet" href="/hot-topic-studio.css?v=20261112-creation-skin" />
-  <link rel="stylesheet" href="/workspace.css?v=20261111-theme-tokens" />
-  <link rel="stylesheet" href="/workspace-interactions.css?v=20261112-interaction-overview">
-  <link rel="stylesheet" href="/workspace-v2.css?v=20261112-wechat-theme">
+  <link rel="stylesheet" href="/workspace.css?v=20261117-current-publish" />
+  <link rel="stylesheet" href="/workspace-interactions.css?v=20261113-task-layout">
+  <link rel="stylesheet" href="/workspace-v2.css?v=20261119-account-status">
   <link rel="stylesheet" href="/theme.css?v=20261111-v2c">
   <link rel="stylesheet" href="/ui-controls.css?v=20261112-shell">
-  <link rel="stylesheet" href="/app-shell.css?v=20261112-fix6">
+  <link rel="stylesheet" href="/app-shell.css?v=20261119-company-logo">
+  <link rel="stylesheet" href="/interaction-theme.css?v=20261119-detail-fit">
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" role="img"><path d="M8 8.5 16 4l8 4.5v9L16 22l-8-4.5z"/><path d="m8 17.5 8 4.5 8-4.5V24l-8 4-8-4z"/></svg>
-        </div>
-        <div class="brand-copy"><strong>智慧驱动</strong></div>
+        <img class="company-logo" src="/branding/company-logo-original.png?v=20261119-original" alt="智慧驱动 IntelliDriven" width="874" height="454" />
       </div>
       <nav id="nav"></nav>
       <div class="sidebar-spacer"></div>
@@ -35,9 +33,9 @@
         <div class="status-line"><i id="cloudDot"></i><span>云端服务</span><b id="cloudStatus">检查中</b></div>
         <div class="status-line"><i id="agentDot"></i><span>采集服务</span><b id="agentStatus">检查中</b></div>
           <span class="mode-pill" id="qwenMode"><i></i>AI：—</span>
-          <button class="master-switch is-on" id="masterSwitch" type="button" role="switch" aria-checked="true" aria-label="全局运行总开关">
+          <button class="master-switch is-on" id="masterSwitch" type="button" role="switch" aria-checked="true" aria-label="暂停自动任务">
             <span class="master-switch-track" aria-hidden="true"><i></i></span>
-            <span class="master-switch-copy"><b>全局运行</b><small>自动任务已开启</small></span>
+            <span class="master-switch-copy"><b>自动任务已开启</b><small>点击暂停采集、回复和发布</small></span>
           </button>
       </details>
       <div class="side-actions">
@@ -60,7 +58,7 @@
   </div>
   <div id="loginScreen" class="login-screen" hidden>
     <div class="login-card">
-      <div class="login-brand"><span>智</span><div><b>智慧驱动</b></div></div>
+      <div class="login-brand"><img class="company-logo" src="/branding/company-logo-original.png?v=20261119-original" alt="智慧驱动 IntelliDriven" width="874" height="454" /></div>
       <div class="login-copy"><h2>登录工作台</h2></div>
       <form id="loginForm" class="login-form">
         <label>管理员账号<input name="username" autocomplete="username" value="admin" required></label>
@@ -72,7 +70,7 @@
     </div>
   </div>
   <div id="toast" class="toast"></div>
-  <script type="module" src="/app.js?v=20261112-main-integrated"></script>
+  <script type="module" src="/app.js?v=20261119-approved-output"></script>
   <script type="module">import { startSelectEnhancer } from '/ui-select.js?v=20261112-controls'; startSelectEnhancer();</script>
   <script type="module">import { startAppShell } from '/app-shell.js?v=20261112-fix7'; startAppShell();</script>
 </body>

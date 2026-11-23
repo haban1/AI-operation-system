@@ -1,12 +1,13 @@
 (() => {
   'use strict';
-  const fieldNames = { title: '主标题', subtitle: '副标题', brand: '品牌', accent: '主题色', beat1: '短句 1', beat2: '短句 2', beat3: '收尾短句' };
+  const fieldNames = { title: '主标题', subtitle: '副标题', brand: '品牌', accent: '主题色', beat1: '短句 1', beat2: '短句 2', beat3: '收尾短句', beat4: '短句 4', beat5: '收尾短句' };
+  const supportsField = (project,key) => Object.hasOwn(project?.templateSnapshot?.defaults || project?.fields || {}, key);
   const settingNames = { titles: '动态文字', brand: '品牌标记', intensity: '动效强度', textOffset: '文字时间', layerOrder: '图层顺序' };
   const $ = id => document.getElementById(id);
 
   window.MontageWorkflow = class {
-    constructor({ state, api, saveProject, setProject, markDirty, renderAssets, toast, showError, resource, updateStatus }) {
-      Object.assign(this, { state, api, saveProject, setProject, markDirty, renderAssets, toast, showError, resource, updateStatus });
+    constructor({ state, api, saveProject, setProject, markDirty, renderAssets, toast, showError, resource, updateStatus, displayText = value => String(value ?? '') }) {
+      Object.assign(this, { state, api, saveProject, setProject, markDirty, renderAssets, toast, showError, resource, updateStatus, displayText });
       this.busy = false;
       this.projectId = null;
       this.run = null;
@@ -25,6 +26,15 @@
       const project = this.state.project;
       project.locks ||= { slots: [], fields: [], audio: false, settings: [] };
       return project.locks;
+    }
+
+    fieldKeys() { return Object.keys(fieldNames).filter(key => supportsField(this.state.project,key)); }
+
+    fieldLabel(key, fallback = fieldNames[key]) {
+      const template = this.state.project?.templateSnapshot;
+      if (!supportsField(this.state.project,'beat5') || !template?.cards?.length || template.cards.length !== template.slots?.length) return fallback;
+      const index = template.cards.findIndex(card => card.key === key);
+      return index < 0 ? fallback : template.slots[index].name || fallback;
     }
 
     lock(kind, target) {
@@ -57,7 +67,7 @@
     renderLocks() {
       if (!this.state.project) return;
       document.querySelectorAll('.lock-control').forEach(element => element.remove());
-      for (const key of Object.keys(fieldNames)) $('field-' + key)?.after(this.makeLock('fields', key, '锁定，AI 重做时保留'));
+      for (const key of this.fieldKeys()) $('field-' + key)?.after(this.makeLock('fields', key, '锁定，AI 重做时保留'));
       for (const key of Object.keys(settingNames)) {
         const element = $(key === 'textOffset' ? 'text-offset' : key === 'layerOrder' ? 'layer-order' : 'setting-' + key);
         const anchor = ['intensity', 'textOffset', 'layerOrder'].includes(key) ? element : element?.closest('label');
@@ -145,7 +155,7 @@
 
     scope() {
       const value = $('ai-scope').value;
-      if (value === 'fields') return { kind: 'fields', ids: Object.keys(fieldNames) };
+      if (value === 'fields') return { kind: 'fields', ids: this.fieldKeys() };
       if (value.startsWith('shot-')) return { kind: 'slots', ids: [value] };
       return { kind: value, ids: [] };
     }
@@ -157,9 +167,9 @@
       const id = this.state.project.id;
       try {
         const project = this.state.dirty ? await this.saveProject({ quiet: true }) : this.state.project;
-        if (!project || this.state.project?.id !== id || this.state.dirty) throw new Error('工程已切换或有未保存修改，请重新操作。');
+        if (!project || this.state.project?.id !== id || this.state.dirty) throw new Error('视频已切换或有未保存修改，请重新操作。');
         const { run } = await this.api(`/api/projects/${id}/ai-runs`, { method: 'POST', body: JSON.stringify({
-          expectedRevision: project.revision, mode, scope, instruction, requestId: crypto.randomUUID(),
+          expectedRevision: project.revision, mode, scope, instruction, requestId: globalThis.crypto?.randomUUID?.(),
         }) });
         this.run = run;
         this.displayRun(run);
@@ -176,7 +186,7 @@
     displayRun(run) {
       const element = $('ai-run-status');
       const scope = run.scope?.kind === 'slots' ? `仅修改${run.scope.ids.map(id => '镜头 '+(this.state.project.slots.findIndex(slot=>slot.id===id)+1)).join('、')}。` : '';
-      element.textContent = scope + (run.error || run.message || '') + (run.warnings?.length ? ` 提示：${run.warnings.join('；')}` : '');
+      element.textContent = this.displayText(scope + (run.error || run.message || '') + (run.warnings?.length ? ` 提示：${run.warnings.join('；')}` : ''));
       element.classList.toggle('is-error', ['failed', 'conflict'].includes(run.status));
     }
 
@@ -198,7 +208,7 @@
             this.renderAssets();
             const { project } = await this.api('/api/projects/' + projectId);
             this.setProject(project);
-            this.toast(run.changes.length ? `AI 修改已保存为修订 ${project.revision}` : '本次没有修改工程');
+            this.toast(run.changes.length ? `AI 修改已保存为修订 ${project.revision}` : '本次没有修改视频');
           }
           await this.refreshRuns();
         }
@@ -223,14 +233,14 @@
         const instruction = document.createElement('p');
         instruction.textContent = run.instruction || '按制作要求生成初稿';
         const response = document.createElement('p');
-        response.textContent = run.error || run.message;
+        response.textContent = this.displayText(run.error || run.message);
         article.append(title, instruction, response);
         if (run.changes.length) {
           const changes = document.createElement('small');
-          changes.textContent = '已修改 ' + run.changes.map(change => fieldNames[change.target] || settingNames[change.target] || (change.target.startsWith('shot-') ? `镜头 ${change.target.slice(5)}` : '音乐')).join('、');
+          changes.textContent = '已修改 ' + run.changes.map(change => this.fieldLabel(change.target) || settingNames[change.target] || (change.target.startsWith('shot-') ? `镜头 ${change.target.slice(5)}` : '音乐')).join('、');
           article.append(changes);
         }
-        run.warnings.forEach(message => { const warning = document.createElement('p'); warning.textContent = message; article.append(warning); });
+        run.warnings.forEach(message => { const warning = document.createElement('p'); warning.textContent = this.displayText(message); article.append(warning); });
         $('ai-conversation').append(article);
       });
       const active = runs.find(run => ['queued', 'running'].includes(run.status));
@@ -280,12 +290,12 @@
         const row = document.createElement('div'); row.className = 'history-row';
         const text = document.createElement('div');
         const title = document.createElement('strong'); title.textContent = `修订 ${revision.revision}${revision.revision === this.state.project.revision ? ' · 当前' : ''}`;
-        const description = document.createElement('p'); description.textContent = revision.summary;
+        const description = document.createElement('p'); description.textContent = this.displayText(revision.summary);
         const time = document.createElement('small'); time.textContent = new Date(revision.updatedAt).toLocaleString(); text.append(title, description, time);
         const preview = document.createElement('a'); preview.className = 'text-button'; preview.target = '_blank'; preview.rel = 'noopener'; preview.textContent = '预览'; preview.href = this.resource(`/api/projects/${id}/preview?revision=${revision.revision}`);
         const restore = document.createElement('button'); restore.className = 'button button-quiet'; restore.textContent = '恢复'; restore.disabled = revision.revision === this.state.project.revision;
         restore.addEventListener('click', this.action(async () => {
-          if (this.state.project?.id !== id) throw new Error('当前工程已切换，请重新打开修订记录');
+          if (this.state.project?.id !== id) throw new Error('当前视频已切换，请重新打开修订记录');
           restore.disabled = true;
           try {
             const { project } = await this.api(`/api/projects/${id}/restore`, { method: 'POST', body: JSON.stringify({ expectedRevision: this.state.project.revision, revision: revision.revision }) });
@@ -319,7 +329,7 @@
       $('ai-regenerate').addEventListener('click', this.action(() => this.start('regenerate', this.scope(), '按当前制作要求重新生成选定范围，尽量使用不同的合适候选。')));
       $('ai-adjust').addEventListener('click', this.action(() => {
         const value = $('ai-adjust-scope').value;
-        const scope = value === 'selected' ? { kind: 'slots', ids: [document.querySelector('.timeline-shot.selected')?.dataset.slotId || this.state.project.slots[0].id] } : value === 'fields' ? { kind: 'fields', ids: Object.keys(fieldNames) } : { kind: value, ids: [] };
+        const scope = value === 'selected' ? { kind: 'slots', ids: [document.querySelector('.timeline-shot.selected')?.dataset.slotId || this.state.project.slots[0].id] } : value === 'fields' ? { kind: 'fields', ids: this.fieldKeys() } : { kind: value, ids: [] };
         return this.start('instruction', scope, $('ai-instruction').value.trim());
       }));
       $('ai-cancel').addEventListener('click', this.action(async () => { if (this.run) await this.api(`/api/ai-runs/${this.run.id}/cancel`, { method: 'POST', body: '{}' }); }));

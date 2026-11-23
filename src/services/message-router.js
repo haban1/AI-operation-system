@@ -77,11 +77,11 @@ export function routeIncomingMessage({ message = {}, conversation = null, source
       GREETING: checkingPresence ? '在的，想问什么？' : '你好，想了解什么？',
       THANKS: '不客气，有问题再问我。',
       ACKNOWLEDGEMENT: '好。',
-      PRAISE: '谢谢，喜欢就好。',
+      PRAISE: '哈哈，谢谢认可～',
       FAREWELL: '好，有需要再聊。',
       APOLOGY: '没事，不用客气。',
       LAUGHTER: '哈哈。',
-      IDENTITY: '我是小智，这里的智能助手。',
+      IDENTITY: '我是小智，这里的 AI 智能助手，有什么想了解的？',
       CAPABILITY: '可以帮你查资料、回答问题。你想了解什么？',
       EMOTION: '想聊的话，可以慢慢说。'
     };

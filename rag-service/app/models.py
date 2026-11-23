@@ -21,7 +21,7 @@ class Snapshot(BaseModel):
 class SourceInfo(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    platform: Literal["DOUYIN", "WEIBO", "BILIBILI", "WECHAT_CHANNELS"] = "DOUYIN"
+    platform: Literal["DOUYIN", "WEIBO", "BILIBILI", "WECHAT_CHANNELS", "WECHAT_ROBOT"] = "DOUYIN"
     accountId: str = "local-default"
     channelType: Literal["COMMENT", "DIRECT_MESSAGE"] = "DIRECT_MESSAGE"
 

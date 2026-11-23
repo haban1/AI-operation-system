@@ -1,4 +1,5 @@
-import { setupPublishFlow } from './publish-flow.js?v=20261110-publish-steps';
+import { setupPublishFlow } from './publish-flow.js?v=20261117-publish-confirmation';
+import { platformAccountLabel } from './account-identity.js?v=20261113';
 import { PLATFORM_BRANDS, platformLogo } from './platform-icons.js?v=20261111-v2';
 import { mountAiOrb } from './ai-orb.js?v=20261112-refresh';
 const node=(tag,className,text)=>{const element=document.createElement(tag);if(className)element.className=className;if(text!==undefined)element.textContent=text;return element};
@@ -89,8 +90,7 @@ function dashboard(root,{data,stats={},accounts=[],localAgent={},onNavigate}){
     const row=node('button','v2-agent');row.dataset.refreshKey=item.code;row.type='button';row.onclick=()=>onNavigate('accounts');
     row.innerHTML=`${platformLogo(item.code,26)}<span class="v2-agent-name"></span><span class="v2-pill v2-pill-${item.state.tone}"></span>`;
     const platformName=PLATFORM_BRANDS[item.code].name;
-    const nickname=String(item.account?.login_status||'').toUpperCase()==='READY'?String(item.account.platform_user_name||'').trim():'';
-    row.querySelector('.v2-agent-name').textContent=nickname?`${nickname} · ${platformName}`:platformName;
+    row.querySelector('.v2-agent-name').textContent=platformAccountLabel(item.account,platformName);
     row.querySelector('.v2-pill').textContent=item.state.label;
     agents.append(row);
   }
@@ -165,16 +165,16 @@ function publishing(root,{view,onNavigate}){
     const main=form.querySelector('.publish-main-column > .panel');
     const side=form.querySelector('.publish-side-column');
     const settings=panel('发布设置');settings.classList.add('preview-publish-settings');
-    for(const selector of ['#contentOriginCard','#precheckBox','.publish-review-actions','#complianceBox','#warningConfirmed','#autoPublish','#scheduledPublishButton','#publishSubmitButton']){
+    for(const selector of ['#contentOriginCard','.publish-review-actions','#complianceBox','#publishWarningConfirmation','#publishDraftButton','#scheduledPublishButton','#publishSubmitButton']){
       const element=form.querySelector(selector);if(!element)continue;
-      settings.append(['warningConfirmed','autoPublish'].includes(element.id)?element.closest('label'):element);
+      settings.append(element);
     }
     side.append(settings);
     const preview=main.querySelector('#materialPreview');if(preview){const placeholder=preview.querySelector('b');if(placeholder)placeholder.textContent='选择图片或视频';const path=main.querySelector('.local-material-path-field');if(path){const details=fold('填写本机路径',[path]);details.classList.add('preview-local-path');preview.after(details)}}
     const body=main.querySelector('#publishBody');const copy=main.querySelector('.audio-copy-actions');if(body&&copy)body.after(copy);
     const ai=main.querySelector('#audioCopyBox');if(ai)main.append(ai);
     const platform=side.querySelector('.panel');const notes=[...platform.querySelectorAll(':scope > .notice')];if(notes.length)platform.append(fold('平台要求与不可用原因',notes));
-    const actions=node('div','preview-publish-buttons');move(settings,'#scheduledPublishButton',actions);move(settings,'#publishSubmitButton',actions);settings.append(actions);
+    const actions=node('div','preview-publish-buttons');move(settings,'#publishDraftButton',actions);move(settings,'#scheduledPublishButton',actions);move(settings,'#publishSubmitButton',actions);settings.append(actions);
     const submit=settings.querySelector('#publishSubmitButton');if(submit)submit.textContent='发布';
     const scheduled=settings.querySelector('#scheduledPublishButton span');if(scheduled)scheduled.textContent='定时发布';
     const records=form.querySelector('.publish-records-zone');
@@ -182,46 +182,13 @@ function publishing(root,{view,onNavigate}){
   }
   form.dataset.presentation=view||'content';
   setupPublishFlow(form);
-  enhancePublishPreview(form);
+  enhancePublishPlatforms(form);
 }
-/* 发布页：平台卡片换官方图标；右侧手机预览实时跟随标题、正文、素材和所选平台。只读表单，不改提交逻辑。 */
-function enhancePublishPreview(form){
-  if(form.dataset.v2Preview)return;
-  const grid=form.querySelector('.publish-grid');if(!grid)return;
-  form.dataset.v2Preview='phone';
+function enhancePublishPlatforms(form){
   for(const card of form.querySelectorAll('.publish-platform-card')){
     const code=card.querySelector('.platform-check')?.dataset.platform;
     if(code&&!card.querySelector('.v2-logo'))card.querySelector('.publish-platform-title')?.insertAdjacentHTML('afterbegin',platformLogo(code,28));
   }
-  const phone=node('aside','v2-phone');phone.setAttribute('aria-label','发布效果预览');
-  const tabs=node('div','v2-phone-tabs');
-  const screen=node('div','v2-phone-screen');
-  const media=node('div','v2-phone-media');
-  const cap=node('div','v2-phone-caption');const handle=node('b','', '@'+(form.querySelector('.publish-platform-card .publish-platform-title b')?.textContent.split('·').pop().trim()||'运营账号'));
-  const text=node('p','');const empty=node('p','v2-phone-hint','填写标题和正文后，这里显示发布效果。');
-  cap.append(handle,text);screen.append(media,cap);
-  phone.append(node('div','v2-phone-label','发布预览'),tabs,screen,empty);
-  grid.append(phone);
-  const title=form.querySelector('#publishTitle'),body=form.querySelector('#publishBody'),preview=form.querySelector('#materialPreview');
-  let current=null;
-  const update=()=>{
-    const chosen=[...form.querySelectorAll('.platform-check:checked:not(:disabled)')].map(c=>c.dataset.platform);
-    const codes=[...new Set(chosen)];
-    if(!codes.includes(current))current=codes[0]||null;
-    tabs.replaceChildren();
-    for(const code of codes){const b=node('button',`v2-phone-tab ${code===current?'active':''}`);b.type='button';b.innerHTML=platformLogo(code,18);b.append(node('span','',PLATFORM_BRANDS[code]?.name||code));b.onclick=()=>{current=code;update()};tabs.append(b)}
-    if(!codes.length)tabs.append(node('span','v2-phone-tabs-empty','未选择平台'));
-    const t=title?.value.trim()||'',d=body?.value.trim()||'';
-    text.replaceChildren();if(t)text.append(node('strong','',t));if(d)text.append(node('span','',d));
-    empty.hidden=Boolean(t||d);cap.hidden=!(t||d);
-    const source=preview?.querySelector('img,video');
-    media.replaceChildren();
-    if(source){const copy=node(source.tagName.toLowerCase(),'');copy.src=source.currentSrc||source.src;if(copy.tagName==='VIDEO'){copy.muted=true;copy.playsInline=true;copy.loop=true;copy.autoplay=true}media.append(copy);media.classList.remove('is-empty')}
-    else{media.classList.add('is-empty');media.append(node('span','','素材预览'))}
-  };
-  form.addEventListener('input',update);form.addEventListener('change',update);
-  if(preview)new MutationObserver(update).observe(preview,{childList:true,subtree:true,attributes:true,attributeFilter:['src']});
-  update();
 }
 function knowledge(root,{view,onNavigate}){
   // The file manager owns its complete upload/list layout.

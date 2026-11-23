@@ -35,7 +35,7 @@ function failure(res, status, code, message) {
 // Internal OpenAI-compatible endpoint. Only role aliases are accepted: callers
 // cannot select arbitrary models, upstream URLs or upstream credentials.
 export async function handleModelGateway(req, res, {
-  token, getSettings, recordUsage = () => {}, fetchImpl = fetch, timeoutMs = 60_000, localEmbeddings,
+  token, getSettings, recordUsage = () => {}, fetchImpl = fetch, timeoutMs = 60_000, localEmbeddings, knowledgeQuery,
 }) {
   const supplied = Buffer.from(String(req.headers.authorization || '').replace(/^Bearer /, ''));
   const expected = Buffer.from(token || '');
@@ -44,6 +44,22 @@ export async function handleModelGateway(req, res, {
   }
   const url = new URL(req.url, 'http://localhost');
   const route = url.pathname.slice(PREFIX.length);
+  if (route === 'knowledge/query' && req.method === 'POST' && !url.search && knowledgeQuery) {
+    try {
+      let size = 0;
+      const chunks = [];
+      for await (const chunk of req) {
+        size += chunk.length;
+        if (size > 96 * 1024) return failure(res, 413, 'KNOWLEDGE_REQUEST_TOO_LARGE', '知识查询过大');
+        chunks.push(chunk);
+      }
+      const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      return reply(res, 200, await knowledgeQuery(payload));
+    } catch (error) {
+      return failure(res, error instanceof SyntaxError || error.statusCode === 400 ? 400 : 503,
+        'KNOWLEDGE_QUERY_FAILED', '知识查询暂不可用或请求格式无效');
+    }
+  }
   const settings = getSettings();
   if (req.method === 'GET' && route === 'status' && !url.search) {
     return reply(res, 200, { source: 'tianhe', mode: settings.mode, configured: Boolean(settings.apiKey),

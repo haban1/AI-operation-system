@@ -20,7 +20,6 @@ import { assessWeiboConversationSource } from '../src/services/weibo-message-sou
 import { hasReliableWeiboReplyEvidence } from '../src/services/weibo-reply-evidence.js';
 import { scoreKnowledge } from '../src/services/knowledge.js';
 import { normalizeKnowledgeMatchResult } from '../src/services/qwen.js';
-import { validatePublishPrecheck } from '../src/services/publish-validation.js';
 import { COMPLIANCE_RULE_VERSION, reviewPublishContent, validateComplianceApproval } from '../src/services/content-compliance.js';
 import { AI_REVIEW_RULE_VERSION, buildAiReviewInputHash, buildMockAiReview, normalizeAiReviewResult, validateAiReviewApproval } from '../src/services/ai-compliance.js';
 import { buildPublishIdempotencyKey, deriveTaskStatus } from '../src/services/workflow.js';
@@ -424,23 +423,6 @@ test('OCR 识别结果包含来源审计信息且原始素材不上传', async (
   assert.ok(result.transmittedBytes > 0);
 });
 
-test('发布接口预检校验：缺失、阻断和平台不匹配均拒绝', () => {
-  const base = {
-    materialPath: 'C:/material/demo.png',
-    targets: [{ platformCode: 'xiaohongshu', accountId: 1 }],
-    precheck: {
-      path: 'C:/material/demo.png', overall: 'PASSED',
-      meta: { name: 'demo.png', type: 'image', size: 100 },
-      results: [{ platformCode: 'xiaohongshu', status: 'PASSED', reasons: [], warnings: [] }]
-    }
-  };
-  assert.equal(validatePublishPrecheck({ ...base, precheck: undefined }).ok, false);
-  assert.equal(validatePublishPrecheck({ ...base, precheck: { ...base.precheck, overall: 'BLOCKED' } }).ok, false);
-  assert.equal(validatePublishPrecheck({ ...base, targets: [{ platformCode: 'bilibili', accountId: 5 }] }).ok, false);
-  assert.equal(validatePublishPrecheck(base).ok, true);
-});
-
-
 test('发布内容合规：测试占位内容被阻断', () => {
   const review = reviewPublishContent({ title: '管理端一键发布测试', body: '这是RPA自动发布链路测试，发布后可删除。' });
   assert.equal(review.overall, 'BLOCKED');
@@ -516,18 +498,6 @@ test('发布页使用 Local Agent AI 图片审核并提交审核结果，不再�
   assert.doesNotMatch(localRules, /IMAGE_TEXT_NOT_CHECKED|图片OCR文本/);
 });
 
-test('发布页素材状态卡仅展示格式和分平台状态', () => {
-  const source = fs.readFileSync(path.resolve(import.meta.dirname, '../public/app.js'), 'utf8');
-  const styles = fs.readFileSync(path.resolve(import.meta.dirname, '../public/styles.css'), 'utf8');
-  const renderSource = source.slice(source.indexOf('function renderMaterialPrecheck('), source.indexOf('function publishHistoryHtml('));
-  assert.match(source, /上传后仅展示视频格式与所选平台适配状态/);
-  assert.match(renderSource, /material-format-tile/);
-  assert.match(renderSource, /material-platform-chip/);
-  assert.match(renderSource, /statusLabel=status==='PASSED'\?'通过'/);
-  assert.doesNotMatch(renderSource, /视频参数：|音频参数：|解析器：|SHA-256：|尺寸：|大小：/);
-  assert.match(styles, /\.material-platform-chip\.is-passed/);
-  assert.match(styles, /\.material-platform-chip\.is-blocked/);
-});
 test('发布任务幂等键与目标顺序无关，但素材变化会变化', () => {
   const a = buildPublishIdempotencyKey({ targets: [{ accountId: 1, platformCode: 'xiaohongshu' }, { accountId: 2, platformCode: 'douyin' }], materialSha: 'abc', title: '标题', body: '正文' });
   const b = buildPublishIdempotencyKey({ targets: [{ accountId: 2, platformCode: 'douyin' }, { accountId: 1, platformCode: 'xiaohongshu' }], materialSha: 'abc', title: '标题', body: '正文' });
@@ -3755,16 +3725,16 @@ test('sender identity gate recognizes only same-scope recent outgoing reply echo
 });
 
 test('sender identity uses the current account instead of a previous login nickname', () => {
-  const account = { platform_user_name: '天河港澳社区', platform_user_aliases: JSON.stringify(['九龄之酒', '天河港澳社区']) };
-  for (const context of [{}, { accountUserName: '天河港澳社区' }]) {
-    const result = assessCollectedMessageIdentity({ data: { userName: '九龄之酒', content: '什么是七免两低？', context }, account });
+  const account = { platform_user_name: '示例当前账号', platform_user_aliases: JSON.stringify(['示例旧账号', '示例当前账号']) };
+  for (const context of [{}, { accountUserName: '示例当前账号' }]) {
+    const result = assessCollectedMessageIdentity({ data: { userName: '示例旧账号', content: '示例服务是什么？', context }, account });
     assert.equal(result.isSelf, false);
   }
   assert.equal(assessCollectedMessageIdentity({
-    data: { userName: '九龄之酒', context: { accountUserName: '天河港澳社区' } },
-    account: { platform_user_name: '九龄之酒' }
+    data: { userName: '示例旧账号', context: { accountUserName: '示例当前账号' } },
+    account: { platform_user_name: '示例旧账号' }
   }).isSelf, false, 'fresh page identity takes precedence over the stored previous account');
-  assert.equal(assessCollectedMessageIdentity({ data: { userName: '天河港澳社区' }, account }).isSelf, true);
+  assert.equal(assessCollectedMessageIdentity({ data: { userName: '示例当前账号' }, account }).isSelf, true);
 });
 
 test('wechat channels recognizes the greeting inbox explicit empty message', () => {

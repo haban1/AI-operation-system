@@ -1,3 +1,5 @@
+import { createBackgroundPage, focusInteractivePage, isBackgroundPage } from '../browser-control/collection-pages.js';
+
 export class RpaAdapter {
   constructor({ platformCode }) {
     this.platformCode = platformCode;
@@ -8,6 +10,43 @@ export class RpaAdapter {
   setRuntimeGuard(runtimeGuard) { this.runtimeGuard = runtimeGuard; }
   async assertRuntimeAllowed() {
     if (typeof this.runtimeGuard === 'function') await this.runtimeGuard(this.platformCode);
+  }
+  createBackgroundPage(context, options) { return createBackgroundPage(context, options); }
+  openWorkspace(key) {
+    const page = key ? this.channelPages?.get(key) : this.activePage;
+    return page && !page.isClosed() ? page : null;
+  }
+
+  async getWorkspacePage(key, { hostHints = [], bringToFront = false, visible = false } = {}) {
+    const context = await this.ensureContext();
+    const pages = this.channelPages ||= new Map();
+    let page = pages.get(key);
+    if (!page || page.isClosed()) {
+      this.pendingWorkspaces ||= new WeakMap();
+      let pending = this.pendingWorkspaces.get(context);
+      if (!pending) this.pendingWorkspaces.set(context, pending = new Map());
+      if (!pending.has(key)) {
+        const opening = (async () => {
+          let created;
+          if (bringToFront) {
+            const assigned = new Set(pages.values());
+            const available = context.pages().filter(p => !p.isClosed() && !isBackgroundPage(p) && !assigned.has(p));
+            created = available.find(p => hostHints.some(host => p.url().includes(host)))
+              || available.find(p => p.url() === 'about:blank') || await context.newPage();
+          } else {
+            created = await this.createBackgroundPage(context, visible ? { forHandoff: true } : undefined);
+          }
+          pages.set(key, created);
+          created.once?.('close', () => { if (pages.get(key) === created) pages.delete(key); });
+          return created;
+        })().finally(() => pending.delete(key));
+        pending.set(key, opening);
+      }
+      page = await pending.get(key);
+    }
+    if (bringToFront || visible) this.activePage = page;
+    if (bringToFront) await focusInteractivePage(page);
+    return page;
   }
   invalidatePendingOperations() { this.lifecycleGeneration += 1; return this.lifecycleGeneration; }
   platformStoppedError() {

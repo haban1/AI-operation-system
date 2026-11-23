@@ -62,7 +62,7 @@ test('real media import waits for admission before creating a publish draft', as
   await ctx.library.setAdmission(item.id, 'approved', 'library-test-admin');
   const draft = await ctx.library.publishDraft(item.id);
   assert.equal(draft.title, item.title);
-  assert.equal(draft.requiresPrecheck, true);
+  assert.equal(draft.requiresPrecheck, false);
   assert.equal(draft.meta.width, 1);
   assert.equal(draft.meta.height, 1);
   assert.equal(draft.meta.type, 'image');

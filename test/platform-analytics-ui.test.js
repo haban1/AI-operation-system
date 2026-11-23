@@ -25,14 +25,14 @@ function dashboard(platformCode = 'all') {
     kpis: [{ key: 'exposure', label: '曝光量', icon: 'dashboard', value: null, status: 'PENDING_SOURCE', pendingNote: '周期曝光待接入' }],
     content: [], trend: [], funnel: [], recommendations: [],
     analytics: { accounts: [{ accountId: platform === 'douyin' ? 1001 : 1002, platformCode: platform,
-      status: 'READY', capturedAt: '2026-11-02T04:00:00Z', accountIdentity: { name: platform === 'douyin' ? '隔离抖音账号' : '隔离B站账号' },
+      status: 'READY', loginStatus: 'READY', capturedAt: '2026-11-02T04:00:00Z', accountIdentity: { id: platform === 'douyin' ? 'detected-douyin-id' : 'detected-bilibili-id', name: platform === 'douyin' ? '隔离抖音账号' : '隔离B站账号' },
       metrics: [{ key: 'plays', label: '播放量', value: 0, rawValue: '0', scope: 'SNAPSHOT' },
         { key: 'netFollowers', label: '净增粉丝', value: 0, rawValue: '0', scope: 'PERIOD',
           periodStart: '2026-10-26T16:00:00.000Z', periodEnd: '2026-11-01T16:00:00.000Z' }] }],
       coverage: { supportedAccounts: 1, connectedAccounts: 1, missing: [] } } };
 }
 
-async function fixture(t, handleDashboard) {
+async function fixture(t, handleDashboard, dashboardData = dashboard) {
   const dir = tempRuntimeDir('platform-analytics-ui-');
   let runtime, browser;
   t.after(async () => { await browser?.close(); await stopChild(runtime?.child); cleanupDir(dir); });
@@ -58,17 +58,49 @@ async function fixture(t, handleDashboard) {
   await page.route('**/api/operations-dashboard?**', async route => {
     const platform = new URL(route.request().url()).searchParams.get('platform') || 'all';
     if (handleDashboard) await handleDashboard(platform);
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, dashboard: dashboard(platform) }) });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, dashboard: dashboardData(platform) }) });
   });
   await page.goto(runtime.base);
   await page.locator('.operations-analytics-account').waitFor();
   return { page };
 }
 
+test('运营数据账号待核对不等于未登录，平台图标和长状态在窄屏内显示', { skip: !chromePath }, async t => {
+  const { page } = await fixture(t, undefined, platform => {
+    const data = dashboard(platform);
+    data.analytics.coverage.missing = [
+      { platformCode: 'xiaohongshu', reason: 'ACCOUNT_IDENTITY_CHANGED' },
+      { platformCode: 'wechat_channels', reason: 'DATA_PAGE_TIMEOUT' }
+    ];
+    return data;
+  });
+  const panel = page.locator('.operations-analytics-panel');
+  const mismatch = panel.locator('.operations-analytics-coverage li').first();
+  assert.equal(await mismatch.locator('.operations-analytics-reason').innerText(), '数据账号待核对');
+  assert.match(await panel.innerText(), /运营数据的账号信息与当前绑定不匹配，相关数据暂不显示/);
+  assert.doesNotMatch(await panel.innerText(), /去“平台账号”登录|登录账号与绑定账号不一致/);
+  assert.equal(await panel.getByRole('link', { name: '核对平台账号' }).getAttribute('href'), '#accounts');
+  for (const width of [1440, 1024, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    const boxes = await panel.locator('.operations-analytics-coverage li').evaluateAll(rows => rows.map(row => {
+      const outer = row.getBoundingClientRect();
+      const logo = row.querySelector('.v2-logo');
+      const inside = [...row.querySelectorAll('.v2-logo, b, .operations-analytics-reason')].every(child => {
+        const rect = child.getBoundingClientRect();
+        return rect.left >= outer.left && rect.right <= outer.right && rect.top >= outer.top && rect.bottom <= outer.bottom
+          && child.scrollWidth <= child.clientWidth + 1;
+      });
+      return { inside, width: logo.offsetWidth, height: logo.offsetHeight, padding: getComputedStyle(logo).paddingLeft };
+    }));
+    assert.deepEqual(boxes, Array(2).fill({ inside: true, width: 22, height: 22, padding: '0px' }), `viewport ${width}`);
+  }
+});
+
 test('平台运营数据保留真实零值，周期按上海日期显示且累计读数不填充周期KPI', { skip: !chromePath }, async t => {
   const { page } = await fixture(t);
   const card = page.locator('.operations-analytics-account');
-  assert.match(await card.innerText(), /隔离抖音账号/);
+  assert.equal(await card.locator('b').innerText(), 'detected-douyin-id · 抖音');
+  assert.doesNotMatch(await card.innerText(), /隔离抖音账号/);
   const plays = card.locator('dl > div').filter({ has: page.locator('dt', { hasText: '播放量' }) });
   const followers = card.locator('dl > div').filter({ has: page.locator('dt', { hasText: '净增粉丝' }) });
   assert.equal(await plays.locator('dd').innerText(), '0');
@@ -90,7 +122,7 @@ test('快速切换平台后迟到响应不能覆盖当前平台数据或随后�
   await page.locator('#operationsPlatformFilter').selectOption('douyin');
   await entered.promise;
   await page.locator('#operationsPlatformFilter').selectOption('bilibili');
-  await page.waitForFunction(() => document.querySelector('.operations-analytics-account')?.textContent.includes('隔离B站账号'));
+  await page.waitForFunction(() => document.querySelector('.operations-analytics-account')?.textContent.includes('detected-bilibili-id'));
   assert.equal(await page.locator('#operationsPlatformFilter').inputValue(), 'bilibili');
 
   const oldResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/operations-dashboard'
@@ -101,6 +133,6 @@ test('快速切换平台后迟到响应不能覆盖当前平台数据或随后�
   assert.deepEqual(await page.evaluate(() => window.analyticsUiTest.snapshot()), { selected: 'bilibili', loaded: 'bilibili' });
   await page.evaluate(() => window.analyticsUiTest.redraw());
   assert.equal(await page.locator('#operationsPlatformFilter').inputValue(), 'bilibili');
-  assert.match(await page.locator('.operations-analytics-account').innerText(), /隔离B站账号/);
-  assert.doesNotMatch(await page.locator('.operations-analytics-account').innerText(), /隔离抖音账号/);
+  assert.match(await page.locator('.operations-analytics-account').innerText(), /detected-bilibili-id/);
+  assert.doesNotMatch(await page.locator('.operations-analytics-account').innerText(), /detected-douyin-id|隔离B站账号/);
 });

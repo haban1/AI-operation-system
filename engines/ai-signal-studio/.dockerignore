@@ -16,3 +16,6 @@
 !video/tsconfig.json
 !video/src/
 !video/src/**
+!video/public/
+!video/public/branding/
+!video/public/branding/**

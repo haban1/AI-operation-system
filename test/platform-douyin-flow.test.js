@@ -177,6 +177,18 @@ test('Douyin refresh readiness recognizes the current no-more-comments message',
 });
 
 const collectionTestChrome = [process.env.CHROME_EXECUTABLE_PATH, 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', '/usr/bin/chromium', '/usr/bin/google-chrome'].find(candidate => candidate && fs.existsSync(candidate));
+test('私信个人页只以实际显示的验证页面作为登录证据', {skip:!collectionTestChrome}, async t=>{
+  const {adapter}=fixture();
+  const browser=await chromium.launch({headless:true,executablePath:collectionTestChrome});
+  t.after(()=>browser.close());
+  const page=await browser.newPage();
+  await page.route('https://www.douyin.com/user/self', route=>route.fulfill({contentType:'text/html',body:
+    '<meta charset="utf-8"><h1>我的私信</h1><iframe hidden srcdoc="<p>请完成安全验证</p>"></iframe>'}));
+  await page.goto('https://www.douyin.com/user/self');
+  assert.notEqual((await adapter.inspectLoginState(page)).state,'VERIFY_REQUIRED');
+  await page.locator('iframe').evaluate(el=>el.hidden=false);
+  assert.equal((await adapter.inspectLoginState(page)).state,'VERIFY_REQUIRED');
+});
 test('the current empty refresh wrapper is settled while a real spinner still blocks collection', { skip: !collectionTestChrome }, async t => {
   const { adapter, root } = fixture();
   const browser = await chromium.launch({ headless: true, executablePath: collectionTestChrome });
@@ -229,6 +241,26 @@ test('the current empty refresh wrapper is settled while a real spinner still bl
   // A generic React ID with different rendered content is not a comment identity.
   await page.locator('.container-current').evaluate(element => { element.__reactFiber$fixture.memoizedProps.content = '其他内容'; });
   assert.equal((await adapter.readDouyinElementIdentity(page.locator('.container-current'))).commentStableId, undefined);
+  const opaque='@opaqueCommentId01==';
+  const row=page.locator('.container-current');
+  await row.evaluate((el,id)=>{el.__reactFiber$fixture={return:{memoizedProps:{
+    content:'好',username:'真实用户',uid:'actor',id,levelOneCid:id
+  }}};el.querySelector('.comment-content-text-current').textContent='好';},opaque);
+  const collectId=async()=>(await adapter.extractMessages(page,'COMMENT',{}, {sourceContext:{sourceVideoKey:'video-1',sourceVerified:true}}))[0]?.context.commentStableId;
+  assert.equal(await collectId(),opaque);
+  assert.equal((await adapter.readDouyinElementIdentity(row)).commentStableId,opaque);
+  await row.evaluate(el=>el.__reactFiber$fixture.return.memoizedProps.username='另一位');
+  assert.ok(!await collectId());
+  await row.evaluate(el=>{const p=el.__reactFiber$fixture.return.memoizedProps;p.username='真实用户';p.levelOneCid='@otherCommentId02==';});
+  assert.ok(!(await adapter.readDouyinElementIdentity(row)).commentStableId);
+  await row.evaluate(el=>{
+    const reply=el.cloneNode(true);
+    reply.querySelector('.comment-content-text-current').textContent='这是楼中楼';
+    el.append(reply);
+  });
+  const topOnly=await adapter.extractMessages(page,'COMMENT',{}, {sourceContext:{sourceVideoKey:'video-1',sourceVerified:true}});
+  assert.equal(topOnly.length,1);
+  assert.equal(topOnly[0].content,'好');
   await page.setContent('<section class="previewCard-current"><div class="title-current">测试作品</div><div class="desc-current">发布于2026年10月29日 16:07</div></section><div class="douyin-creator-interactive-sidesheet-content">作品列表<ul class="douyin-creator-interactive-list-items"><div class="container-current active-current" onclick="this.closest(\'.douyin-creator-interactive-sidesheet-content\').style.display=\'none\'"><div class="title-current">测试作品</div><div class="time-current">发布于2026年10月29日 16:07</div><div class="right-current"><div>7</div></div></div></ul></div>');
   await page.locator('.container-current').evaluate(element => { element.__reactProps$fixture = { data: { item_id_plain: 'video-current-1' } }; });
   await adapter.inspectDouyinCommentVideos(page, { maxRounds: 1 });
@@ -236,6 +268,15 @@ test('the current empty refresh wrapper is settled while a real spinner still bl
   assert.equal(selected.ok, true);
   assert.equal(selected.alreadySelected, false);
   assert.equal(await page.locator('.douyin-creator-interactive-sidesheet-content').isVisible(), false);
+  await page.setContent(`<button onclick="window.unexpectedClick=true">选择作品</button>
+    <section class="previewCard-current"><span class="title-current">测试作品</span><span class="desc-current">发布于2026年10月29日 16:07</span></section>
+    <div class="douyin-creator-interactive-portal" style="display:contents"><div class="douyin-creator-interactive-sidesheet-body">
+    <div class="creator-unified-work" onclick="this.parentElement.hidden=true"><div class="creator-unified-work-title">测试作品</div>
+    <div class="creator-unified-work-meta">发布于 2026年10月29日 16:07</div></div></div></div>`);
+  await page.locator('.creator-unified-work').evaluate(el=>{el.__reactProps$fixture={data:{item_id_plain:'unified-id',comment_count:3}};});
+  assert.equal((await adapter.inspectDouyinCommentVideos(page)).videos[0].sourceVideoKey,'unified-id');
+  assert.equal((await adapter.openDouyinCommentVideoByKey(page,'unified-id')).ok,true);
+  assert.equal(await page.evaluate(()=>Boolean(window.unexpectedClick)),false);
 });
 
 test('Douyin read row recovers its stable conversation ID from suffixed React properties', async () => {
@@ -1188,10 +1229,10 @@ test('comment editor is resolved only inside the exact target comment', async ()
 
 test('Douyin redesigned inline reply editor stays bound to the target username', async () => {
   const { adapter } = fixture();
-  const editor = domLocator({ tagName: 'div', contentEditable: true, attributes: { placeholder: '回复 雷姆阿：' } });
+  const editor = domLocator({ tagName: 'div', contentEditable: true, attributes: { placeholder: '回复 测试用户甲：' } });
   const root = { isVisible: async () => true, locator: () => locatorList([editor]) };
   const scope = { locator: selector => selector.includes('[class*="reply-content-"]') ? locatorList([root]) : missingLocator() };
-  const matched = await adapter.findDouyinCommentEditor({}, { userName: '雷姆阿' }, scope);
+  const matched = await adapter.findDouyinCommentEditor({}, { userName: '测试用户甲' }, scope);
   assert.equal(matched.ok, true);
   assert.equal(matched.editor, editor);
   const mismatch = await adapter.findDouyinCommentEditor({}, { userName: 'other' }, scope);

@@ -175,7 +175,7 @@ function renderCommentDetail(detail, message, card, group) {
   ctx.innerHTML = platformLogo(message.platform_code, 34);
   const ctxCopy = element('div', 'v2-inbox-context-copy');
   ctxCopy.append(element('b', '', group?.querySelector('.comment-post-title')?.textContent || message.post?.title || '未识别关联帖子'));
-  const meta = element('small'); meta.append(element('span', '', message.platform_name || ''), element('span', '', message.account_name || ''));
+  const meta = element('small'); meta.append(element('span', '', message.ui_account_label || message.platform_name || ''));
   ctxCopy.append(meta); ctx.append(ctxCopy);
   const postKey = group?.dataset.commentPost;
   if (postKey && group.querySelector('.comment-post-meta .open-message')) {
@@ -246,6 +246,12 @@ function applyCommentFilter(inbox) {
     group.classList.toggle('v2-filtered-out', !visible);
   }
   for (const b of inbox.querySelectorAll('.v2-filter')) { const on = b.dataset.filter === commentFilter; b.classList.toggle('active', on); b.setAttribute('aria-pressed', String(on)); }
+  const visible = [...list.querySelectorAll('.comment-item:not(.v2-filtered-out)')];
+  inbox.classList.toggle('is-empty', visible.length === 0);
+  const empty = inbox.querySelector('.interaction-filter-empty');
+  if (empty) empty.hidden = visible.length > 0 || !list.querySelector('.comment-item');
+  const current = visible.find(card => cardMessageId(card) === String(selectedCommentId)) || visible[0];
+  selectComment(inbox, current ? cardMessageId(current) : null);
 }
 function selectComment(inbox, id) {
   if (!inbox) return;
@@ -266,6 +272,7 @@ function presentCommentInbox(root, options) {
   const middle = element('section', 'v2-inbox-list'); middle.setAttribute('aria-label', '按帖子分组的评论');
   const detail = element('section', 'v2-inbox-detail'); detail.setAttribute('aria-label', '评论详情');
   list.before(inbox); middle.append(list); inbox.append(filters, middle, detail);
+  const empty = element('p', 'interaction-filter-empty', '暂无这类评论'); empty.hidden = true; middle.append(empty);
   const counts = { all: messages.length, pending: 0, ai: 0, manual: 0, other: 0 };
   for (const m of messages) counts[commentCategory(m)] += 1;
   filters.append(element('div', 'v2-filter-caption', '状态'));
@@ -287,9 +294,8 @@ function presentCommentInbox(root, options) {
     event.preventDefault(); selectComment(event.currentTarget.closest('.v2-inbox'), cardMessageId(card));
   };
   const fallback = messages.find(m => commentCategory(m) === 'pending') || messages[0];
-  const initial = selectedCommentId && latestComments.has(String(selectedCommentId)) ? selectedCommentId : fallback?.id;
+  selectedCommentId = selectedCommentId && latestComments.has(String(selectedCommentId)) ? selectedCommentId : fallback?.id;
   applyCommentFilter(inbox);
-  selectComment(inbox, initial ?? null);
 }
 
 /* 问题记录：标题下只显示一句可读的原因，原始报错、关联对象与阻断信息收进“技术详情”；
@@ -363,8 +369,9 @@ function presentMessages(root, options) {
   if (!page) return;
   page.classList.add('ws-interactions');
   const workbench = page.querySelector('.message-workbench');
-  if (workbench && !page.querySelector('.ws-collection-details')) {
-    const details = disclosure('ws-collection-details', '采集状态与设置');
+  if (workbench && !page.querySelector('.ws-collection-runtime')) {
+    const details = element('div', 'ws-collection-runtime');
+    details.hidden = true;
     workbench.querySelector('.message-toolbar')?.after(details);
     const poll = workbench.querySelector('#messagePollInterval')?.closest('label');
     if (poll) details.append(poll);
@@ -400,6 +407,8 @@ function presentTasks(root, options) {
     const subject = element('span', 'ws-task-subject');
     if (title) subject.append(title);
     subject.append(element('small', '', id ? `任务 #${id}` : ''));
+    const failure = card.querySelector('.task-failure-reason');
+    if (failure) subject.append(failure);
     const platformCell = element('span', 'ws-task-platform');
     const codes = [...new Set((task?.targets || []).map(target => target.platform_code).filter(Boolean))];
     if (codes.length) {
@@ -414,6 +423,11 @@ function presentTasks(root, options) {
     if (time) summary.append(time);
     const state = element('span', 'ws-task-state');
     if (status) state.append(status);
+    const resolve = card.querySelector('[data-resolve-task]');
+    if (resolve) {
+      resolve.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); });
+      state.append(resolve);
+    }
     summary.append(state, element('span', 'ws-task-expand', '详情'));
     card.before(details); details.append(card);
   }

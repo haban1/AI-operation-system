@@ -469,7 +469,7 @@ export function createContentLibrary(config, {
       try {
         const document = readHotDocument(item);
         return { id: item.id, source: item.source, title: document?.title || item.title, body: document?.body || item.body, materialPath: stored.filePath, sha256: item.sha256,
-          sourceRef: sourceRef(item), requiresPrecheck: true, mediaUrl: `/api/content-library/${item.id}/media`, mediaType: item.mediaType,
+          sourceRef: sourceRef(item), requiresPrecheck: false, mediaUrl: `/api/content-library/${item.id}/media`, mediaType: item.mediaType,
           sizeBytes: item.sizeBytes, meta: { ...item.meta, type: item.mediaType, size: item.sizeBytes, sha256: item.sha256 } };
       } finally { await stored.handle.close(); }
     });

@@ -4,6 +4,7 @@ import copy
 import datetime as dt
 import json
 import mimetypes
+import multiprocessing
 import os
 import re
 import shutil
@@ -25,10 +26,13 @@ from comparison import create_batch, run_batch, read_batch, list_batches, recove
 from research import normalize_topic, research_topic
 from runtime import base_path, config_path, public_url
 from source_collectors import normalize_sources, resolve_candidate, xhs_login
+from task_control import ProgressDict, TaskControl
 
 LOCK = threading.Lock()
+TASK_CONTROL = TaskControl()
+IS_TASK_WORKER = multiprocessing.current_process().name != 'MainProcess'
 JOB = {'status':'idle','step':'等待开始'}
-if (ROOT/'data/last-job.json').exists():
+if not IS_TASK_WORKER and (ROOT/'data/last-job.json').exists():
     JOB = json.loads((ROOT/'data/last-job.json').read_text(encoding='utf-8'))
     if JOB.get('status')=='running':
         JOB.update(status='failed',step='上次任务被中断，请重新生成')
@@ -36,7 +40,7 @@ if (ROOT/'data/last-job.json').exists():
 SETTINGS = config()
 SETTINGS['tts'] = normalize_speech({}, SETTINGS['tts'])
 SETTINGS['sources'] = normalize_sources(SETTINGS.get('sources'))
-recover_batches(ROOT)
+if not IS_TASK_WORKER:recover_batches(ROOT)
 
 def style_preference():
     path=ROOT/'data/style-preference.json'
@@ -154,6 +158,46 @@ def task(action, payload):
         save(ROOT/'data/last-job.json',JOB)
         LOCK.release()
 
+def task_worker(root, settings, job, action, payload, connection):
+    global ROOT, SETTINGS, JOB, LOCK
+    ROOT = Path(root)
+    SETTINGS = settings
+    JOB = ProgressDict(job, connection)
+    LOCK = threading.Lock()
+    LOCK.acquire()
+    task(action, payload)
+
+
+def run_task(action, payload):
+    def update(value):
+        global JOB
+        JOB = value
+
+    def finish(cancelled):
+        global JOB
+        try:
+            if cancelled:
+                JOB = {**JOB, 'status':'cancelled', 'step':'任务已取消，可重新开始',
+                       'cancel_requested':False, 'finished_at':now()}
+                JOB.pop('error', None)
+                if JOB.get('comparison_id'):
+                    batch = read_batch(ROOT, JOB['comparison_id'])
+                    for agent in batch.get('agents', []):
+                        if agent.get('status') in ('running', 'queued'):
+                            agent.update(status='cancelled', stage='已取消', error=None)
+                    batch.update(status='cancelled', stage='已取消，已完成视频保留', error=None)
+                    if batch.get('review', {}).get('status') != 'done':
+                        batch['review'] = {'status':'cancelled'}
+                    save(ROOT/'data/comparisons'/f"{batch['id']}.json", batch)
+            elif JOB.get('status') == 'running':
+                JOB = {**JOB, 'status':'failed', 'step':'任务意外停止，请重试', 'finished_at':now()}
+            save(ROOT/'data/last-job.json', JOB)
+        finally:
+            LOCK.release()
+
+    TASK_CONTROL.run(task_worker, (str(ROOT), SETTINGS, dict(JOB), action, payload), update, finish)
+
+
 class Handler(BaseHTTPRequestHandler):
     def send_json(self,value,status=200):
         body=json.dumps(value,ensure_ascii=False).encode();self.send_response(status)
@@ -245,6 +289,17 @@ class Handler(BaseHTTPRequestHandler):
             payload=json.loads(self.rfile.read(size) or b'{}')
             if not isinstance(payload,dict):raise ValueError('请求内容必须是对象')
             action=urlsplit(self.path).path.removeprefix('/api/')
+            if action=='cancel':
+                if not isinstance(payload.get('started_at'), str):raise ValueError('请刷新页面后取消当前任务')
+                if payload['started_at'] != JOB.get('started_at'):
+                    self.send_json({'error':'任务已变化，请刷新后重试'},409);return
+                if JOB.get('status') != 'running':
+                    self.send_json({'ok':True,'job':public_job()});return
+                def cancelling():
+                    JOB.update(cancel_requested=True, step='正在取消任务…')
+                if not TASK_CONTROL.cancel(payload['started_at'], cancelling):
+                    self.send_json({'error':'此操作尚未结束，请稍后重试'},409);return
+                self.send_json({'ok':True,'job':public_job()},202);return
             if action in ('draft','build','compare') and 'candidate_id' in payload:
                 if 'topic' in payload or 'repo' in payload:raise ValueError('请选择一种选题方式')
                 if not isinstance(payload['candidate_id'],str) or len(payload['candidate_id'])>300:raise ValueError('热点编号不正确')
@@ -346,7 +401,8 @@ class Handler(BaseHTTPRequestHandler):
             JOB={'status':'running','step':'准备开始','action':action,'started_at':now()}
             if action in ['compare','compare-retry','comparison-feedback']:JOB['comparison_id']=payload['comparison_id']
             save(ROOT/'data/last-job.json',JOB)
-            threading.Thread(target=task,args=(action,payload),daemon=True).start()
+            TASK_CONTROL.prepare(JOB['started_at'])
+            threading.Thread(target=run_task,args=(action,payload),daemon=True).start()
             self.send_json({'ok':True,'job':JOB},202)
         except (ValueError,KeyError,TypeError) as e:self.send_json({'error':str(e)},400)
 

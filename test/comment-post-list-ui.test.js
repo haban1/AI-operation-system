@@ -49,8 +49,63 @@ async function setup(t,messages=fixtures()){
   return {page,payload,open};
 }
 const groups=page=>page.locator('details.comment-post-group');
+test('热门账号占满首次读取时仍展示其他账号的近期评论', {skip:!chrome}, async t=>{
+  const {page}=await setup(t);
+  const busy=Array.from({length:200},(_,i)=>comment(i+10,'busy','热门作品',null));
+  const other=comment(1,'quiet','低频平台作品',null,{account_id:5,platform_code:'weibo',platform_name:'微博'});
+  const ids=[];
+  await page.route('**/api/messages*',route=>{
+    const id=new URL(route.request().url()).searchParams.get('accountId');
+    ids.push(id);
+    return route.fulfill({json:{ok:true,messages:id==='5'?[other]:busy,overview:[{account_id:2,total:210},{account_id:5,total:1}]}});
+  });
+  await page.locator('#messageAccount').selectOption('all');
+  await page.waitForFunction(()=>document.querySelector('.message-toolbar-title')?.textContent.includes('201 条评论'));
+  assert.deepEqual(ids,[null,'5']);
+  assert.ok((await page.locator('.comment-post-title').allTextContents()).includes('低频平台作品'));
+});
+test('全部平台合并计数，同名帖子分平台，后台刷新保留范围', {skip:!chrome}, async t=>{
+  const rows=[comment(21,'same','同名作品',null),comment(22,'same','同名作品',null,{platform_code:'weibo',platform_name:'微博',account_id:5})];
+  const {page}=await setup(t,rows);
+  await page.locator('#messageAccount').selectOption('all');
+  await page.waitForFunction(()=>document.querySelectorAll('.comment-post-group').length===2);
+  assert.match(await page.locator('.message-toolbar-title').innerText(),/2 条评论 · 2 个帖子/);
+  assert.equal(await page.locator('.v2-filter[data-filter="all"] em').textContent(),'2');
+  assert.equal(await page.locator('#collectMessages').isDisabled(),true);
+  await refresh(page);
+  assert.equal(await page.locator('#messageAccount').inputValue(),'all');
+  await page.locator('#messageAccount').selectOption('2');
+  await page.waitForFunction(()=>document.querySelectorAll('.comment-post-group').length===1);
+  assert.equal(await page.locator('.v2-filter[data-filter="all"] em').textContent(),'1');
+});
 const newPost=page=>groups(page).filter({has:page.locator('.comment-post-title',{hasText:'最新发布的帖子'})});
 async function refresh(page){await page.evaluate(()=>window.commentPostTest.refresh())}
+
+test('缺少评论编号说明未自动回复，窄屏处理详情和状态标签不超出边界',{skip:!chrome},async t=>{
+  const row=comment(210,'new','最新发布的帖子',null,{
+    status:'MANUAL_REQUIRED',reason:'STABLE_COMMENT_ID_REQUIRED',user_name:'VeryLongFixtureUsername'.repeat(5),
+    content:'测试长内容'+ 'ABCDEF'.repeat(24),reply_status:{ai:{state:'NOT_REPLIED'},manual:{state:'PENDING'}}
+  });
+  const {page}=await setup(t,[row]);
+  await newPost(page).locator(':scope > summary').click();
+  await newPost(page).locator('.comment-item').click();
+  const detail=page.locator('.v2-inbox-detail');
+  const audit=detail.locator('details.v2-detail-audit');
+  assert.match(await detail.locator('.v2-risk').innerText(),/未能确认平台评论编号，已暂停自动回复/);
+  for(const width of [1440,390,320]){
+    await page.setViewportSize({width,height:900});
+    await audit.getByText('处理详情',{exact:true}).click();
+    const overflow=await detail.evaluate(panel=>{
+      const edge=panel.getBoundingClientRect();
+      return [...panel.querySelectorAll('.v2-bubble-body,.v2-bubble-body small,.v2-risk,.v2-detail-status .reply-status-row > span,.v2-detail-audit summary,.v2-detail-audit .wide')].filter(child=>{
+        const rect=child.getBoundingClientRect();
+        return rect.left<edge.left||rect.right>edge.right||child.scrollWidth>child.clientWidth+1;
+      }).map(node=>node.className||node.tagName);
+    });
+    assert.deepEqual(overflow,[],`viewport ${width}`);
+    await audit.getByText('处理详情',{exact:true}).click();
+  }
+});
 
 test('comment posts sort by publication, start collapsed, and clear their count on keyboard expansion',{skip:!chrome},async t=>{
   const {page}=await setup(t);

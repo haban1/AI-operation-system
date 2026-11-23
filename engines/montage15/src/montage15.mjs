@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs';
+import { steadyCard, steadyCss, addSteadyTimeline } from './steady-type.mjs';
 import { templateAudio } from './audio.mjs';
+import { cornerBranding } from './branding.mjs';
 
 // Original, parameterized compositions. No third-party template source is used.
 export const montageTemplates = JSON.parse(readFileSync(new URL('../templates/montage15/catalog.json', import.meta.url), 'utf8')).map(t => ({
-  ...t, version:'1.1.0', status:'candidate', engine:'montage15', license:'本地自主实现；配乐 CC BY 4.0，须署名',
+  ...t, version:'1.1.0', status:'candidate', engine:'montage15', license:t.license || '本地自主实现；配乐 CC BY 4.0，须署名',
   width:1920, height:1080, fps:30, durationFrames:450, supportsColorCards:true, formats:['landscape','portrait'],
-  slots:t.cuts.map((start,i)=>({id:`shot-${i+1}`,name:`素材 ${String(i+1).padStart(2,'0')}`,startFrame:start,
+  slots:t.cuts.map((start,i)=>({id:`shot-${i+1}`,name:t.slotNames?.[i] || `素材 ${String(i+1).padStart(2,'0')}`,startFrame:start,
     durationFrames:(t.cuts[i+1]===undefined?450:t.cuts[i+1]+t.transitionFrames)-start,transitionFrames:i?t.transitionFrames:0,kind:'visual'})),
 }));
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -16,6 +18,8 @@ function localUrl(v){const s=String(v||'').trim();if(!s||/[\u0000-\u0020\\]/.tes
 
 export function buildMontageHtml(template,project,assets=[],{assetPrefix='/api/assets',gsapUrl='/vendor/gsap.min.js',interactive=true,templateAudioPrefix='/template-audio'}={}){
   const width=project.width===1080&&project.height===1920?1080:1920,height=width===1080?1920:1080;
+  const steady=template.id==='steady-type';
+  const branding=cornerBranding(width,height);
   const fields={...template.defaults,...project.fields},settings={titles:true,brand:true,intensity:.8,colorCards:true,...project.settings};
   const accent=/^#[\da-f]{6}$/i.test(fields.accent)?fields.accent:template.defaults.accent;
   const byAsset=new Map(assets.map(a=>[a.id,a])),bySlot=new Map((project.slots||[]).map(s=>[s.id,s]));
@@ -26,11 +30,11 @@ export function buildMontageHtml(template,project,assets=[],{assetPrefix='/api/a
     if(a?.type==='image')return `<img class="visual" src="${esc(url(a))}" style="${style}" alt="" decoding="sync" loading="eager">`;
     return `<div class="visual color-card" style="background:${colors[s.index%colors.length]}"><span class="card-index">${String(s.index+1).padStart(2,'0')}</span><span class="card-name">素材 ${String(s.index+1).padStart(2,'0')} · 可替换视频 / 图片</span><i class="cross c1"></i><i class="cross c2"></i><i class="cross c3"></i><i class="cross c4"></i><span class="card-line"></span></div>`;
   }
-  const scenes=shots.map(s=>{const layers=[`<div class="plane primary"><div class="view">${visual(s,'main')}</div></div>`];if(['prism-pulse','split-journey'].includes(template.id))for(let n=0;n<3;n++)layers.push(`<div class="plane slice slice-${n}"><div class="view">${visual(s,`slice${n}`)}</div></div>`);if(template.id==='film-strip')for(let n=0;n<2;n++)layers.push(`<div class="plane film-copy copy-${n}"><div class="view">${visual(s,`film${n}`)}</div></div>`);return `<section id="${s.id}" class="scene clip" style="z-index:${s.index+1}" data-start="${s.start}" data-duration="${s.durationFrames/30}" data-track-index="0">${layers.join('')}</section>`;}).join('');
+  const scenes=shots.map(s=>{const layers=[`<div class="plane primary"><div class="view">${visual(s,'main')}</div></div>`];if(['prism-pulse','split-journey'].includes(template.id))for(let n=0;n<3;n++)layers.push(`<div class="plane slice slice-${n}"><div class="view">${visual(s,`slice${n}`)}</div></div>`);if(template.id==='film-strip')for(let n=0;n<2;n++)layers.push(`<div class="plane film-copy copy-${n}"><div class="view">${visual(s,`film${n}`)}</div></div>`);return `<section id="${s.id}" class="scene clip" style="z-index:${s.index+1}" data-start="${s.start}" data-duration="${s.durationFrames/30}" data-track-index="0">${layers.join('')}${steady && (s.index===2 || s.index===5) ? `<div class="st-optic${s.index===5?' st-bloom':''}" aria-hidden="true"></div>` : ''}</section>`;}).join('');
   const layerOrder = settings.layerOrder || ['brand', 'text', 'media'];
   const layerZ = name => (3 - layerOrder.indexOf(name)) * 20;
   const cardTiming = template.cards.map(card => ({ ...card, start: Math.max(0, card.start + (settings.textOffset || 0)), end: Math.min(15, card.end + (settings.textOffset || 0)) })).filter(card => card.end > card.start);
-  const cards=cardTiming.map((c,i)=>`<div id="title-${i}" class="title-card ${c.layout}" style="z-index:${layerZ('text')}" ${c.key==='title'?'data-brand-kicker':''}><div class="text-inner"><span class="text-kicker">${esc(c.key==='title'?fields.brand:fields.subtitle)}</span><h1>${esc(fields[c.key])}</h1>${c.key==='title'?`<p>${esc(fields.subtitle)}</p>`:''}<span class="text-rule"></span></div></div>`).join('');
+  const cards=cardTiming.map((c,i)=>steady ? steadyCard(c,i,fields,layerZ('text'),esc,height>width) : `<div id="title-${i}" class="title-card ${c.layout}" style="z-index:${layerZ('text')}" ${c.key==='title'?'data-brand-kicker':''}><div class="text-inner"><span class="text-kicker">${esc(c.key==='title'?fields.brand:fields.subtitle)}</span><h1>${esc(fields[c.key])}</h1>${c.key==='title'?`<p>${esc(fields.subtitle)}</p>`:''}<span class="text-rule"></span></div></div>`).join('');
   const audio=byAsset.get(project.audio?.assetId),volume=clamp(project.audio?.volume,.25,0,1);
   const imported=audio?.type==='audio'&&project.audio?.musicEnabled!==false?`<audio id="background-audio" src="${esc(url(audio))}" preload="auto" data-start="${Math.max(0,project.audio.offset||0)}" data-duration="15" data-media-start="${(project.audio.inPoint||0)+Math.max(0,-(project.audio.offset||0))}" data-volume="${volume}" data-track-index="3"></audio>`:'';
   const builtIn=templateAudio(template,project).map(t=>`<audio id="template-${t.role}" src="${esc(localUrl(templateAudioPrefix+'/'+t.file))}" preload="auto" data-start="${t.role==='music'?Math.max(0,project.audio?.offset||0):0}" data-duration="15" data-media-start="${t.role==='music'?Math.max(0,-(project.audio?.offset||0)):0}" data-volume="${t.volume}" data-track-index="${t.role==='music'?3:4}"></audio>`).join('');
@@ -38,7 +42,7 @@ export function buildMontageHtml(template,project,assets=[],{assetPrefix='/api/a
   // mixes the saved stems after visual capture, with identical timing and gain.
   const music=interactive?imported+builtIn:'';
   const config={id:template.id,width,height,fps:30,totalFrames:450,duration:15,shots,cards:cardTiming,settings,interactive,volume,audio:project.audio};
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=${width},height=${height}"><title>${esc(template.name)}</title><script src="${esc(localUrl(gsapUrl))}"></script><style>${css}</style></head><body><main id="root" class="${template.id} ${height>width?'portrait':'landscape'}" data-composition-id="main" data-start="0" data-duration="15" data-width="${width}" data-height="${height}" data-fps="30" style="--unit:${width/1920}px;--accent:${accent};width:${width}px;height:${height}px"><div style="position:absolute;inset:0;z-index:${layerZ('media')}">${scenes}</div><div class="vignette"></div><div class="film-border"><i class="perfs left"></i><i class="perfs right"></i><span class="film-code">${esc(fields.brand)}</span></div><div class="scanlines"></div><div class="light-leak"></div><div class="flash"></div><div class="grain"></div><div class="brand" style="z-index:${layerZ('brand')}">${esc(fields.brand)}</div>${cards}<div class="end-line"></div>${music}</main><script>(${runtime.toString()})(${json(config)});</script></body></html>`;
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=${width},height=${height}"><title>${esc(template.name)}</title><script src="${esc(localUrl(gsapUrl))}"></script><style>${css}${steady?steadyCss:''}</style></head><body><main id="root" class="${template.id} ${height>width?'portrait':'landscape'}" data-composition-id="main" data-start="0" data-duration="15" data-width="${width}" data-height="${height}" data-fps="30" style="--unit:${width/1920}px;--accent:${accent};width:${width}px;height:${height}px"><div style="position:absolute;inset:0;z-index:${layerZ('media')}">${scenes}</div><div class="vignette"></div><div class="film-border"><i class="perfs left"></i><i class="perfs right"></i><span class="film-code">${esc(fields.brand)}</span></div><div class="scanlines"></div><div class="light-leak"></div><div class="flash"></div><div class="grain"></div>${branding.html}<div class="brand" style="left:${branding.textLeft}px;z-index:${layerZ('brand')}">${esc(fields.brand)}</div>${cards}<div class="end-line"></div>${music}</main><script>(${runtime.toString()})(${json(config)}${steady?', '+addSteadyTimeline.toString():''});</script></body></html>`;
 }
 
 const css=`
@@ -46,16 +50,17 @@ const css=`
 .prism-pulse .title-card.full{background:var(--accent);color:#121b1b}.prism-pulse .full .text-rule{background:#121b1b}.prism-pulse h1{font-style:italic;letter-spacing:-.06em}.prism-pulse .scanlines{opacity:.2}.prism-pulse .slice-0{clip-path:inset(0 0 66.66% 0)}.prism-pulse .slice-1{clip-path:inset(33.33% 0 33.33% 0)}.prism-pulse .slice-2{clip-path:inset(66.66% 0 0 0)}.film-strip .film-border{display:block}.film-strip .grain{opacity:.1}.film-strip .view{filter:saturate(.87) contrast(1.04) sepia(.1)}.film-strip .title-card.full{background:#ded7bf;color:#262d26}.film-strip h1{font-weight:650;letter-spacing:.02em}.film-strip .text-rule{height:1px}.film-strip .brand{top:7.5%;left:7.5%}.film-strip .film-copy .view{filter:saturate(.7) sepia(.22)}.focus-story .vignette{opacity:.65}.focus-story .grain{opacity:.055}.focus-story .title-card.overlay{padding-bottom:12%}.focus-story h1{font-size:calc(108 * var(--unit));font-weight:500;letter-spacing:.035em}.focus-story .text-kicker{letter-spacing:.4em}.focus-story .title-card.full{background:#192220e6;color:#f0eedf}.split-journey .slice-0{clip-path:inset(0 66.66% 0 0)}.split-journey .slice-1{clip-path:inset(0 33.33% 0 33.33%)}.split-journey .slice-2{clip-path:inset(0 0 0 66.66%)}.split-journey .title-card.full{background:var(--accent);color:#102b2b}.split-journey .title-card.band h1{-webkit-text-stroke:2px white;color:transparent}.split-journey .text-rule{width:160px}.portrait{--unit:1px!important}.portrait .card-index{font-size:460px;top:25%}.portrait .card-name{font-size:27px;bottom:14%}.portrait .brand{font-size:25px;top:7%}.portrait .title-card{padding:9%}.portrait .title-card h1{font-size:120px}.portrait .title-card.overlay{padding-bottom:32%}.portrait .text-kicker{font-size:22px}.portrait .title-card p{font-size:32px}.portrait .film-border{border-width:30px 45px}.portrait .film-code{font-size:16px;bottom:-25px}.portrait .perfs.left{left:-31px}.portrait .perfs.right{right:-31px}.portrait .perfs{width:18px}
 `;
 
-function runtime(config){
+function runtime(config,addSteady){
   const root=document.getElementById('root'),tl=gsap.timeline({paused:true});window.__timelines={main:tl};
   const k=Math.min(1,Math.max(0,Number(config.settings.intensity))),type=config.id;
   // Seed the first shot before the paused timeline: seeking to an already-zero
   // GSAP timeline does not necessarily render its zero-duration setters.
-  gsap.set('#shot-1',{autoAlpha:1});gsap.set('.brand',{autoAlpha:config.settings.brand?1:0});if(!config.settings.brand)gsap.set('.film-code,[data-brand-kicker] .text-kicker',{autoAlpha:0});tl.set('.title-card',{autoAlpha:0},0);
+  gsap.set('#shot-1',{autoAlpha:1});gsap.set('.brand',{autoAlpha:config.settings.brand?1:0});if(!config.settings.brand)gsap.set('.film-code,[data-brand-kicker] .text-kicker',{autoAlpha:0});if(!addSteady)tl.set('.title-card',{autoAlpha:0},0);
   function pulse(selector,props,start,duration){tl.fromTo(selector,{opacity:0,...props.from},{...props.to,duration:duration*.45,ease:'power2.out',immediateRender:false},start);tl.to(selector,{opacity:0,duration:duration*.55,ease:'power2.in'},start+duration*.45);}
   config.shots.forEach((s,i)=>{
     const sel='#'+s.id,d=s.transitionFrames/config.fps,previous=i?'#'+config.shots[i-1].id:null;
     tl.set(sel,{autoAlpha:1},s.start);if(i<config.shots.length-1)tl.set(sel,{autoAlpha:0},s.end);
+    if(addSteady)return;
     const drift=type==='focus-story'?1.08:1.025;tl.fromTo(sel+' .view',{scale:i%2?drift:1,xPercent:i%2?-.6:.6},{scale:i%2?1:drift,xPercent:i%2?.6:-.6,duration:s.end-s.start,ease:'none',immediateRender:false},s.start);
     if(!i)return;
     if(type==='perspective-flow'){
@@ -76,11 +81,12 @@ function runtime(config){
   if(type==='film-strip'){
     const sel='#shot-4';tl.set(sel+' .film-copy',{autoAlpha:1},7.6);tl.fromTo(sel+' .primary',{clipPath:'inset(0% 0% 0% 0%)'},{clipPath:'inset(0% 33.7% 0% 33.7%)',duration:.35,ease:'power2.inOut',immediateRender:false},7.6);tl.set(sel+' .copy-0',{clipPath:'inset(0% 100% 0% 0%)',xPercent:-12},7.6);tl.to(sel+' .copy-0',{clipPath:'inset(0% 67.3% 0% 0%)',xPercent:0,duration:.4,ease:'power2.out'},7.65);tl.set(sel+' .copy-1',{clipPath:'inset(0% 0% 0% 100%)',xPercent:12},7.6);tl.to(sel+' .copy-1',{clipPath:'inset(0% 0% 0% 67.3%)',xPercent:0,duration:.4,ease:'power2.out'},7.7);tl.to(sel+' .primary',{clipPath:'inset(0% 0% 0% 0%)',duration:.35,ease:'power2.inOut'},8.75);tl.set(sel+' .film-copy',{autoAlpha:0},9.12);
   }
-  config.cards.forEach((c,i)=>{if(!config.settings.titles)return;const sel='#title-'+i,enter=Math.min(.38,(c.end-c.start)/4),exit=Math.min(.22,(c.end-c.start)/3);tl.set(sel,{autoAlpha:1},c.start);if(c.end<15)tl.set(sel,{autoAlpha:0},c.end);
+  if(addSteady)addSteady(tl,config);
+  else config.cards.forEach((c,i)=>{if(!config.settings.titles)return;const sel='#title-'+i,enter=Math.min(.38,(c.end-c.start)/4),exit=Math.min(.22,(c.end-c.start)/3);tl.set(sel,{autoAlpha:1},c.start);if(c.end<15)tl.set(sel,{autoAlpha:0},c.end);
     if(c.layout==='full'){tl.fromTo(sel,{clipPath:type==='split-journey'?'polygon(0 0,0 0,0 100%,0 100%)':'inset(50% 0 50% 0)'},{clipPath:type==='split-journey'?'polygon(0 0,100% 0,100% 100%,0 100%)':'inset(0% 0 0% 0)',duration:enter,ease:'power3.inOut',immediateRender:false},c.start);tl.to(sel,{clipPath:'inset(0% 0 100% 0)',duration:exit,ease:'power3.in'},c.end-exit);}
     tl.fromTo(sel+' .text-inner',{y:35,opacity:0,scale:type==='prism-pulse'?1.15:1},{y:0,opacity:1,scale:1,duration:enter+.08,ease:'power3.out',immediateRender:false},c.start+.04);if(c.end<15)tl.to(sel+' .text-inner',{y:-18,opacity:0,duration:exit,ease:'power2.in'},c.end-exit);
   });
-  if(config.settings.brand)tl.fromTo('.end-line',{opacity:0,scaleX:0},{opacity:.7,scaleX:1,duration:.8,ease:'power2.out',immediateRender:false},13.6);
+  if(!addSteady&&config.settings.brand)tl.fromTo('.end-line',{opacity:0,scaleX:0},{opacity:.7,scaleX:1,duration:.8,ease:'power2.out',immediateRender:false},13.6);
   tl.to({}, {duration:.001},14.999);tl.pause(0);
   root.querySelectorAll('.title-card h1').forEach(e=>{let size=parseFloat(getComputedStyle(e).fontSize);const min=config.height>config.width?58:52;while((e.scrollWidth>e.clientWidth+1||e.scrollHeight>config.height*.45)&&size>min)e.style.fontSize=(--size)+'px';});
   // Apply preview gain directly. Export uses the same envelope in FFmpeg;

@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import { isPublishSecurityChallenge, manualSecurityWaitResult } from '../../src/services/publish-manual-verification.js';
 import path from 'node:path';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { chromium } from 'playwright-core';
+import { launchQuietPersistentContext } from '../browser-control/quiet-persistent-context.js';
+import { capturePageEvidence, focusInteractivePage } from '../browser-control/collection-pages.js';
 import { forceStopProfileProcesses, listWindowsProcesses, profileProcessTreeIds } from '../platform-process-cleanup.js';
 import { resolveUploadTimeoutMs } from '../publish-upload-timeout.js';
 import { RpaAdapter } from './base.js';
@@ -424,6 +425,26 @@ export async function pageEvidenceText(page) {
   return clean([await bodyText(page), await visibleControlText(page)].filter(Boolean).join(' '));
 }
 
+// An iframe's body can report innerText even when its host or an ancestor frame is hidden.
+export async function douyinInboxLoginEvidenceText(page) {
+  if (typeof page.frames !== 'function') return pageEvidenceText(page);
+  const parts = [];
+  for (const frame of page.frames()) {
+    let shown = true;
+    for (let node = frame; node.parentFrame?.(); node = node.parentFrame()) {
+      const host = await node.frameElement().catch(() => null);
+      if (!host) break; // A race is not evidence that a challenge is hidden.
+      try { if (!await host.isVisible()) { shown = false; break; } }
+      finally { await host.dispose(); }
+    }
+    if (!shown) continue;
+    if (frame.parentFrame?.() && /(?:captcha|\/challenge(?:[/?#]|$)|\/verify(?:[/?#]|$))/i.test(frame.url().split('?')[0])) parts.unshift('captcha');
+    parts.push(...await locatorInnerTexts(frame.locator('body')));
+  }
+  parts.push(await visibleControlText(page));
+  return clean(parts.join(' '));
+}
+
 export function withoutPublishContent(text, { title = '', body = '' } = {}) {
   let result = clean(text);
   const content = [body, title, ...String(body).split(/\n+/)].map(clean).filter(Boolean).sort((a, b) => b.length - a.length);
@@ -607,8 +628,12 @@ export async function findVisibleTitleRecord(page, title, options = {}) {
       for (let index = 0; index < count; index += 1) {
         const item = matches.nth(index);
         if (!await item.isVisible().catch(() => false)) continue;
-        const detail = await item.evaluate((element, expectedIdentity) => {
+        const detail = await item.evaluate((element, { expectedIdentity, authoredContents }) => {
           const cleanText = value => String(value || '').replace(/\s+/g, ' ').trim();
+          const platformText = text => {
+            for (const content of authoredContents) text = text.split(content).join(' ');
+            return cleanText(text);
+          };
           const exactLabels = [element.innerText, element.textContent, element.getAttribute('title'), element.getAttribute('aria-label')].map(cleanText).filter(Boolean);
           const exactIdentityLabel = exactLabels.includes(expectedIdentity);
           const identityLabelStartsRecord = exactLabels.some(label => label.startsWith(expectedIdentity));
@@ -621,7 +646,9 @@ export async function findVisibleTitleRecord(page, title, options = {}) {
             const text = cleanText(node.innerText || node.textContent || '');
             if (!text.includes(expectedIdentity) || text.length > 1600) continue;
             const marker = `${node.tagName} ${node.getAttribute('role') || ''} ${node.className || ''}`;
-            const hasRecordSignal = recordSignalPattern.test(text);
+            // Authored words such as “分享” are not platform status evidence.
+            // Prefer the enclosing work card's date/status over its body leaf.
+            const hasRecordSignal = recordSignalPattern.test(platformText(text));
             const hasRecordStructure = structuralPattern.test(marker);
             if (!hasRecordSignal && !hasRecordStructure) continue;
             candidates.push({ node, text, depth, hasRecordSignal, hasRecordStructure });
@@ -651,7 +678,11 @@ export async function findVisibleTitleRecord(page, title, options = {}) {
             exactIdentityLabel,
             identityLabelStartsRecord
           };
-        }, identity.text).catch(() => null);
+        }, {
+          expectedIdentity: identity.text,
+          authoredContents: [options.body || '', title, ...String(options.body || '').split(/\n+/)]
+            .map(clean).filter(Boolean).sort((a, b) => b.length - a.length)
+        }).catch(() => null);
         if (!detail?.text?.includes(identity.text)) continue;
         const assessment = assessManagementPublishRecord({
           platformCode: options.platformCode,
@@ -1717,12 +1748,11 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
       fs.mkdirSync(this.profileDir, { recursive: true });
       const processSnapshot = await listWindowsProcesses().catch(() => []);
       const preexistingProfileProcessIds = profileProcessTreeIds(processSnapshot, this.profileDir);
-      const context = await chromium.launchPersistentContext(this.profileDir, {
+      const context = await launchQuietPersistentContext(this.profileDir, {
         headless: false,
         executablePath: this.executablePath,
         viewport: null,
         acceptDownloads: true,
-        args: ['--start-maximized'],
         locale: 'zh-CN'
       });
       try {
@@ -1779,28 +1809,12 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
 
   normalizeChannelPageKey(channelType) {
     const normalized = String(channelType || 'GENERAL').trim().toUpperCase();
-    return ['COMMENT', 'PRIVATE_MESSAGE'].includes(normalized) ? normalized : 'GENERAL';
+    return ['COMMENT', 'PRIVATE_MESSAGE', 'PUBLISH'].includes(normalized) ? normalized : 'GENERAL';
   }
 
   async getChannelPage(channelType, { bringToFront = false } = {}) {
-    const key = this.normalizeChannelPageKey(channelType);
-    const context = await this.ensureContext();
-    const current = this.channelPages.get(key);
-    if (current && !current.isClosed()) {
-      if (bringToFront) await current.bringToFront();
-      return current;
-    }
-    const assigned = new Set([...this.channelPages.values()].filter(page => page && !page.isClosed()));
-    const page = context.pages().find(item => !item.isClosed() && !assigned.has(item) && this.spec.hostHints.some(host => item.url().includes(host)))
-      || context.pages().find(item => !item.isClosed() && !assigned.has(item) && item.url() === 'about:blank')
-      || await context.newPage();
-    this.channelPages.set(key, page);
-    if (typeof page.once === 'function') {
-      page.once('close', () => { if (this.channelPages.get(key) === page) this.channelPages.delete(key); });
-    }
-    this.activePage = page;
-    if (bringToFront) await page.bringToFront();
-    return page;
+    const key = bringToFront ? 'INTERACTIVE' : this.normalizeChannelPageKey(channelType);
+    return this.getWorkspacePage(key, { hostHints: this.spec.hostHints, bringToFront, visible: key === 'PUBLISH' });
   }
 
   async getPage({ bringToFront = false } = {}) {
@@ -1808,13 +1822,16 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
   }
 
   async inspectLoginState(page) {
-    const text = (await pageEvidenceText(page)).slice(0, 20000);
     const url = page.url();
+    const inbox = this.platformCode === 'douyin' && /^https:\/\/(?:www\.)?douyin\.com\/user\/self(?:[/?#]|$)/i.test(url);
+    const text = (inbox ? await douyinInboxLoginEvidenceText(page) : await pageEvidenceText(page)).slice(0, 20000);
     const visibleSelectors = [];
     for (const selector of [...(this.spec.loggedOutSelectors || []), ...(this.spec.authenticatedSelectors || [])]) {
       if (await page.locator(selector).first().isVisible().catch(() => false)) visibleSelectors.push(selector);
     }
-    return classifyAssistedLoginEvidence({ url, text, visibleSelectors, spec: this.spec });
+    const result = classifyAssistedLoginEvidence({ url, text, visibleSelectors, spec: this.spec });
+    if (inbox && result.state === 'VERIFY_REQUIRED') result.evidence.push('verification-marker:' + (text.match(VERIFY_RE)?.[0] || 'url'));
+    return result;
   }
 
   async detectPageState(page) { return (await this.inspectLoginState(page)).state; }
@@ -1850,13 +1867,15 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
   }
 
   async checkLogin({ preserveInteractiveLogin = false } = {}) {
-    const page = await this.getPage();
+    let page;
     if (preserveInteractiveLogin) {
-      const currentStatus = await this.status(page, { checked: true });
+      const inspect = this.openWorkspace('INTERACTIVE') || (page = await this.getPage());
+      const currentStatus = await this.status(inspect, { checked: true });
       if (['LOGIN', 'VERIFY_REQUIRED'].includes(currentStatus.state) && currentStatus.confidence === 'CONFIRMED') {
-        return this.recheckLogin(page);
+        return this.recheckLogin(inspect);
       }
     }
+    page ||= await this.getPage();
     await page.goto(this.spec.checkUrl || this.spec.manageUrl || this.spec.publishUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(1800);
     return this.recheckLogin(page);
@@ -1873,8 +1892,8 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
     return status;
   }
 
-  async debug() {
-    const page = await this.getPage();
+  async debug(page = null) {
+    page ||= this.openWorkspace() || await this.getPage();
     const status = await this.status(page);
     const text = await pageEvidenceText(page);
     const controls = await page.locator('button,input,textarea,[contenteditable],[role="button"],a').evaluateAll(elements => elements.slice(0, 200).map(element => ({
@@ -1907,7 +1926,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
   async inspectText(targetText) {
     const query = clean(targetText);
     if (!query) throw new Error('\u7f3a\u5c11\u9700\u8981\u68c0\u67e5\u7684\u9875\u9762\u6587\u5b57');
-    const page = await this.getPage();
+    const page = this.openWorkspace() || await this.getPage();
     const locator = page.getByText(query, { exact: false });
     const count = Math.min(await locator.count().catch(() => 0), 30);
     const matches = [];
@@ -1936,16 +1955,16 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
   async clickNavigationText(targetText) {
     const query = clean(targetText);
     if (!/^(\u4e92\u52a8\u7ba1\u7406|\u8bc4\u8bba|\u8bc4\u8bba\u7ba1\u7406|\u4f5c\u54c1\u8bc4\u8bba|\u79c1\u4fe1|\u79c1\u4fe1\u7ba1\u7406|\u6d88\u606f\u7ba1\u7406|\u66f4\u591a\u670d\u52a1|\u67e5\u770b\u5168\u90e8|\u6d88\u606f|\u7ee7\u7eed\u7f16\u8f91)$/.test(query)) throw new Error('Navigation label is not allowlisted');
-    const page = await this.getPage();
+    const page = this.openWorkspace() || await this.getPage();
     const candidates = [page.getByText(query, { exact: true }), page.getByText(query, { exact: false })];
     const target = await firstUsable(candidates);
     if (!target) throw new Error(`\u672a\u627e\u5230\u53ef\u70b9\u51fb\u7684\u5bfc\u822a\u5165\u53e3\uff1a${query}`);
     const clickable = target.locator('xpath=ancestor-or-self::a[1]');
     await (await clickable.count().catch(() => 0) ? clickable.first() : target).click();
     await page.waitForTimeout(1800);
-    const debug = await this.debug();
+    const debug = await this.debug(page);
     const screenshotPath = path.join(this.logsDir, `${this.platformCode}-navigation-${Date.now()}.png`);
-    await page.screenshot({ path: screenshotPath, fullPage: false }).catch(() => {});
+    await capturePageEvidence(page, { path: screenshotPath, fullPage: false }).catch(() => {});
     return { ...debug, screenshotPath: fs.existsSync(screenshotPath) ? screenshotPath : null };
   }
 
@@ -1979,7 +1998,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
         });
       }
       const screenshotPath = path.join(this.logsDir, `${this.platformCode}-conversation-list-${Date.now()}.png`);
-      await page.screenshot({ path: screenshotPath, fullPage: false }).catch(() => {});
+      await capturePageEvidence(page, { path: screenshotPath, fullPage: false }).catch(() => {});
       return {
         url: page.url(),
         title: await page.title(),
@@ -2046,9 +2065,9 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
     const privateTimeline = this.platformCode === 'douyin'
       ? await this.inspectStablePrivateConversationTimeline(page)
       : null;
-    const debug = await this.debug();
+    const debug = await this.debug(page);
     const screenshotPath = path.join(this.logsDir, `${this.platformCode}-conversation-${Date.now()}.png`);
-    await page.screenshot({ path: screenshotPath, fullPage: false }).catch(() => {});
+    await capturePageEvidence(page, { path: screenshotPath, fullPage: false }).catch(() => {});
     return {
       ...debug,
       screenshotPath: fs.existsSync(screenshotPath) ? screenshotPath : null,
@@ -2124,7 +2143,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
       }
     }
     const screenshotPath = path.join(this.logsDir, `${this.platformCode}-reply-target-inspection-${Date.now()}.png`);
-    await page.screenshot({ path: screenshotPath, fullPage: false }).catch(() => {});
+    await capturePageEvidence(page, { path: screenshotPath, fullPage: false }).catch(() => {});
     return {
       target: target ? { ...target, locator: undefined } : null,
       editorEvidence,
@@ -2144,9 +2163,9 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
     const page = await this.getPage();
     await page.goto(target.href, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await page.waitForTimeout(1800);
-    const debug = await this.debug();
+    const debug = await this.debug(page);
     const screenshotPath = path.join(this.logsDir, `${this.platformCode}-url-inspection-${Date.now()}.png`);
-    await page.screenshot({ path: screenshotPath, fullPage: false }).catch(() => {});
+    await capturePageEvidence(page, { path: screenshotPath, fullPage: false }).catch(() => {});
     return { ...debug, screenshotPath: fs.existsSync(screenshotPath) ? screenshotPath : null };
   }
 
@@ -2200,7 +2219,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
         });
         const key = String(item.key || 'page-' + (index + 1)).replace(/[^a-z0-9_-]+/gi, '-').slice(0, 80) || 'page-' + (index + 1);
         const screenshotPath = path.join(screenshotDir, key + '.png');
-        await page.screenshot({ path: screenshotPath, fullPage: false });
+        await capturePageEvidence(page, { path: screenshotPath, fullPage: false });
         captured.push({ key, name: String(item.name || key), url: page.url(), title: await page.title(), keyText: evidence.keyText, controls: evidence.controls, selectorHits, structure: evidence.structure, screenshotPath, capturedAt: new Date().toISOString() });
       }
       return { status: 'SUCCESS', result: { platformCode: this.platformCode, capturedAt: new Date().toISOString(), safeReadOnly: true, mode: 'READ_ONLY', pages: captured } };
@@ -2210,7 +2229,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
   }
 
   async execute(job) {
-    const lane = operationLaneForJob(job);
+    const lane = job.job_type === 'PUBLISH' ? 'PUBLISH' : operationLaneForJob(job);
     return channelPageScope.run(lane, async () => {
       if (job.job_type === 'COLLECT_ANALYTICS') return collectPlatformAnalytics(this, job.payload);
       if (job.job_type === 'DIAGNOSE_ISSUE') return this.runIssueDiagnosis({ ...job.payload, safeReadOnly: true, mode: 'READ_ONLY' });
@@ -2309,7 +2328,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
       reportStage('upload-readiness-start', { timeoutMs: uploadTimeoutMs });
       const readiness = await this.waitForUploadAndPublishReady(page, uploadTimeoutMs, { allowDisabled: payload.publishMode !== 'AUTO' && !this.spec.draftRequiresPublishEnabled, payload });
       reportStage('upload-readiness-complete', { ready: readiness?.ready === true });
-      if (payload.publishMode !== 'AUTO' || payload.keepBrowserForeground === true) await page.bringToFront();
+      if (this.platformCode !== 'wechat_channels' && (payload.publishMode !== 'AUTO' || payload.keepBrowserForeground === true)) await focusInteractivePage(page);
       return {
         materialAttachment,
         titleFilled,
@@ -2458,7 +2477,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
 
   async waitForManualSecurityVerification(page, payload, extra = {}) {
     this.manualSecurityPage = page;
-    await page?.bringToFront?.().catch(() => {});
+    if (page && this.platformCode !== 'wechat_channels') await focusInteractivePage(page).catch(() => {});
     const result = manualSecurityWaitResult(extra, extra.submitAttempted === true);
     return { status: 'NEEDS_CONFIRMATION', result: await this.evidence(payload, result.message, page, result.stage, {
       ...result, draftPreservedInBrowser: Boolean(page), draftSaved: false
@@ -2468,7 +2487,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
   async openManualAction() {
     const page = this.manualSecurityPage || this.activePage;
     if (page && (typeof page.isClosed !== 'function' || !page.isClosed())) {
-      await page.bringToFront();
+      await focusInteractivePage(page);
       return this.status(page);
     }
     return this.openLogin();
@@ -2890,6 +2909,8 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
         }
         const link = element.querySelector('a[href]');
         if (options.structuredComment) {
+          // Nested Douyin replies are evidence for their parent thread, not inbox targets with the parent's cid.
+          if (options.platformCode === 'douyin' && element.parentElement?.closest?.(options.commentRowSelector)) return null;
           const contentNode = element.querySelector(options.commentTextSelector);
           const userNode = element.querySelector(options.commentNameSelector);
           const timeNode = element.querySelector(options.commentTimeSelector);
@@ -2945,6 +2966,17 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
                 if (!name.startsWith('__reactFiber$') && !name.startsWith('__reactProps$')) continue;
                 let fiber = node[name];
                 for (let depth = 0; fiber && depth < 12; depth += 1, fiber = fiber.return) inspect(fiber, 0);
+              }
+            }
+            if (options.platformCode === 'douyin') {
+              const text = value => String(value ?? '').replace(/\s+/g, ' ').trim();
+              const rowProps = element[Object.keys(element).find(key => key.startsWith('__reactFiber$'))]?.return?.memoizedProps;
+              // The creator site binds the top-level row to two equal opaque IDs. Never take an opaque ID from a sibling or reply.
+              if (/^@[A-Za-z0-9+/=_-]{12,}$/.test(rowProps?.id || '') && rowProps.id === rowProps.levelOneCid
+                && text(rowProps.uid) && text(rowProps.username) === text(userNode?.innerText || userNode?.textContent) && text(rowProps.username)
+                && text(rowProps.content) && text(rowProps.content) === text(contentNode?.innerText || contentNode?.textContent)) {
+                result.commentStableId = rowProps.id;
+                result.actorPlatformId = text(rowProps.uid);
               }
             }
             if (!result.sourceVideoKey && result.sourceVideoOpaqueKey) result.sourceVideoKey = result.sourceVideoOpaqueKey;
@@ -5077,7 +5109,7 @@ export class AssistedPlatformRpaAdapter extends RpaAdapter {
     let screenshotPath = null;
     if (page) {
       screenshotPath = path.join(this.logsDir, `${this.platformCode}-${stage}-${safeStamp}.png`);
-      await page.screenshot({ path: screenshotPath, fullPage: false }).catch(() => { screenshotPath = null; });
+      await capturePageEvidence(page, { path: screenshotPath, fullPage: false }).catch(() => { screenshotPath = null; });
     }
     const record = {
       stamp,

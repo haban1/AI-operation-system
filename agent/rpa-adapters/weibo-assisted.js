@@ -1,3 +1,4 @@
+import { capturePageEvidence } from '../browser-control/collection-pages.js';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,7 +12,7 @@ const VERIFY_TEXT_RE = /请(?:先)?(?:完成|进行).{0,12}(?:安全|身份|人�
 const VERIFY_SELECTORS = ['iframe[src*="captcha" i]', 'iframe[src*="verify" i]', 'iframe[src*="challenge" i]', '[id*="captcha" i]', '[class*="captcha" i]', '[class*="geetest" i]', '[role="dialog"] [class*="verify" i]', '[role="dialog"] [class*="challenge" i]'];
 const PAGE_ERROR_RE = /无法访问此网站|网页无法打开|连接已重置|ERR_[A-Z_]+|404\s*not\s*found|502\s*bad\s*gateway|服务暂不可用|系统繁忙|页面不存在/i;
 const CHAT_RE = /^https:\/\/api\.weibo\.com\/chat\/#\/(?:chat)?(?:[/?]|$)/i;
-const LOGIN_URL_RE = /passport\.weibo\.com|\/(?:new)?login(?:[/?#]|$)/i;
+const LOGIN_URL_RE = /^https:\/\/(?:(?:www\.)?weibo\.com\/(?:new)?login(?:[/?#]|$)|passport\.weibo\.com(?:\/|$))/i;
 const COMMENT_INBOX_RE = /^https:\/\/(?:www\.)?weibo\.com\/comment\/inbox(?:[/?#]|$)/i;
 const COMMENT_INBOX_TEXT_RE = /收到的评论.{0,20}关注人的评论.{0,20}发出的评论/i;
 const HOME_RE = /^https:\/\/(?:www\.)?weibo\.com\/(?:$|u\/|profile|mygroups|hot|messages|comment\/inbox|at\/)/i;
@@ -356,12 +357,10 @@ export class WeiboAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     } });
     this.conversationSourceOptions = options.conversationSourceOptions || {};
     this.loginInspectionPage = null;
-    this.loginRecheckPage = null;
   }
 
   async stop() {
     this.loginInspectionPage = null;
-    this.loginRecheckPage = null;
     return super.stop();
   }
 
@@ -376,8 +375,12 @@ export class WeiboAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     const visibleChallengeSelectors = [];
     for (const selector of VERIFY_SELECTORS) if (await visible(page.locator(selector).first())) visibleChallengeSelectors.push(selector);
     if (visibleChallengeSelectors.length) return { state: 'VERIFY_REQUIRED', evidence: visibleChallengeSelectors.map(selector => `verification-selector:${selector}`) };
-    if (LOGIN_URL_RE.test(url)) return { state: 'LOGIN', evidence: ['login-url'] };
+    if (!/^https:\/\/(?:[\w-]+\.)*weibo\.com(?:\/|$)/i.test(url)) return { state: 'UNKNOWN', evidence: ['non-target-domain'] };
     for (const selector of ['input[placeholder*="手机号"]', 'input[placeholder*="密码"]', 'form[action*="login" i]', '[class*="LoginModal"]', '[class*="loginBox"]']) if (await visible(page.locator(selector).first())) return { state: 'LOGIN', evidence: [`logged-out-selector:${selector}`] };
+    if (LOGIN_URL_RE.test(url)) {
+      if (VERIFY_URL_RE.test(url.split('?')[0]) || VERIFY_TEXT_RE.test(text)) return { state: 'VERIFY_REQUIRED', evidence: ['verification-challenge'] };
+      return { state: 'UNKNOWN', evidence: ['login-redirect-unconfirmed'] };
+    }
     if (CHAT_RE.test(url)) {
       for (const selector of ['ul.contactslist', 'li.sessionlist', '.one-line.username', '.lastmsg', 'textarea', '[contenteditable="true"]']) {
         if (await visible(page.locator(selector).first())) return { state: 'READY', evidence: ['authenticated-url:weibo-chat', `authenticated-selector:${selector}`] };
@@ -428,10 +431,7 @@ export class WeiboAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
   }
 
   async getLoginInspectionPage() {
-    const context = await this.ensureContext();
-    if (this.loginInspectionPage && !this.loginInspectionPage.isClosed?.()) return this.loginInspectionPage;
-    this.loginInspectionPage = await context.newPage();
-    return this.loginInspectionPage;
+    return this.getWorkspacePage('LOGIN_CHECK');
   }
 
   async inspectCapabilityOnCurrentPage(page, capability) {
@@ -472,20 +472,17 @@ export class WeiboAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
 
   async checkLogin({ preserveInteractiveLogin = true } = {}) {
     await this.ensureContext();
-    let page = null;
     if (preserveInteractiveLogin) {
       const existing = await this.findExistingLoginEvidence();
-      if (existing?.inspection.state === 'READY') page = existing.page;
-      else if (existing && ['LOGIN', 'VERIFY_REQUIRED'].includes(existing.inspection.state)) {
-        this.loginRecheckPage = existing.page;
+      if (existing?.inspection.state === 'VERIFY_REQUIRED') {
         return this.status(existing.page, { checked: true });
       }
     }
-    page ||= await this.getLoginInspectionPage();
+    // Never navigate the operator's tab or count a stale login tab as a new observation.
+    const page = await this.getLoginInspectionPage();
     await page.goto(this.spec.messageUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await page.waitForTimeout(1_200);
     let base = await this.status(page, { checked: true });
-    this.loginRecheckPage = page;
     if (base.state === 'UNKNOWN') base = await this.recheckLogin(page);
     if (base.state !== 'READY') return base;
     const capabilities = await this.inspectFunctionalCapabilities(page);
@@ -496,7 +493,7 @@ export class WeiboAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     const challenged = messagingEntries.find(([, item]) => item?.state === 'VERIFY_REQUIRED');
     if (challenged) return { ...base, loggedIn: false, identityLoggedIn: true, operational: false, state: 'VERIFY_REQUIRED', confidence: 'CONFIRMED', capabilities, evidence, message: `微博账号身份有效，但${labels[challenged[0]]}功能需要人工验证；${capabilitySummary}` };
     const loggedOut = messagingEntries.find(([, item]) => ['LOGIN', 'LOGIN_REQUIRED'].includes(item?.state));
-    if (loggedOut) return { ...base, loggedIn: false, identityLoggedIn: false, operational: false, state: 'LOGIN', confidence: 'CONFIRMED', capabilities, evidence, message: `微博${labels[loggedOut[0]]}页面已确认退出登录；${capabilitySummary}` };
+    if (loggedOut) return { ...base, loggedIn: false, identityLoggedIn: true, operational: false, state: 'UNKNOWN', confidence: 'UNCONFIRMED', capabilities, evidence, message: `微博账号身份有效，但${labels[loggedOut[0]]}功能提示登录；${capabilitySummary}` };
     const failed = messagingEntries.find(([, item]) => item?.state === 'ERROR');
     if (failed) return { ...base, loggedIn: false, identityLoggedIn: true, operational: false, state: 'ERROR', confidence: 'UNCONFIRMED', capabilities, evidence, message: `微博账号身份有效，但${labels[failed[0]]}功能检查失败；${capabilitySummary}` };
     const privateReady = capabilities.privateMessage?.state === 'READY';
@@ -506,8 +503,7 @@ export class WeiboAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
   }
 
   async recheckLogin(existingPage = null) {
-    const page = existingPage || (this.loginRecheckPage && !this.loginRecheckPage.isClosed?.() ? this.loginRecheckPage : null) || await this.getLoginInspectionPage();
-    return super.recheckLogin(page);
+    return existingPage ? super.recheckLogin(existingPage) : this.checkLogin();
   }
 
   async readConversationRow(row, index = null) {
@@ -545,7 +541,7 @@ export class WeiboAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
     const replyTarget = matches.length === 1 ? await this.inspectOpenPrivateConversation(page, { userName: query }, false) : { ok: false, reason: 'PRIVATE_TARGET_NOT_UNIQUE' };
     const replyEditor = replyTarget.ok ? await this.findPrivateEditor(replyTarget.scope) : null;
     const replyPreparation = { chatTitleVerified: replyTarget.ok, editorFound: Boolean(replyEditor), editorEditable: Boolean(replyEditor && await replyEditor.isEditable().catch(() => false)), reason: replyTarget.reason || (replyEditor ? null : 'PRIVATE_EDITOR_MISSING') };
-    const screenshotPath = path.join(this.logsDir, `weibo-conversation-inspection-${Date.now()}.png`); await page.screenshot({ path: screenshotPath, fullPage: false }).catch(() => {});
+    const screenshotPath = path.join(this.logsDir, `weibo-conversation-inspection-${Date.now()}.png`); await capturePageEvidence(page, { path: screenshotPath, fullPage: false }).catch(() => {});
     return { login: await this.inspectLoginState(page), query, matchCount: matches.length, conversations, openChat, replyPreparation, url: page.url(), screenshotPath: fs.existsSync(screenshotPath) ? screenshotPath : null, inspectionOnly: true, sent: false };
   }
 
@@ -1479,7 +1475,7 @@ export class WeiboAssistedRpaAdapter extends AssistedPlatformRpaAdapter {
       const controls = [...document.querySelectorAll('textarea,input,[contenteditable="true"],button,[role="button"],div,span')].filter(node => shown(node) && (['TEXTAREA','INPUT','BUTTON'].includes(node.tagName) || node.getAttribute('contenteditable') === 'true' || /^(\u56de\u590d|\u53d1\u9001|\u8bc4\u8bba)$/.test(t(node.innerText || node.textContent)))).slice(0, 150).map(node => ({ tag: node.tagName.toLowerCase(), text: t(node.innerText || node.textContent).slice(0, 300), placeholder: node.getAttribute('placeholder'), role: node.getAttribute('role'), contenteditable: node.getAttribute('contenteditable'), className: String(node.className || '').slice(0, 500), outerHTML: String(node.outerHTML || '').slice(0, 8000), parentHTML: String(node.parentElement?.outerHTML || '').slice(0, 12000) }));
       return { rowHTML: String(el.outerHTML || '').slice(0, 30000), controls };
     }).catch(() => ({ rowHTML: '', controls: [] }));
-    const screenshotPath = path.join(this.logsDir, `weibo-comment-reply-inspection-${Date.now()}.png`); await page.screenshot({ path: screenshotPath, fullPage: false }).catch(() => {});
+    const screenshotPath = path.join(this.logsDir, `weibo-comment-reply-inspection-${Date.now()}.png`); await capturePageEvidence(page, { path: screenshotPath, fullPage: false }).catch(() => {});
     return { login, inspectionOnly: true, sent: false, target: { ok: true, candidate: target.candidate, identity: target.identity, index: target.index }, triggerFound: Boolean(trigger), debug, url: page.url(), screenshotPath: fs.existsSync(screenshotPath) ? screenshotPath : null };
   }
 

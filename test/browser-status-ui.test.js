@@ -176,7 +176,8 @@ test('browser status stays read only and keeps maintenance tools available', { s
     assert.equal(await page.locator('[data-browser-platform=douyin]').count(), 2);
     assert.equal(await page.locator('[data-browser-account="2"] .browser-status-label').textContent(), '最近检查正常');
     assert.equal(await page.locator('[data-browser-account="3"] .browser-status-label').textContent(), '需要登录');
-    assert.match(await page.locator('[data-browser-account="3"]').textContent(), /第二个隔离账号/);
+    assert.equal(await page.locator('[data-browser-account="3"] b').textContent(), '抖音');
+    assert.doesNotMatch(await page.locator('[data-browser-account="3"]').textContent(), /第二个隔离账号/);
     assert.equal(await page.locator('#browserStatusPanel h2').textContent(), '需要处理');
     await page.locator('[data-browser-help="douyin:3"]').click();
     await page.locator('dialog.browser-repair-dialog').waitFor({ state: 'visible' });
@@ -214,10 +215,12 @@ test('browser status stays read only and keeps maintenance tools available', { s
     const previous = Object.fromEntries(['/api/bootstrap', '/api/browser-control/summary', '/api/browser-control/commands'].map(pathname => [pathname, fixture.reads.filter(value => value === pathname).length]));
     fixture.bootstrap.localAgent.online = false;
     fixture.bootstrap.accounts[0].display_name = '刷新后的隔离账号';
+    fixture.bootstrap.accounts[0].platform_user_id = 'detected-id-42';
     fixture.commands = [{ ...fixture.commands[0], id: 8124, session_id: 'refreshed-browser-session' }];
     await page.locator('#browserRefresh').click();
     await page.waitForFunction(() => document.querySelector('[data-browser-platform="douyin"] .browser-status-label')?.textContent === '连接中断');
-    assert.match(await page.locator('[data-browser-platform=douyin]').textContent(), /刷新后的隔离账号/);
+    assert.equal(await page.locator('[data-browser-platform=douyin] b').textContent(), 'detected-id-42 · 抖音');
+    assert.doesNotMatch(await page.locator('[data-browser-platform=douyin]').textContent(), /刷新后的隔离账号/);
     assert.match(await page.locator('.browser-command-table').textContent(), /8124/);
     assert.match(await page.locator('.browser-command-table').textContent(), /refreshed-browser-session/);
     for (const [pathname, count] of Object.entries(previous)) assert.equal(fixture.reads.filter(value => value === pathname).length, count + 1, `刷新必须重新读取 ${pathname}`);

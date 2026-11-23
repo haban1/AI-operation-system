@@ -13,6 +13,7 @@ export const musicTracks = catalog.map(template => ({
     'film-strip': '复古、纪实、轻松',
     'focus-story': '舒缓、温暖、沉浸',
     'split-journey': '轻快、旅行、明亮',
+    'steady-type': '律动、实操、清晰',
   }[template.id],
 }));
 

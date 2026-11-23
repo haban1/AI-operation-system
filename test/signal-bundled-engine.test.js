@@ -246,7 +246,7 @@ test('bundled Signal engine integrates through authenticated main app and persis
     assert.ok(approved.item.admittedAt);
     assert.deepEqual(approved.counts, { total: 1, approved: 1, pending: 0, rejected: 0 });
     const draft = await json(base, draftUrl, { headers });
-    assert.equal(draft.requiresPrecheck, true);
+    assert.equal(draft.requiresPrecheck, false);
     assert.equal(draft.sha256, digest);
     assert.deepEqual(draft.sourceRef, { source: 'automatic', sourceId: fixtureId });
     assert.equal(path.dirname(draft.materialPath), path.join(libraryRoot, 'media'));

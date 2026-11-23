@@ -12,6 +12,7 @@
       this.sourceEpoch = 0;
       this.sourceTimer = null;
       this.restoring = false;
+      this.folderUpload = new window.MontageFolderUpload(this);
       this.bind();
     }
 
@@ -29,12 +30,16 @@
 
     renderSources() {
       const sources = this.state.sourceFolders || [];
-      const preferred = this.state.project?.brief?.sourceId || $('source-select').value || localStorage.getItem(storage + ':source') || sources.find(source => source.status === 'ready')?.id || '';
+      const preferred = [this.state.project?.brief?.sourceId, $('source-select').value, localStorage.getItem(storage + ':source'), sources.find(source => source.status === 'ready')?.id].find(id => sources.some(source => source.id === id && source.status === 'ready')) || '';
       const selected = this.state.project ? this.state.project.brief?.sourceId || '' : preferred;
       for (const id of ['source-select', 'new-project-source']) {
         const select = $(id);
         select.replaceChildren(new Option(id === 'source-select' ? '选择素材文件夹' : '使用项目已有素材', ''));
-        sources.forEach(source => select.add(new Option(source.name + ` · ${source.count} 份素材`, source.id)));
+        sources.forEach(source => {
+          const option = new Option(source.name + ` · ${source.status === 'uploading' ? '导入未完成' : source.count + ' 份素材'}`, source.id);
+          option.disabled = source.status === 'uploading';
+          select.add(option);
+        });
         const value = id === 'new-project-source' ? preferred : selected;
         if (sources.some(source => source.id === value)) select.value = value;
       }
@@ -45,13 +50,13 @@
       clearTimeout(this.sourceTimer);
       if (!id) {
         this.state.sourceItems = [];
-        $('source-status').textContent = '连接一次，新工程可继续使用。';
+        $('source-status').textContent = '连接一次，新视频可继续使用。';
         return;
       }
       const { source } = await this.api('/api/source-folders/' + id);
       if (epoch !== this.sourceEpoch) return;
       $('source-status').textContent = `${source.name} · ${source.message || source.status}`;
-      $('source-status').title = source.folderPath;
+      $('source-status').title = source.origin === 'browser' ? '已保存到系统；文件有变化时请重新导入。' : source.folderPath;
       const index = this.state.sourceFolders.findIndex(item => item.id === id);
       if (index >= 0) this.state.sourceFolders[index] = source;
       else this.state.sourceFolders.push(source);
@@ -77,13 +82,13 @@
       this.refreshEditor();
     }
 
-    async connect(picker, forNewProject = false) {
+    async connect(picker, forNewProject = false, uploadedSource = null) {
       $('source-choose').disabled = true;
       $('source-connect').disabled = true;
       if (forNewProject) $('create-project-submit').disabled = true;
       try {
         const route = picker ? '/api/source-folders/choose' : '/api/source-folders';
-        const { source } = await this.api(route, { method: 'POST', body: JSON.stringify(picker ? {} : { folderPath: $('source-path').value.trim() }) });
+        const { source } = uploadedSource ? { source: uploadedSource } : await this.api(route, { method: 'POST', body: JSON.stringify(picker ? {} : { folderPath: $('source-path').value.trim() }) });
         localStorage.setItem(storage + ':source', source.id);
         this.state.sourceFolders = [source, ...this.state.sourceFolders.filter(item => item.id !== source.id)];
         this.renderSources();
@@ -98,6 +103,7 @@
           this.renderSources();
           $('new-project-source').value = source.id;
           $('new-project-source-status').textContent = indexed.message;
+          if (indexed.status !== 'ready' || !indexed.count) throw new Error(indexed.warnings?.[0] || '未找到可用照片或视频，请换一个文件夹。');
           return;
         }
         $('source-select').value = source.id;
@@ -122,7 +128,7 @@
       $('audio-offset').value = project.audio.offset || 0;
       $('text-offset').value = project.settings.textOffset || 0;
       $('layer-order').value = (project.settings.layerOrder || ['brand', 'text', 'media']).join(',');
-      $('adjust-source-status').textContent = project.brief?.sourceId ? '素材来源保存在工程内，可重新扫描或更换文件夹。' : '当前工程使用已导入的本地素材。';
+      $('adjust-source-status').textContent = project.brief?.sourceId ? '素材来源保存在视频内，可重新扫描或更换文件夹。' : '当前视频使用已导入的本地素材。';
       if (this.projectId !== project.id) {
         this.projectId = project.id;
         this.snapshots = [structuredClone(project)];
@@ -249,9 +255,9 @@
     }
 
     bind() {
-      $('new-project-folder').addEventListener('click', this.action(() => this.connect(true, true)));
+      $('new-project-folder').addEventListener('click', () => this.folderUpload.choose(true));
       $('creation-music-restore').addEventListener('click', () => $('restore-template-music').click());
-      $('source-choose').addEventListener('click', this.action(() => this.connect(true)));
+      $('source-choose').addEventListener('click', () => this.folderUpload.choose());
       $('source-connect').addEventListener('click', this.action(() => this.connect(false)));
       $('source-path-toggle').addEventListener('click', () => { $('source-path-form').hidden = !$('source-path-form').hidden; });
       $('source-select').addEventListener('change', this.action(() => {
@@ -278,13 +284,7 @@
       });
       $('adjust-close').addEventListener('click', () => $('adjust-dialog').close());
       $('manual-import').addEventListener('click', () => $('file-input').click());
-      $('relink-sources').addEventListener('click', this.action(async () => {
-        const { source } = await this.api('/api/source-folders/choose', { method: 'POST', body: '{}' });
-        const repaired = await this.api('/api/assets/relink-folder', { method: 'POST', body: JSON.stringify({ sourceId: source.id }) });
-        this.state.assets = repaired.assets;
-        this.toast(`已恢复 ${repaired.restored} 份同内容素材`);
-        await this.loadSource(source.id, { useAll: true });
-      }));
+      $('relink-sources').addEventListener('click', () => this.folderUpload.choose(false, true));
       $('restore-template-music').addEventListener('click', () => {
         Object.assign(this.state.project.audio, { assetId: null, trackId: 'template', inPoint: 0, offset: 0 });
         this.workflow.lock('audio'); this.markDirty(); this.refreshEditor();

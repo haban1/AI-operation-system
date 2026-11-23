@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { config, ROOT } from '../src/config.js';
 import { precheckMaterial } from './precheck.js';
 import { receiveMaterialUpload } from '../src/services/material-upload.js';
+import { readMaterialInfo } from '../src/services/material-info.js';
 import { recognizeMaterialText } from './material-ocr.js';
 import { reviewMaterialWithAi } from './material-ai-review.js';
 import { generateMaterialCopyFromAudio } from './material-audio-content-generation.js';
@@ -556,8 +557,8 @@ const previewMimeTypes = new Map([
   ['.mp4','video/mp4'],['.mov','video/quicktime']
 ]);
 
-function registerMaterialPreview(materialPath, precheck) {
-  if (!precheck?.exists || !['image','video'].includes(precheck.meta?.type)) return null;
+function registerMaterialPreview(materialPath, materialMeta) {
+  if (!['image','video'].includes(materialMeta?.type)) return null;
   const token = randomUUID();
   materialPreviews.set(token, { path: path.resolve(materialPath), createdAt: Date.now() });
   for (const [key, value] of materialPreviews) {
@@ -919,9 +920,9 @@ const localServer = http.createServer(async (req, res) => {
     if (req.method === 'POST' && requestUrl.pathname === '/upload-material') {
       try {
         const uploaded = await receiveMaterialUpload(req, requestUrl, {
-          directory: config.materialUploadDir, maxBytes: config.materialUploadMaxBytes, inspect: precheckMaterial
+          directory: config.materialUploadDir, maxBytes: config.materialUploadMaxBytes
         });
-        const previewUrl = registerMaterialPreview(uploaded.materialPath, uploaded.precheck);
+        const previewUrl = registerMaterialPreview(uploaded.materialPath, uploaded.materialMeta);
         return reply(res, 200, { ok: true, ...uploaded, previewUrl });
       } finally {
         if (!req.readableEnded && !req.destroyed) req.resume();
@@ -931,11 +932,11 @@ const localServer = http.createServer(async (req, res) => {
       const materialPath = await selectLocalFile();
       return reply(res, 200, { ok: true, materialPath, cancelled: !materialPath });
     }
-    if (req.method === 'POST' && req.url === '/precheck') {
+    if (req.method === 'POST' && req.url === '/material-info') {
       const data = await readBody(req);
-      const precheck = await precheckMaterial(data);
-      const previewUrl = registerMaterialPreview(data.materialPath, precheck);
-      return reply(res, 200, { ok: true, precheck, previewUrl });
+      const materialMeta = readMaterialInfo(data.materialPath);
+      const previewUrl = registerMaterialPreview(data.materialPath, materialMeta);
+      return reply(res, 200, { ok: true, materialMeta, previewUrl });
     }
     if (req.method === 'POST' && req.url === '/ai-review') {
       const data = await readBody(req);
@@ -943,10 +944,10 @@ const localServer = http.createServer(async (req, res) => {
       if (!precheck.exists || !['image', 'video'].includes(precheck.meta?.type)) {
         return reply(res, 400, { ok: false, message: precheck.message || '当前素材不支持 AI 图片审核' });
       }
-      const suppliedSha = String(data.precheck?.meta?.sha256 || '').toLowerCase();
+      const suppliedSha = String(data.materialSha256 || data.precheck?.meta?.sha256 || '').toLowerCase();
       const actualSha = String(precheck.meta?.sha256 || '').toLowerCase();
       if (suppliedSha && suppliedSha !== actualSha) {
-        return reply(res, 409, { ok: false, message: '素材文件已发生变化，请先重新检测素材格式' });
+        return reply(res, 409, { ok: false, message: '素材文件已发生变化，请重新选择素材后审核' });
       }
       const ai = await runtimeAiSettings();
       const review = await reviewMaterialWithAi({
@@ -955,7 +956,7 @@ const localServer = http.createServer(async (req, res) => {
         mode: ai.mode, model: ai.model || config.aiReviewModel, apiKey: ai.apiKey, baseUrl: ai.baseUrl
       });
       await reportAiUsage({ taskType: 'CONTENT_REVIEW', taskId: data.taskId || null, sourceModule: 'local-agent-material-review', mode: ai.mode, model: review.model || ai.model || config.aiReviewModel, status: review.status === 'SUCCESS' ? 'SUCCESS' : ai.mode === 'mock' ? 'SUCCESS' : 'FAILED', usage: review.usage || null, durationMs: review.elapsedMs || 0, errorCode: review.status === 'SUCCESS' ? null : 'AI_REVIEW_FAILED', errorMessage: review.status === 'SUCCESS' ? null : review.summary || review.message || 'AI 素材审核失败' });
-      return reply(res, 200, { ok: true, review });
+      return reply(res, 200, { ok: true, review, materialMeta: precheck.meta });
     }
     if (req.method === 'POST' && req.url === '/traffic-prediction') {
       const data = await readBody(req);

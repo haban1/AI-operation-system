@@ -21,8 +21,41 @@ test('connection probe supports reasoning models and still rejects empty or unau
     globalThis.fetch = async () => Response.json({ choices: [{ message: { content: '', reasoning_content: 'unfinished' } }] });
     await assert.rejects(testAiConnection(), /未返回有效的对话内容/);
     assert.equal(getAiSettingsSummary().connectionTest.status, 'FAILED');
+    let connectionAttempts = 0;
+    let firstSignal;
+    globalThis.fetch = async (_url, options) => {
+      connectionAttempts += 1;
+      if (!firstSignal) firstSignal = options.signal;
+      assert.equal(options.signal, firstSignal, '重试共用总超时');
+      if (connectionAttempts === 1) throw new TypeError('fetch failed', { cause: { code: 'UND_ERR_CONNECT_TIMEOUT' } });
+      return Response.json({ choices: [{ message: { content: 'OK' } }] });
+    };
+    assert.match((await testAiConnection()).message, /连接测试成功/);
+    assert.equal(connectionAttempts, 2);
+    connectionAttempts = 0;
+    globalThis.fetch = async () => {
+      connectionAttempts += 1;
+      throw new TypeError('fetch failed', { cause: { code: 'UND_ERR_CONNECT_TIMEOUT' } });
+    };
+    await assert.rejects(testAiConnection(), /连接失败.*网络/);
+    assert.equal(connectionAttempts, 2);
+    connectionAttempts = 0;
+    globalThis.fetch = async () => {
+      connectionAttempts += 1;
+      throw new TypeError('certificate rejected', { cause: { code: 'CERT_HAS_EXPIRED' } });
+    };
+    await assert.rejects(testAiConnection(), /certificate rejected/);
+    assert.equal(connectionAttempts, 1);
     globalThis.fetch = async () => Response.json({ error: 'not authorized' }, { status: 401 });
     await assert.rejects(testAiConnection(), /HTTP 401/);
+    assert.equal(getAiSettingsSummary().connectionTest.status, 'FAILED');
+    globalThis.fetch = async () => Response.json({ error: { message: 'Insufficient Balance test-key private-request-id' } }, { status: 402 });
+    await assert.rejects(testAiConnection(), error => {
+      assert.equal(error.code, 'AI_BALANCE_INSUFFICIENT');
+      assert.match(error.message, /余额.*充值.*系统设置/);
+      assert.doesNotMatch(error.message, /test-key|private-request-id|Insufficient Balance/);
+      return true;
+    });
     assert.equal(getAiSettingsSummary().connectionTest.status, 'FAILED');
   `;
   execFileSync(process.execPath, ['--input-type=module', '--eval', script], {
