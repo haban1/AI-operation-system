@@ -198,16 +198,21 @@ test('mini processor separates evidence gaps from bounded missing-subject clarif
   assert.equal(answered.reply_job_id, null);
   assert.equal(requests[0].source.platform, 'DOUYIN');
   assert.equal(requests[0].source.channelType, 'DIRECT_MESSAGE');
-  const gaps = [];
-  for (let n = 0; n < 3; n += 1) gaps.push(await server.processMessage(seed('无答案问题' + n, { conversationId: 'evidence-gap' }).id));
-  for (const gap of gaps) {
+  // ADR 0003: an evidence gap with no related candidate is told honestly, invites
+  // 「转人工」 and counts toward the guidance limit, but never states facts, never
+  // asks a direction question and never hands off or notifies on its own.
+  for (let n = 0; n < 3; n += 1) {
+    const gap = await server.processMessage(seed('无答案问题' + n, { conversationId: 'evidence-gap' }).id);
     assert.equal(gap.decision, 'RAG_KNOWLEDGE_GAP');
     assert.equal(gap.status, 'REPLY_QUEUED');
-    assert.match(gap.reply_text, /没有足够依据/);
-    assert.doesNotMatch(gap.reply_text, /[？?]|哪方面|对吗/);
-    assert.equal(JSON.parse(gap.reply_context_json).guidanceAttempt, 0);
-    assert.equal(row('SELECT handling_mode FROM conversations WHERE id=?', gap.conversation_id).handling_mode, 'BOT_ACTIVE');
-    assert.equal(row('SELECT clarification_attempts FROM conversations WHERE id=?', gap.conversation_id).clarification_attempts, 0);
+    assert.match(gap.reply_text, /答不准|没法给你准确答复|确认清楚/);
+    assert.match(gap.reply_text, /「转人工」/);
+    assert.doesNotMatch(gap.reply_text, /请携带身份证件|哪方面|对吗|是想了解|回我序号/);
+    assert.equal(JSON.parse(gap.reply_context_json).guidanceAttempt, n + 1);
+    const conversation = row('SELECT handling_mode,clarification_attempts,pending_intent_json FROM conversations WHERE id=?', gap.conversation_id);
+    assert.equal(conversation.handling_mode, 'BOT_ACTIVE');
+    assert.equal(conversation.clarification_attempts, n + 1);
+    assert.equal(conversation.pending_intent_json, null, 'mini-program keeps its own handoff state machine');
     assert.equal(row('SELECT COUNT(*) AS n FROM notifications WHERE message_id=?', gap.id).n, 0);
     assert.equal(row('SELECT COUNT(*) AS n FROM mini_program_callback_outbox WHERE message_id=?', gap.id).n, 1);
   }

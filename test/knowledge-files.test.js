@@ -5,7 +5,7 @@ import http from 'node:http';
 import { chromium } from 'playwright-core';
 import { startServer, stopChild, cleanupDir } from './helpers/runtime.js';
 
-const chrome = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find(fs.existsSync);
+const chrome = [process.env.CHROME_EXECUTABLE_PATH, 'C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/google-chrome'].filter(Boolean).find(fs.existsSync);
 const env = { AUTH_ENABLED: 'false', RAG_AUTO_START: 'false', RAG_ADMIN_ENABLED: 'true', OPERATIONS_ANALYTICS_ENABLED: 'false', LOGIN_STATUS_POLL_ENABLED: 'false', ISSUE_DIAGNOSIS_ENABLED: 'false' };
 
 test('file proxy supports CRUD with fixed scope and removes old management APIs', async t => {

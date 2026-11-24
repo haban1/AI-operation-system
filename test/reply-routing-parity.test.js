@@ -5,18 +5,18 @@ import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { startServer, stopChild, cleanupDir, jsonRequest } from './helpers/runtime.js';
 
-test('小智与五个平台共用外层路由、引导计数和人工接管状态', async t => {
+// 旧小智测试会话（/api/xiaozhi/*）与自定义转人工说法已于 2026-11-10 下线（docs/changes/2026-11-10-knowledge-files.md）。
+// 本地 RAG 问答测试 /api/rag/test-query 与平台共用外层路由；平台之间共用引导计数和人工接管状态。
+test('本地问答测试与五个平台共用外层路由，平台间共用引导计数和人工接管状态', async t => {
   const requests = [];
-  let queryFailure = null, createFailure = false, delayedQuery = null;
+  let queryFailure = null, delayedQuery = null;
   const rag = http.createServer(async (req, res) => {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const input = JSON.parse(Buffer.concat(chunks).toString() || '{}');
     const send = (data, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
-    const create = req.url === '/rag-admin-api/v1/test-sessions';
-    requests.push({ create, input });
-    if (create) return createFailure ? send({ error: { code: 'RAG_NOT_READY', message: 'not ready' } }, 503) : send({ testSessionId: crypto.randomUUID() });
+    requests.push({ url: req.url, input });
     if (queryFailure === 'timeout') return send({ error: { code: 'RAG_EXECUTION_TIMEOUT', message: 'request timed out; internal call log' } }, 503);
-    const question = input.query?.text || input.question;
+    const question = input.query?.text;
     if (question === '社区入驻费用（延迟测试）' && delayedQuery) {
       const waiting = delayedQuery;
       waiting.started.resolve();
@@ -36,14 +36,13 @@ test('小智与五个平台共用外层路由、引导计数和人工接管状�
   const platforms = ['douyin', 'weibo', 'wechat_channels', 'bilibili', 'xiaohongshu'];
   db.prepare("UPDATE accounts SET enabled=1 WHERE platform_code IN ('douyin','weibo','wechat_channels','bilibili','xiaohongshu')").run();
   const accounts = (await jsonRequest(runtime.base, '/api/accounts')).data.accounts;
-  const chat = async () => {
-    const result = await jsonRequest(runtime.base, '/api/xiaozhi/sessions', { method: 'POST', body: { scope: 'published', contextEnabled: true } });
-    return async content => {
-      const response = await jsonRequest(runtime.base, '/api/xiaozhi/chat', { method: 'POST', body: { sessionId: result.data.session.id, content } });
-      assert.equal(response.response.status, 200, JSON.stringify(response.data));
-      return response.data;
-    };
+  const localTest = async text => {
+    const response = await jsonRequest(runtime.base, '/api/rag/test-query', { method: 'POST', body: { text, platform: 'DOUYIN', channelType: 'DIRECT_MESSAGE' } });
+    assert.equal(response.response.status, 200, JSON.stringify(response.data));
+    assert.equal(response.data.mode, 'LOCAL_TEST');
+    return response.data;
   };
+  const samePerPlatform = (values, label) => assert.ok(values.every(value => value === values[0]), `${label}: ${JSON.stringify(values)}`);
   const simulate = async (platformCode, conversationId, content, messageType = 'PRIVATE_MESSAGE', source = {}) => {
     const externalId = crypto.randomUUID();
     const result = await jsonRequest(runtime.base, '/api/messages/simulate', { method: 'POST', body: {
@@ -63,26 +62,29 @@ test('小智与五个平台共用外层路由、引导计数和人工接管状�
 
   for (const greeting of ['你好', '谢谢', '你好？', '在吗？', '早上好', '您好～', '哈喽，你好呀', '谢谢您']) await t.test(`${greeting}直接回复且不访问RAG`, async () => {
     const before = requests.length;
-    const result = await (await chat())(greeting);
-    assert.equal(result.decision, 'SIMPLE_GREETING');
-    assert.equal(result.guidanceAttempt, 0);
+    const result = await localTest(greeting);
+    assert.equal(result.response, null);
+    assert.equal(result.presentation.kind, 'SOCIAL');
+    assert.ok(result.presentation.text);
     for (const platform of platforms) {
       const message = await simulate(platform, crypto.randomUUID(), greeting);
-      assert.equal(message.reply_text, result.replyText);
+      assert.equal(message.reply_text, result.presentation.text, platform);
       assert.equal(message.status, 'REPLY_QUEUED');
+      assert.equal(attempts(message), 0);
     }
-    assert.equal(requests.length, before, '问候不创建远端会话或查询知识');
+    assert.equal(requests.length, before, '问候不查询知识');
   });
 
   for (const content of ['转人工', '垃圾客服']) await t.test(`${content}立即接管且后续不自动回复`, async () => {
-    const before = requests.length, ask = await chat();
-    const result = await ask(content);
-    assert.equal(result.action, 'HANDOFF');
-    assert.equal(result.handoffRequested, true);
-    assert.equal((await ask('社区入驻需要什么材料？')).action, 'HANDOFF');
+    const before = requests.length;
+    const result = await localTest(content);
+    assert.equal(result.response, null);
+    assert.equal(result.presentation.kind, 'HUMAN_GUIDANCE', '本地测试只提示人工，不执行接管');
     for (const platform of platforms) {
       const id = crypto.randomUUID();
-      assert.equal((await simulate(platform, id, content)).status, 'MANUAL_REQUIRED');
+      const first = await simulate(platform, id, content);
+      assert.equal(first.status, 'MANUAL_REQUIRED');
+      assert.equal(db.prepare('SELECT handling_mode FROM conversations WHERE id=?').get(first.conversation_id).handling_mode, 'HANDOFF_PENDING');
       const next = await simulate(platform, id, '社区入驻需要什么材料？');
       assert.equal(next.status, 'MANUAL_REQUIRED');
       assert.equal(next.reply_job_id, null);
@@ -90,37 +92,37 @@ test('小智与五个平台共用外层路由、引导计数和人工接管状�
     assert.equal(requests.length, before);
   });
 
-  await t.test('插入问候不占澄清次数，有答案后清零，已明确对象的证据缺口不计数', async () => {
-    const ask = await chat();
+  await t.test('插入问候不占澄清次数，有答案后清零，已明确对象的证据缺口计入引导', async () => {
     const questionSequence = ['怎么申请', '你好', '怎么申请', '社区入驻需要什么材料？', '多少钱'];
-    const expected = [1, 0, 2, 0, 0];
-    const results = [];
-    for (let i = 0; i < questionSequence.length; i++) {
-      const result = await ask(questionSequence[i]); results.push(result);
-      assert.equal(result.action, 'REPLY', questionSequence[i]);
-      assert.equal(result.guidanceAttempt, expected[i]);
-    }
+    // 问候保持既有计数；有答案清零；ADR 0003 起，已明确对象的证据缺口也计入引导次数。
+    const expected = [1, 1, 2, 0, 1];
+    const firstClarification = await localTest(questionSequence[0]);
+    assert.equal(firstClarification.presentation.kind, 'CLARIFICATION');
+    const replies = new Map();
     for (const platform of platforms) {
       const id = crypto.randomUUID();
+      const sequence = [];
       for (let i = 0; i < questionSequence.length; i++) {
         const message = await simulate(platform, id, questionSequence[i]);
-        assert.equal(message.status, 'REPLY_QUEUED');
-        assert.equal(message.reply_text, results[i].replyText);
-        assert.equal(attempts(message), i === 1 ? 1 : expected[i]);
+        assert.equal(message.status, 'REPLY_QUEUED', `${platform} ${questionSequence[i]}: ${message.reason}`);
+        assert.equal(attempts(message), expected[i], `${platform} ${questionSequence[i]}`);
+        if (i === 4) assert.equal(message.decision, 'RAG_KNOWLEDGE_GAP', '上下文已给出对象，追问费用走 RAG');
+        sequence.push(message.reply_text);
       }
+      assert.equal(sequence[0], firstClarification.presentation.text, '首次缺对象澄清与本地测试一致');
+      assert.equal(sequence[3], '请准备项目计划书。');
+      replies.set(platform, JSON.stringify(sequence));
     }
+    samePerPlatform([...replies.values()], '各平台话术一致');
   });
 
   await t.test('问候不清零，默认累计第五次仍未补充业务对象时转人工', async () => {
-    const ask = await chat();
-    for (const content of ['怎么申请', '怎么申请', '你好？', '怎么申请', '怎么申请']) assert.equal((await ask(content)).action, 'REPLY');
-    const result = await ask('怎么申请');
-    assert.equal(result.action, 'HANDOFF'); assert.equal(result.guidanceAttempt, 5);
     for (const platform of platforms) {
       const id = crypto.randomUUID();
-      for (const content of ['怎么申请', '怎么申请', '你好？', '怎么申请', '怎么申请']) await simulate(platform, id, content);
+      for (const content of ['怎么申请', '怎么申请', '你好？', '怎么申请', '怎么申请']) assert.equal((await simulate(platform, id, content)).status, 'REPLY_QUEUED');
       const last = await simulate(platform, id, '怎么申请');
       assert.equal(last.status, 'MANUAL_REQUIRED'); assert.equal(last.reply_job_id, null); assert.equal(attempts(last), 5);
+      assert.equal(db.prepare('SELECT handling_mode FROM conversations WHERE id=?').get(last.conversation_id).handling_mode, 'HANDOFF_PENDING');
     }
   });
 
@@ -154,38 +156,40 @@ test('小智与五个平台共用外层路由、引导计数和人工接管状�
   });
 
   await t.test('RAG离线时仍能确认费用材料地址报名对象', async () => {
-    createFailure = true;
+    queryFailure = 'timeout';
     try {
       const before = requests.length;
       for (const content of ['怎么申请', '多少钱', '要什么材料', '地址在哪里', '如何报名', '在哪里申请']) {
-        const result = await (await chat())(content);
-        assert.equal(result.action, 'REPLY'); assert.equal(result.matchMethod, 'OUTER_ROUTER');
-        for (const platform of platforms) assert.equal((await simulate(platform, crypto.randomUUID(), content)).reply_text, result.replyText);
+        const result = await localTest(content);
+        assert.equal(result.presentation.kind, 'CLARIFICATION', content);
+        for (const platform of platforms) {
+          const message = await simulate(platform, crypto.randomUUID(), content);
+          assert.equal(message.status, 'REPLY_QUEUED', `${platform} ${content}`);
+          assert.equal(message.reply_text, result.presentation.text, `${platform} ${content}`);
+        }
       }
-      assert.equal(requests.length, before);
-    } finally { createFailure = false; }
+      assert.equal(requests.length, before, '缺对象澄清不访问 RAG');
+    } finally { queryFailure = null; }
   });
 
   for (const failure of ['timeout', 'empty']) await t.test(`${failure}统一处理且服务恢复后继续人工接管`, async () => {
     queryFailure = failure;
     try {
-      const ask = await chat(), result = await ask('社区入驻需要什么材料？');
-      assert.equal(result.action, 'HANDOFF'); assert.equal(result.handoffRequested, true);
-      if (failure === 'timeout') assert.equal(result.replyText, 'AI回复超时');
-      else assert.doesNotMatch(result.replyText, /ANSWERED|UNAVAILABLE/);
-      const ids = new Map();
+      const ids = new Map(), reasons = [];
       for (const platform of platforms) {
         const id = crypto.randomUUID(); ids.set(platform, id);
         const message = await simulate(platform, id, '社区入驻需要什么材料？');
         assert.equal(message.status, 'MANUAL_REQUIRED'); assert.equal(message.reply_job_id, null);
-        assert.equal(message.reason, result.replyText);
+        assert.equal(db.prepare('SELECT handling_mode FROM conversations WHERE id=?').get(message.conversation_id).handling_mode, 'HANDOFF_PENDING');
         if (failure === 'timeout') assert.equal(message.reason, 'AI回复超时');
+        else assert.doesNotMatch(message.reason, /ANSWERED|UNAVAILABLE/);
+        reasons.push(message.reason);
       }
+      samePerPlatform(reasons, '各平台失败原因一致');
       queryFailure = null;
       const before = requests.length;
-      assert.equal((await ask('社区入驻需要什么材料？')).action, 'HANDOFF');
       for (const platform of platforms) assert.equal((await simulate(platform, ids.get(platform), '社区入驻需要什么材料？')).status, 'MANUAL_REQUIRED');
-      assert.equal(requests.length, before);
+      assert.equal(requests.length, before, '人工接管后服务恢复也不再自动查询');
     } finally { queryFailure = null; }
   });
 
@@ -198,27 +202,5 @@ test('小智与五个平台共用外层路由、引导计数和人工接管状�
       assert.equal(message.status, 'REPLY_QUEUED', `${platform}: ${message.reason}`);
       assert.equal(message.reply_text, '请准备项目计划书。');
     }
-  });
-
-  await t.test('RAG创建会话失败也保存人工接管状态', async () => {
-    createFailure = true;
-    try {
-      const ask = await chat();
-      const first = await ask('社区入驻需要什么材料？');
-      assert.equal(first.action, 'HANDOFF'); assert.equal(first.handoffRequested, true);
-      createFailure = false;
-      const before = requests.length;
-      assert.equal((await ask('社区入驻需要什么材料？')).action, 'HANDOFF');
-      assert.equal(requests.length, before);
-    } finally { createFailure = false; }
-  });
-
-  await t.test('小智与用户端共用运营维护的转人工说法', async () => {
-    const created = await jsonRequest(runtime.base, '/api/manual-handoff-phrases', { method: 'POST', body: { phrase: '给我安排专员', createdBy: '路由测试' } });
-    assert.equal(created.response.status, 201);
-    const before = requests.length;
-    assert.equal((await (await chat())('给我安排专员')).action, 'HANDOFF');
-    for (const platform of platforms) assert.equal((await simulate(platform, crypto.randomUUID(), '给我安排专员')).status, 'MANUAL_REQUIRED');
-    assert.equal(requests.length, before);
   });
 });

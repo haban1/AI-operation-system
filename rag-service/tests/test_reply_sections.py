@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 
 import pytest
 
 from app.agent import AgentAnswer, AgentRunResult
 from app.config import Settings
-from app.models import Snapshot, SourceInfo, TestCandidate as Candidate, TestSessionCreate as Session
+from app.models import Snapshot, SourceInfo
 from app.pipeline import RagService, _extract_answer_text
+from kb_helpers import publish_file
 
 
 SECTION_PATH = ["OPC港澳服务社区介绍及入驻流程", "常见问题", "什么是“七免两低”扶持政策？"]
@@ -56,18 +56,10 @@ async def test_query_returns_body_with_source_sections_separate(tmp_path, monkey
     service = RagService(settings)
     try:
         markdown = "# OPC港澳服务社区介绍及入驻流程\n\n## 常见问题\n\n### 什么是“七免两低”扶持政策？\n\n" + POLICY_ANSWER
-        upload = await service.accept_upload(
+        upload = await publish_file(service,
             content=markdown.encode("utf-8"), filename="policy.md", mime_type="text/markdown",
             metadata={"knowledgeBaseId": "main-business-kb"}, request_id="sections-upload",
         )
-        for _ in range(100):
-            if service.get_document(upload.documentId).status != "PROCESSING":
-                break
-            await asyncio.sleep(0.02)
-        assert service.get_document(upload.documentId).status == "READY_FOR_TEST"
-        session = service.create_test_session(Session(
-            requestId="sections-session", candidateDocuments=[Candidate(documentId=upload.documentId, documentVersion=1)],
-        ))
         stored_before = service.db.get_chunks_for_document(upload.documentId, 1)
         assert len(stored_before) == 1
 
@@ -87,7 +79,7 @@ async def test_query_returns_body_with_source_sections_separate(tmp_path, monkey
             question="什么是七免两低？",
             snapshot=Snapshot(conversationKey="sections", conversationVersion=1, inputFingerprint="sha256:sections"),
             source=SourceInfo(platform="DOUYIN", channelType="COMMENT"), knowledge_base_id="main-business-kb",
-            trace_id="sections-query", request_id="sections-query", test_session_id=session.testSessionId,
+            trace_id="sections-query", request_id="sections-query",
             max_answer_chars=120, generate=mode != "evaluation",
         )
         if mode == "model-section-only":

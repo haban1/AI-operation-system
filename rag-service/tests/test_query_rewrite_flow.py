@@ -8,7 +8,7 @@ import pytest
 
 from app.agent import AgentAnswer
 from app.config import Settings
-from app.models import DebugQueryRequest, QueryMessage, Snapshot, SourceInfo
+from app.models import QueryMessage, Snapshot, SourceInfo
 from app.pipeline import PreparedScope, RagService
 from app.retrieval import SearchScope
 
@@ -36,7 +36,7 @@ async def service(tmp_path, monkeypatch):
     settings.prepare_directories()
     instance = RagService(settings)
     instance.llm.enabled = True
-    prepared = PreparedScope(SearchScope("main-business-kb", chunk_ids=[], mode="TEST"), release=None)
+    prepared = PreparedScope(SearchScope("main-business-kb", release_id="release-active", chunk_ids=[]), release={"release_id": "release-active", "knowledge_base_id": "main-business-kb"})
     monkeypatch.setattr(instance, "_prepare_scope", lambda **kwargs: prepared)
     try:
         yield instance
@@ -221,7 +221,7 @@ async def test_both_retrieval_rounds_use_canonical_but_gate_and_generation_keep_
     assert response.diagnostics["queryAnalysis"]["retrievalRounds"] == 2
 
 
-async def test_debug_retrieve_uses_same_canonical_plan_and_never_comment_history(service, monkeypatch):
+async def test_comment_query_uses_same_canonical_plan_and_never_comment_history(service, monkeypatch):
     remote_calls, search_calls = [], []
     vocabulary_calls, planner_calls = [], []
     vocabulary = ["公司介绍", "企业AI应用场景与项目示例"]
@@ -247,10 +247,15 @@ async def test_debug_retrieve_uses_same_canonical_plan_and_never_comment_history
     monkeypatch.setattr(service.retriever, "scope_vocabulary", scope_vocabulary)
     monkeypatch.setattr(service, "_query_plan", planner)
     monkeypatch.setattr(service.retriever, "search_many", search)
-    result = await service.debug_retrieve(DebugQueryRequest(
-        question=ORIGINAL, channelType="COMMENT",
-        context=[QueryMessage(role="USER", text="我想入驻海湾创业社区")],
-    ))
+    # The retrieval-only debug endpoint was removed (2026-11-11); the formal comment
+    # query must apply the same canonical plan and still drop comment history.
+    response = await service.run_query(
+        question=ORIGINAL, context=[QueryMessage(role="USER", text="我想入驻海湾创业社区")],
+        snapshot=Snapshot(conversationKey="comment-plan", conversationVersion=1, inputFingerprint="comment-plan"),
+        source=SourceInfo(channelType="COMMENT"), knowledge_base_id="main-business-kb", trace_id="comment-plan",
+        request_id="comment-plan", generate=False, debug=True,
+    )
+    result = response.diagnostics
     assert remote_calls[0]["context"] == []
     assert remote_calls[0]["context_resolved_question"] == ORIGINAL
     assert len(vocabulary_calls) == len(planner_calls) == 1
@@ -336,7 +341,8 @@ async def test_low_canonical_score_retries_original_resolution_within_existing_b
     assert response.diagnostics["evidenceGate"]["threshold"] == 0.38
 
 
-async def test_retry_fallback_still_checks_canonical_negative_case_on_new_chunk(service, monkeypatch):
+async def test_retry_fallback_reaches_new_chunk_without_legacy_negative_case_gate(service, monkeypatch):
+    """Old 小智 negative cases were removed (2026-11-10); the retry fallback itself is unchanged."""
     calls = []
 
     async def complete(system, user, **kwargs):
@@ -350,21 +356,18 @@ async def test_retry_fallback_still_checks_canonical_negative_case_on_new_chunk(
         candidate["reranker_score_normalized"] = 0.1 if len(calls) == 1 else 0.95
         return [candidate], []
 
-    async def unexpected(**kwargs):
-        raise AssertionError("A blocked second-round chunk cannot reach generation")
-
     monkeypatch.setattr(service.llm, "json_complete", complete)
     monkeypatch.setattr(service, "_retrieve", retrieve)
-    monkeypatch.setattr(service, "_generate", unexpected)
-    monkeypatch.setattr(service.db, "list_negative_cases", lambda kb: [{
-        "question": CANONICAL, "blocked_chunk_ids": ["chunk-2"], "negative_case_id": "disabled-canonical",
-    }])
+    assert not hasattr(service.db, "list_negative_cases")
     response = await service.run_query(
         question=ORIGINAL,
         snapshot=Snapshot(conversationKey="negative-retry", conversationVersion=1, inputFingerprint="negative-retry"),
         source=SourceInfo(), knowledge_base_id="main-business-kb", trace_id="negative-retry",
-        request_id="negative-retry", debug=True,
+        request_id="negative-retry", generate=False, debug=True,
     )
     assert len(calls) == 2 and calls[-1]["rerank_query"] == ORIGINAL
-    assert response.result == "NO_ANSWER" and response.reasonCode == "DISABLED_TEST_CASE"
-    assert response.diagnostics["evidenceGate"]["negativeCaseId"] == "disabled-canonical"
+    assert response.result == "ANSWERED", response.model_dump_json()
+    assert [ref.chunkId for ref in response.grounding.sourceReferences] == ["chunk-2"]
+    gate = response.diagnostics["evidenceGate"]
+    assert gate["round"] == 2 and gate["decision"] == "answer"
+    assert "negativeCaseId" not in gate

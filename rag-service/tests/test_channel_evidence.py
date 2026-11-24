@@ -1,14 +1,11 @@
 """Channel gates and single-turn comments, using local deterministic retrieval."""
-import asyncio
-
 import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.models import DebugQueryRequest, QueryMessage, Snapshot, SourceInfo
-from app.models import TestCandidate as Candidate
-from app.models import TestSessionCreate as Session
+from app.models import QueryMessage, Snapshot, SourceInfo
 from app.pipeline import RagService
+from kb_helpers import publish_file
 
 
 def settings_for(tmp_path, **overrides):
@@ -55,14 +52,7 @@ async def test_query_uses_channel_gate_and_comment_ignores_history(tmp_path, mon
     service = RagService(settings)
     try:
         markdown = "# OPC 港澳服务社区\n\n## 常见问题\n\n### 怎么加入 OPC 港澳服务社区？（常见问法：怎么加入？）\n\n加入 OPC 港澳服务社区需先提交项目介绍，审核通过后签约。\n"
-        upload = await service.accept_upload(content=markdown.encode(), filename="video-knowledge.md", mime_type="text/markdown",
-            metadata={"knowledgeBaseId": "main-business-kb"}, request_id="upload")
-        for _ in range(100):
-            if service.get_document(upload.documentId).status != "PROCESSING":
-                break
-            await asyncio.sleep(0.02)
-        assert service.get_document(upload.documentId).status == "READY_FOR_TEST"
-        session = service.create_test_session(Session(requestId="session", candidateDocuments=[Candidate(documentId=upload.documentId, documentVersion=1)]))
+        await publish_file(service, markdown.encode(), "video-knowledge.md", "text/markdown")
         real_retrieve = service._retrieve
         seen_contexts = []
         real_analyze = service._query_plan
@@ -80,7 +70,7 @@ async def test_query_uses_channel_gate_and_comment_ignores_history(tmp_path, mon
         for channel, expected in [("COMMENT", "ANSWERED"), ("DIRECT_MESSAGE", "NO_ANSWER")]:
             response = await service.run_query(question="怎么加入", snapshot=Snapshot(conversationKey=channel, conversationVersion=1, inputFingerprint=channel),
                 source=SourceInfo(platform="DOUYIN", channelType=channel), knowledge_base_id="main-business-kb",
-                trace_id=channel, request_id=channel, test_session_id=session.testSessionId, generate=False,
+                trace_id=channel, request_id=channel, generate=False,
                 context=[QueryMessage(role="USER", text="我还想了解申请条件")], debug=True)
             assert response.result == expected
             gate = response.diagnostics["evidenceGate"]
@@ -92,20 +82,8 @@ async def test_query_uses_channel_gate_and_comment_ignores_history(tmp_path, mon
             else:
                 assert seen_contexts[-1]
                 assert response.reasonCode == "INSUFFICIENT_EVIDENCE"
-        # The retrieval-only diagnostic must apply exactly the same channel policy.
-        real_search = service.retriever.search_many
-        def scored_search(*args, **kwargs):
-            result = real_search(*args, **kwargs)
-            for hit in result["selected"]:
-                hit["reranker_score_normalized"] = 0.34
-            return result
-        monkeypatch.setattr(service.retriever, "search_many", scored_search)
-        for channel, expected in [("COMMENT", True), ("DIRECT_MESSAGE", False)]:
-            result = await service.debug_retrieve(DebugQueryRequest(question="怎么加入", channelType=channel,
-                testSessionId=session.testSessionId, context=[QueryMessage(role="USER", text="我还想了解申请条件")]))
-            assert result["evidenceGate"]["allowed"] is expected
-            assert result["evidenceGate"]["channelType"] == channel
-            assert bool(seen_contexts[-1]) is (channel == "DIRECT_MESSAGE")
+        # The retrieval-only debug endpoint was removed with the 2026-11-11 file flow;
+        # formal queries above are the only path that applies channel gates.
     finally:
         await service.close()
 

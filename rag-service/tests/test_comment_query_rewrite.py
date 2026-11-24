@@ -1,12 +1,12 @@
 """Colloquial comments and DMs use the validated main-branch query plan."""
-import asyncio
 import json
 
 import pytest
 
 from app.config import Settings
-from app.models import Snapshot, SourceInfo, TestCandidate as Candidate, TestSessionCreate as Session
+from app.models import Snapshot, SourceInfo
 from app.pipeline import RagService
+from kb_helpers import publish_file
 
 
 @pytest.mark.asyncio
@@ -22,15 +22,9 @@ async def test_comment_semantic_retry_keeps_original_guards(tmp_path, monkeypatc
     settings.prepare_directories()
     service = RagService(settings)
     try:
-        upload = await service.accept_upload(
+        upload = await publish_file(service,
             content="标准问题,标准答案\n公司培训课程有哪些？,培训包括工作流拆解和应用开发。\n".encode(),
             filename="training.csv", mime_type="text/csv", metadata={"knowledgeBaseId": "main-business-kb"}, request_id="upload")
-        for _ in range(100):
-            if service.get_document(upload.documentId).status != "PROCESSING":
-                break
-            await asyncio.sleep(0.02)
-        assert service.get_document(upload.documentId).status == "READY_FOR_TEST"
-        session = service.create_test_session(Session(requestId="session", candidateDocuments=[Candidate(documentId=upload.documentId, documentVersion=1)]))
         canonical = "公司培训课程有哪些？"
         original = "这次培训准确收费多少钱？" if case == "missing_price" else "我可以去你们公司学习到什么"
         question = original
@@ -56,7 +50,7 @@ async def test_comment_semantic_retry_keeps_original_guards(tmp_path, monkeypatc
             snapshot=Snapshot(conversationKey=case, conversationVersion=1, inputFingerprint=case),
             source=SourceInfo(channelType="DIRECT_MESSAGE" if case == "private" else "COMMENT"),
             knowledge_base_id="main-business-kb", trace_id=case, request_id=case,
-            test_session_id=session.testSessionId, generate=False, debug=True, use_rewrite=case != "no_rewrite")
+            generate=False, debug=True, use_rewrite=case != "no_rewrite")
         if case in {"comment", "hit", "private"}:
             assert response.result == "ANSWERED", response.model_dump_json()
             assert "工作流拆解" in response.answer.text
