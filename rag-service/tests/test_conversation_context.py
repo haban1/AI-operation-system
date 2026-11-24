@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import csv
 import io
 import json
@@ -9,8 +8,9 @@ import httpx
 import pytest
 
 from app.config import Settings
-from app.models import QueryMessage, Snapshot, SourceInfo, TestCandidate as Candidate, TestQueryRequest as QueryForTest, TestSessionCreate as Session
+from app.models import QueryMessage, Snapshot, SourceInfo
 from app.pipeline import RagService
+from kb_helpers import publish_file
 
 
 def history(*turns):
@@ -186,18 +186,12 @@ async def upload_faq(service, extra_rows=()):
     writer.writerow(["申请入驻海湾创业社区需要什么材料？", "请提交创业项目计划书和团队成员身份证明。", "海湾,创业社区,入驻,材料", "社区", "入驻"])
     writer.writerow(["支付宝绑定银行卡需要什么材料？", "请准备本人银行卡和银行预留手机号。", "支付宝,银行卡,材料", "账户", "银行卡"])
     writer.writerows(extra_rows)
-    uploaded = await service.accept_upload(content=output.getvalue().encode(), filename="context.csv", mime_type="text/csv", metadata={}, request_id="context-upload")
-    for _ in range(100):
-        if service.get_document(uploaded.documentId).status != "PROCESSING":
-            break
-        await asyncio.sleep(0.02)
-    assert service.get_document(uploaded.documentId).status == "READY_FOR_TEST"
-    session = service.create_test_session(Session(requestId="context-session", candidateDocuments=[Candidate(documentId=uploaded.documentId, documentVersion=1)]))
-    return session.testSessionId, service.db.get_chunks_for_document(uploaded.documentId, 1)
+    uploaded = await publish_file(service, output.getvalue().encode(), "context.csv", "text/csv", request_id="context-upload")
+    return service.db.get_chunks_for_document(uploaded.documentId, 1)
 
 
 async def test_generation_receives_all_six_turns_and_retrieves_materials_for_the_same_subject(service):
-    session_id, chunks = await upload_faq(service)
+    chunks = await upload_faq(service)
     expected_chunk = next(item for item in chunks if "社区" in item["metadata"]["question"])
     context = history(
         ("我想入驻海湾创业社区", "可以了解入驻条件和流程。"),
@@ -221,7 +215,7 @@ async def test_generation_receives_all_six_turns_and_retrieves_materials_for_the
     response = await service.run_query(
         question="那需要什么材料？", context=context,
         snapshot=Snapshot(conversationKey="same-chat", conversationVersion=7, inputFingerprint="sha256:context"),
-        source=SourceInfo(), knowledge_base_id="main-business-kb", trace_id="six-turns", request_id="six-turns", test_session_id=session_id,
+        source=SourceInfo(), knowledge_base_id="main-business-kb", trace_id="six-turns", request_id="six-turns",
     )
     assert response.result == "ANSWERED", response.model_dump()
     assert response.grounding.sourceReferences[0].chunkId == expected_chunk["chunk_id"]
@@ -237,18 +231,18 @@ async def test_generation_receives_all_six_turns_and_retrieves_materials_for_the
 
 
 async def test_missing_current_detail_is_not_invented_from_the_previous_answer(service):
-    session_id, _ = await upload_faq(service)
+    await upload_faq(service)
     response = await service.run_query(
         question="那需要多少押金？", context=history(("我想入驻海湾创业社区", "押金是999元。")),
         snapshot=Snapshot(conversationKey="same-chat", conversationVersion=2, inputFingerprint="sha256:missing"),
-        source=SourceInfo(), knowledge_base_id="main-business-kb", trace_id="missing-detail", request_id="missing-detail", test_session_id=session_id,
+        source=SourceInfo(), knowledge_base_id="main-business-kb", trace_id="missing-detail", request_id="missing-detail",
     )
     assert response.result == "NO_ANSWER"
     assert response.answer is None
 
 
 async def test_app_followup_retrieves_named_app_and_returns_query_analysis_for_test_diagnostics(service):
-    session_id, chunks = await upload_faq(service, [[
+    chunks = await upload_faq(service, [[
         "海湾办事APP在哪里下载？", "请从海湾社区官网下载海湾办事APP。", "海湾办事,APP,下载,入口", "社区", "APP下载",
     ]])
     expected_chunk = next(item for item in chunks if "APP" in item["metadata"]["question"])
@@ -263,14 +257,23 @@ async def test_app_followup_retrieves_named_app_and_returns_query_analysis_for_t
 
     service.llm.enabled = True
     service.llm.client = httpx.AsyncClient(transport=httpx.MockTransport(provider), base_url="https://provider.example/v1")
-    request = QueryForTest(requestId="app-download", question="我说的是这个App去哪里找？", context=history(
+    context = history(
         ("海湾社区怎么预约", "请使用“海湾办事”APP预约。"),
         ("App在哪？", "请具体说明要咨询的业务。"),
-    ))
-    response = await service.test_query(session_id, request)
+    )
+
+    def ask(run):
+        return service.run_query(
+            question="我说的是这个App去哪里找？", context=context,
+            snapshot=Snapshot(conversationKey="app-download", conversationVersion=2, inputFingerprint="sha256:app"),
+            source=SourceInfo(), knowledge_base_id="main-business-kb", trace_id=f"app-download-{run}",
+            request_id=f"app-download-{run}", debug=True,
+        )
+
+    response = await ask(1)
     assert response.result == "ANSWERED", response.model_dump()
     assert response.grounding.sourceReferences[0].chunkId == expected_chunk["chunk_id"]
-    analysis = response.meta["queryAnalysis"]
+    analysis = response.diagnostics["queryAnalysis"]
     assert analysis["keywords"] == ["海湾办事", "APP", "下载", "获取入口"]
     assert "海湾办事" in analysis["resolvedQuestion"]
     assert analysis["contextUsed"] is True
@@ -282,6 +285,9 @@ async def test_app_followup_retrieves_named_app_and_returns_query_analysis_for_t
     assert resolved == analysis["resolvedQuestion"]
     assert "海湾办事" in resolved
     assert "下载" in resolved
-    replay = await service.test_query(session_id, request)
-    assert replay.meta["queryAnalysis"] == analysis
-    assert len(requests) == 1
+    # The same input resolves deterministically again: one synthesis call per query, no rewrite call.
+    replay = await ask(2)
+    assert replay.result == "ANSWERED"
+    assert {key: replay.diagnostics["queryAnalysis"][key] for key in ("keywords", "resolvedQuestion", "contextUsed")} == {
+        key: analysis[key] for key in ("keywords", "resolvedQuestion", "contextUsed")}
+    assert len(requests) == 2

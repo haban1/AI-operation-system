@@ -11,6 +11,12 @@ on:
       - 'public/**'
       - 'test/*rag*'
       - 'test/mini-program-reply-dispatch.test.js'
+      - 'test/reply-routing-parity.test.js'
+      - 'test/conversation-*'
+      - 'test/knowledge-files.test.js'
+      - 'test/knowledge-conversation-api.test.js'
+      - 'src/services/reply-composer.js'
+      - 'src/services/knowledge-conversation.js'
       - '.github/workflows/rag-contract.yml'
   pull_request:
     paths:
@@ -22,6 +28,12 @@ on:
       - 'public/**'
       - 'test/*rag*'
       - 'test/mini-program-reply-dispatch.test.js'
+      - 'test/reply-routing-parity.test.js'
+      - 'test/conversation-*'
+      - 'test/knowledge-files.test.js'
+      - 'test/knowledge-conversation-api.test.js'
+      - 'src/services/reply-composer.js'
+      - 'src/services/knowledge-conversation.js'
       - '.github/workflows/rag-contract.yml'
 
 permissions:
@@ -50,7 +62,7 @@ jobs:
         with:
           node-version: '24'
       - run: npm ci --no-audit --no-fund
-      - name: Routing, persona, snapshots, publication and human takeover
+      - name: Routing, persona, snapshots, file knowledge and human takeover
         env:
           CHROME_EXECUTABLE_PATH: /usr/bin/google-chrome
         run: >-
@@ -61,5 +73,6 @@ jobs:
           test/rag-formal-routing-integration.test.js test/rag-guidance-parity.test.js
           test/reply-routing-parity.test.js test/conversation-isolation.test.js
           test/conversation-handoff-claim-guard.test.js test/security-runtime.test.js
-          test/rag-release-rollback.test.js test/rag-admin-proxy.test.js
+          test/knowledge-files.test.js test/knowledge-conversation-api.test.js
+          test/rag-admin-proxy.test.js
           test/mini-program-reply-dispatch.test.js

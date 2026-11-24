@@ -1,12 +1,11 @@
-import asyncio
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.published_retrieval import PublishedRetrievalRequest, retrieve_published
-from app.models import ReleaseCreate, TestCandidate as Candidate, TestSessionCreate as SessionCreate, TestQueryRequest as SessionQuery
 from app.pipeline import RagService
+from kb_helpers import publish_file, settle
 from test_core import local_settings, sample_faq
 
 
@@ -17,24 +16,20 @@ async def test_only_active_published_snippets_without_generation(tmp_path):
     service = RagService(settings)
     query = PublishedRetrievalRequest(query='示例账号如何注册？')
     try:
-        upload = await service.accept_upload(content=sample_faq(), filename='faq.csv', mime_type='text/csv', metadata={'knowledgeBaseId':'main-business-kb'}, request_id='upload')
-        for _ in range(100):
-            if service.get_document(upload.documentId).status != 'PROCESSING': break
-            await asyncio.sleep(.05)
         assert (await retrieve_published(service, query))['status'] == 'NOT_READY'
-        candidates = [Candidate(documentId=upload.documentId, documentVersion=1)]
-        session = service.create_test_session(SessionCreate(requestId='session', candidateDocuments=candidates))
-        await service.test_query(session.testSessionId, SessionQuery(requestId='test', question=query.query))
-        release = await service.start_release(ReleaseCreate(requestId='release', testSessionId=session.testSessionId, candidateDocuments=candidates))
-        for _ in range(100):
-            if service.release(release.releaseId).status != 'BUILDING': break
-            await asyncio.sleep(.05)
-        assert service.release(release.releaseId).status == 'PUBLISHED'
+        # A parsed file that has not been activated is not retrievable.
+        draft = await service.accept_upload(content=sample_faq(), filename='draft.csv', mime_type='text/csv',
+                                            metadata={'knowledgeBaseId': 'main-business-kb'}, request_id='draft')
+        await settle(service)
+        assert service.get_document(draft.documentId).status == 'READY_FOR_TEST'
+        assert (await retrieve_published(service, query))['status'] == 'NOT_READY'
+        upload = await publish_file(service, sample_faq(), 'faq.csv', 'text/csv')
+        active = service.active_release('main-business-kb')
         # Only retriever and scope resolution may be used by the external Agent.
         service.run_query = lambda **kwargs: pytest.fail('Must not generate an answer')
         result = await retrieve_published(service, query)
         assert result['status'] == 'MATCHED'
-        assert result['releaseId'] == release.releaseId
+        assert result['releaseId'] == active['release_id']
         assert all(chunk['documentId'] == upload.documentId for chunk in result['chunks'])
         assert any('手机号' in chunk['text'] for chunk in result['chunks'])
     finally:

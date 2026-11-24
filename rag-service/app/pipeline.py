@@ -1125,6 +1125,11 @@ class RagService:
                             question, resolved_question, selected, require_grounding=require_grounding,
                             channel_type=source.channelType, multihop=multihop, round_number=round_number,
                         )
+                        # Only the first insufficient round may retry; the final round is a reject.
+                        retry_allowed = not allowed and round_number < 2 and reason in {"INSUFFICIENT_EVIDENCE", "NO_RELEVANT_KNOWLEDGE"}
+                        gate.update(retryAllowed=retry_allowed,
+                                    decision="answer" if allowed else "retry" if retry_allowed else "reject")
+                        gate["evidenceSet"] = evidence_set
                         span.set_output(gate)
                     if allowed or reason not in {"INSUFFICIENT_EVIDENCE", "NO_RELEVANT_KNOWLEDGE"}:
                         break

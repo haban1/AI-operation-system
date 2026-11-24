@@ -1,5 +1,7 @@
 # 开发交接入口
 
+2026-11-24：RAG contract regression 工作流修复（一处证据门诊断回归，其余为过时测试迁移到文件自动生效 / ADR 0003）见[本次记录](changes/20261124-rag-contract-ci-repair.md)。本地两作业通过，CI 待 PR。
+
 2026-11-23（晚）：知识问答低置信度回复与转人工链路优化（P0–P2）见[本次记录](changes/20261123-reply-handoff-optimization.md)、[ADR 0003](decisions/0003-low-confidence-reply-orchestration.md)与[ADR 0004](decisions/0004-handoff-conversation-lifecycle.md)。分支 `feat/reply-handoff-optimization`，本地验证通过，未部署、未真实收发验收。
 
 2026-11-23：最新净化源码交付涵盖第三套可复用混剪模板、发布与素材流转、互动采集/提醒、知识问答及微信接入。接手时先读[本次开发记录](changes/20261123-source-release.md)，不要根据旧测试或远端提交推断正式平台就绪。

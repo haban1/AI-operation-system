@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import csv
 import io
 import unicodedata
@@ -9,8 +8,9 @@ import pytest
 
 from app.agent import AgentAnswer, AgentRunResult
 from app.config import Settings
-from app.models import Snapshot, SourceInfo, TestCandidate as Candidate, TestSessionCreate as Session
+from app.models import Snapshot, SourceInfo
 from app.pipeline import RagService
+from kb_helpers import publish_file
 
 
 @pytest.mark.asyncio
@@ -48,18 +48,10 @@ async def test_query_rejects_overlong_answers_instead_of_slicing(tmp_path, monke
         writer = csv.writer(csv_file)
         writer.writerow(["标准问题", "标准答案", "关键词", "大类", "小类"])
         writer.writerow([question, answer, "账号,注册", "公共", "账户"])
-        upload = await service.accept_upload(
+        upload = await publish_file(service,
             content=csv_file.getvalue().encode("utf-8"), filename="reply-length.csv", mime_type="text/csv",
             metadata={"knowledgeBaseId": "main-business-kb"}, request_id="length-upload",
         )
-        for _ in range(100):
-            if service.get_document(upload.documentId).status != "PROCESSING":
-                break
-            await asyncio.sleep(0.02)
-        assert service.get_document(upload.documentId).status == "READY_FOR_TEST"
-        session = service.create_test_session(Session(
-            requestId="length-session", candidateDocuments=[Candidate(documentId=upload.documentId, documentVersion=1)],
-        ))
         if mode == "model":
             async def over_budget_model(**kwargs):
                 return AgentRunResult(
@@ -70,7 +62,7 @@ async def test_query_rejects_overlong_answers_instead_of_slicing(tmp_path, monke
         response = await service.run_query(
             question=question, snapshot=Snapshot(conversationKey="length", conversationVersion=1, inputFingerprint="sha256:length"),
             source=SourceInfo(platform=platform, channelType=channel_type), knowledge_base_id="main-business-kb",
-            trace_id="length-query", request_id="length-query", test_session_id=session.testSessionId,
+            trace_id="length-query", request_id="length-query",
             max_answer_chars=budget, generate=mode != "evaluation",
         )
         normalized_answer = unicodedata.normalize("NFC", answer)
