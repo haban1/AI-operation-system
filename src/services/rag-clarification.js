@@ -1,4 +1,5 @@
 import { applicationClarificationReply, isNegativeReply, knowledgeGapReply } from './conversation-intent.js';
+import { stripVocative } from './reply-composer.js';
 
 function compact(value) {
   return String(value || '').normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
@@ -18,7 +19,9 @@ function candidateTopic(title) {
   return String(title || '').trim().replace(/^(?:什么是|什麼是)/u, '').replace(/[？?。！!]+$/u, '').trim();
 }
 
-export function businessSubjectClarificationReply(question, { script = 'auto' } = {}) {
+export function businessSubjectClarificationReply(rawQuestion, { script = 'auto' } = {}) {
+  // 称呼和问候（“哥，”“亲，”“你好，”）不影响“有没有说清对象”的判断。
+  const question = stripVocative(rawQuestion);
   // A bare participation question supplies no activity identity. Preserve named
   // activities and let history resolve follow-ups rather than guessing a course.
   const bare = compact(question).replace(/^(?:请问|請問|我想问|我想問)/u, '').replace(/[呀啊呢吗嗎嘛]$/u, '');
@@ -27,7 +30,7 @@ export function businessSubjectClarificationReply(question, { script = 'auto' } 
   }
   const application = applicationClarificationReply(question, { script });
   if (application) return application;
-  const text = compact(question).replace(/^(?:请问|請問|我想问|我想問|我想知道)/u, '').replace(/^(?:这个|這個|那个|那個)/u, '').replace(/(?:吗|嗎|呢)$/u, '');
+  const text = compact(question).replace(/^(?:请问|請問|我想问|我想問|我想知道)/u, '').replace(/^(?:这个|這個|那个|那個)/u, '').replace(/(?:吗|嗎|呢|啊|呀|嘛|哈)+$/u, '');
   const traditional = script === 'traditional';
   if (/^(?:(?:要|需要)?多少(?:钱|錢)|(?:费用|費用|价格|價格|收费|收費)(?:是多少|多少|怎么样|怎麼樣)?|怎么收费|怎麼收費)$/u.test(text)) {
     return traditional ? '你問的是哪項服務的費用？發個名字我看看。' : '你问的是哪项服务的费用？发个名字我看看。';

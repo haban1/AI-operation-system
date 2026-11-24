@@ -1,6 +1,7 @@
 import { detectRisk } from './decision.js';
 import { automationDisabledForHandlingMode } from './operation-state.js';
 import { detectManualHandoffCommand, detectSmallTalkIntent, isGreetingOnlyMessage } from './conversation-intent.js';
+import { detectSocialMessage, socialReplyText } from './social-reply.js';
 
 export const MESSAGE_ROUTE = Object.freeze({
   RAG_QUERY: 'RAG_QUERY',
@@ -94,6 +95,17 @@ export function routeIncomingMessage({ message = {}, conversation = null, source
       allowRag: false,
       allowAutoReply: true,
       replyText: replies[category]
+    };
+  }
+  // 长一点的社交消息（夸视频、道谢收尾、发错对象、问身份）同样不进知识库，否则会被当成知识缺口。
+  const social = messageType !== 'COMMENT' ? detectSocialMessage(content) : null;
+  const socialText = social ? socialReplyText(social, { source: content, seed: content }) : null;
+  if (socialText) {
+    return {
+      route: MESSAGE_ROUTE.DIRECT_REPLY,
+      reasonCode: `PRIVATE_SOCIAL_${social.kind}`,
+      reason: '社交性消息（问候/夸奖/道谢/发错/问身份）直接自然回应，无需查询业务知识库',
+      riskLevel: 'LOW', allowRag: false, allowAutoReply: true, replyText: socialText
     };
   }
   return { route: MESSAGE_ROUTE.RAG_QUERY, reasonCode: 'BUSINESS_QUESTION', reason: '正常业务咨询进入 RAG', riskLevel: 'LOW', allowRag: true, allowAutoReply: true };

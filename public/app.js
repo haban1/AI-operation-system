@@ -81,10 +81,10 @@ const STATUS_LABELS = Object.freeze({
   // 回复、采集与消息处理
   AUTO_REPLY:'高可信自动回复', SMALL_TALK:'闲聊回复', CASUAL_CHAT:'闲聊消息',
   AUTO_REPLIED:'已自动回复', REPLY_QUEUED:'待发送', REPLY_RUNNING:'发送中',
-  HANDOFF_PENDING:'转人工通知中', HUMAN_MANAGED:'已转人工', NOT_CONFIGURED:'未配置回调', RETRY_WAIT:'等待重试', SENDING:'发送中',
+  HANDOFF_PENDING:'转人工通知中', HUMAN_MANAGED:'已转人工', OPERATOR_TAKEOVER:'运营接管', IDLE_TIMEOUT:'闲置自动交还', OPERATOR_RELEASE:'运营交还 AI', NOT_CONFIGURED:'未配置回调', RETRY_WAIT:'等待重试', SENDING:'发送中',
   ACCEPTED:'已接收', IGNORED_HANDOFF_COMPLETED:'已转人工，停止采集', BOT_ACTIVE:'AI 服务中',
   SIMPLE_GREETING:'简单问候', ROUTER_IGNORED:'路由忽略',
-  RAG_ANSWERED:'知识库已回复', RAG_KNOWLEDGE_GAP:'知识证据不足', RAG_NEED_CLARIFICATION:'需要补充信息', RAG_CLARIFICATION_LIMIT:'引导已达上限，转人工', KNOWLEDGE_GUIDANCE_LIMIT:'引导已达上限，转人工', RAG_SERVICE_UNAVAILABLE:'知识服务不可用',
+  RAG_ANSWERED:'知识库已回复', RAG_KNOWLEDGE_GAP:'知识证据不足', RAG_RELATED_CLARIFICATION:'低置信度，确认方向', RAG_OUT_OF_SCOPE:'无关问题，礼貌拒答', PRIVATE_HANDOFF_DECLINED:'用户暂不需要人工', RAG_NEED_CLARIFICATION:'需要补充信息', RAG_CLARIFICATION_LIMIT:'引导已达上限，转人工', KNOWLEDGE_GUIDANCE_LIMIT:'引导已达上限，转人工', RAG_SERVICE_UNAVAILABLE:'知识服务不可用',
   HUMAN_HANDOFF:'转人工', HUMAN_FOLLOWUP_NOTIFIED:'已通知历史对接人工', HUMAN_FOLLOWUP_NOTIFICATION_PENDING:'历史人工通知中',
   REPLIED:'已回复', NOT_REPLIED:'未回复', MANUAL_REPLY:'人工回复',
   KNOWLEDGE_GAP:'知识不足', MANUAL_REQUIRED:'需人工处理', MANUAL_HANDLED:'人工已处理', PLATFORM_REPLY_DETECTED:'平台已有回复',
@@ -1923,7 +1923,73 @@ function messageSourceBadge(m){const simulated=m.context?.simulated===true||Stri
 function replyStatusChip(kind,status={}){const ai=kind==='ai';const stateName=status.state||'NOT_REPLIED';const label=ai?({REPLIED:'AI已回复',QUEUED:'AI待发送',SENDING:'AI发送中',PROCESSING:'AI处理中',FAILED:'AI回复失败',NOT_REPLIED:'AI未回复'}[stateName]||'AI未回复'):({REPLIED:'人工已回复',QUEUED:'人工待发送',SENDING:'人工发送中',PROCESSING:'人工处理中',FAILED:'人工回复失败',PENDING:'待人工回复',NOT_REPLIED:'人工未回复'}[stateName]||'人工未回复');return `<span class="reply-status-chip ${ai?'ai':'manual'} ${String(stateName).toLowerCase()}"><i></i>${label}</span>`}
 function messageReplyBadges(m){return m.reply_status?.platform?.replied?'<span class="reply-status-chip platform detected"><i></i>平台已有回复</span>':`${replyStatusChip('ai',m.reply_status?.ai)}${replyStatusChip('manual',m.reply_status?.manual)}${badge(m.status)}`}
 function hasPreciseWeiboReplySource(m){const c=m.context||{};if(m.platform_code!=='weibo'||c.historical===true||c.sourceVerified!==true)return false;if(m.message_type==='COMMENT')return Boolean(String(c.commentId||'').trim());if(m.message_type==='PRIVATE_MESSAGE')return c.previewOnly!==true&&Boolean(String(c.messageId||'').trim())&&String(c.direction||'').toLowerCase()==='incoming'&&c.chatTitleVerified===true;return false}
-function messageActions(m){const simulated=m.context?.simulated===true||String(m.external_id||'').startsWith('mvp-');const ignored=['IGNORED_SELF','IGNORED_OFFICIAL'].includes(m.status);const official=m.context?.officialSource===true||m.status==='IGNORED_OFFICIAL';const pendingManual=['MANUAL_REQUIRED','KNOWLEDGE_GAP'].includes(m.status)&&!m.handled_at;const manualProcessing=m.reply_status?.manual?.state==='PROCESSING'||['REPLY_QUEUED','REPLY_RUNNING'].includes(m.status);const canManualReply=pendingManual&&!simulated&&!official&&!manualProcessing&&hasPreciseWeiboReplySource(m);const deleteBlocked=m.status==='REPLY_RUNNING';return `<div class="section-actions">${m.external_url?`<button class="btn secondary open-message" data-url="${esc(m.external_url)}">打开原消息</button>`:''}${canManualReply?`<button class="btn manual-reply" data-id="${m.id}">人工回复</button>`:''}${pendingManual&&!simulated?`<button class="btn secondary detect-manual" data-id="${m.id}">检测App人工回复</button>`:''}${!m.handled_at&&!ignored?`<button class="btn secondary mark-handled" data-id="${m.id}">人工已处理</button>`:''}${pendingManual?`<button class="btn secondary retry-message" data-id="${m.id}">重新判断</button>`:''}<button class="btn secondary delete-message" data-id="${m.id}" ${deleteBlocked?'disabled title="回复正在发送中，完成后才能删除"':''}>删除</button></div>`}
+function messageActions(m){const simulated=m.context?.simulated===true||String(m.external_id||'').startsWith('mvp-');const ignored=['IGNORED_SELF','IGNORED_OFFICIAL'].includes(m.status);const official=m.context?.officialSource===true||m.status==='IGNORED_OFFICIAL';const pendingManual=['MANUAL_REQUIRED','KNOWLEDGE_GAP'].includes(m.status)&&!m.handled_at;const manualProcessing=m.reply_status?.manual?.state==='PROCESSING'||['REPLY_QUEUED','REPLY_RUNNING'].includes(m.status);const canManualReply=pendingManual&&!simulated&&!official&&!manualProcessing&&(m.manual_reply_supported===true||hasPreciseWeiboReplySource(m));const deleteBlocked=m.status==='REPLY_RUNNING';return `<div class="section-actions">${conversationActions(m)}${m.external_url?`<button class="btn secondary open-message" data-url="${esc(m.external_url)}">打开原消息</button>`:''}${canManualReply?`<button class="btn manual-reply" data-id="${m.id}">人工回复</button>`:''}${pendingManual&&!simulated?`<button class="btn secondary detect-manual" data-id="${m.id}">检测App人工回复</button>`:''}${!m.handled_at&&!ignored?`<button class="btn secondary mark-handled" data-id="${m.id}">人工已处理</button>`:''}${pendingManual?`<button class="btn secondary retry-message" data-id="${m.id}">重新判断</button>`:''}<button class="btn secondary delete-message" data-id="${m.id}" ${deleteBlocked?'disabled title="回复正在发送中，完成后才能删除"':''}>删除</button></div>`}
+const CONVERSATION_MODE_LABEL={BOT_ACTIVE:'AI 服务中',HANDOFF_PENDING:'转人工通知中',HUMAN_MANAGED:'人工接待中'};
+function workspaceConversation(m){return m?.message_type==='PRIVATE_MESSAGE'&&m.conversation_id&&m.platform_code!=='mini_program'&&m.conversation_handling_mode}
+function conversationModeChip(m){if(!workspaceConversation(m))return '';const mode=m.conversation_handling_mode;return `<span class="conversation-mode-chip ${mode==='BOT_ACTIVE'?'is-bot':'is-human'}">${esc(CONVERSATION_MODE_LABEL[mode]||mode)}</span>`}
+function conversationActions(m){if(!workspaceConversation(m))return '';const human=m.conversation_handling_mode!=='BOT_ACTIVE';return `<button class="btn secondary open-workspace" data-conversation-id="${m.conversation_id}">接待面板</button>${human?`<button class="btn secondary release-conversation" data-conversation-id="${m.conversation_id}">交还 AI</button>`:`<button class="btn secondary takeover-conversation" data-conversation-id="${m.conversation_id}">接管会话</button>`}`}
+const HANDOFF_ACK_LABEL={QUEUED:'回执排队中',RUNNING:'回执发送中',SUCCESS:'已给用户发送转人工回执',PARTIAL_SUCCESS:'已给用户发送转人工回执'};
+async function takeOverConversationAction(conversationId){
+  const confirmed=await uiConfirm('接管后，这个会话的新消息不再由 AI 自动回复，排队中的 AI 回复会被取消，直到你点“交还 AI”或会话闲置超时。',{title:'接管会话',confirmLabel:'接管'});
+  if(!confirmed)return null;
+  const d=await api(`/api/conversations/${conversationId}/takeover`,{method:'POST',body:JSON.stringify({})});
+  toast(d.cancelled?.jobs?`已接管，取消了 ${d.cancelled.jobs} 条排队中的 AI 回复`:'已接管该会话');
+  return d.workspace;
+}
+async function releaseConversationAction(conversationId){
+  const confirmed=await uiConfirm('交还后，该用户的新消息重新由 AI 回复。已在待人工列表里的旧消息保持不变，请处理完或标记“人工已处理”。',{title:'交还 AI',confirmLabel:'交还 AI'});
+  if(!confirmed)return null;
+  const d=await api(`/api/conversations/${conversationId}/release`,{method:'POST',body:JSON.stringify({})});
+  toast('已交还 AI，新消息将由 AI 回复');
+  return d.workspace;
+}
+function handoffWorkspaceHtml(w,{draft=null,busy=''}={}){
+  const c=w.conversation||{};const human=c.handlingMode!=='BOT_ACTIVE';
+  const ack=w.handoffAck?`<div class="workspace-fact"><span>转人工回执</span><b>${esc(HANDOFF_ACK_LABEL[w.handoffAck.status]||'回执未发送成功')}</b></div>`:'';
+  const idle=c.idleReleaseAt?`<div class="workspace-fact"><span>闲置自动交还</span><b>${esc(fmt(c.idleReleaseAt))}</b></div>`:'';
+  const questions=(w.unresolvedQuestions||[]).length?`<div class="workspace-questions"><span>用户没得到答复的问题</span>${w.unresolvedQuestions.map(q=>`<p>${esc(q)}</p>`).join('')}</div>`:'';
+  const transcript=(w.messages||[]).map(item=>`<div class="workspace-turn"><div class="workspace-bubble user"><small>用户 · ${esc(fmt(item.createdAt))}</small><p>${esc(item.content)}</p></div>${item.reply?`<div class="workspace-bubble ${item.reply.by==='HUMAN'?'human':'ai'}"><small>${item.reply.by==='HUMAN'?'人工':'AI'}${item.reply.delivered?'':' · 发送中'}</small><p>${esc(item.reply.text)}</p></div>`:(item.id===w.pendingMessageId?'<div class="workspace-pending">待人工回复</div>':'')}</div>`).join('')||'<div class="empty">该会话暂无消息</div>';
+  const draftNote=draft?(draft.grounded?`<small class="workspace-draft-note">已根据知识库生成草稿${draft.sources?.length?`（来源：${esc(draft.sources.join('、'))}）`:''}，请确认后再发送。</small>`:`<small class="workspace-draft-note warn">${esc(draft.note||'知识库没有可靠答案')}${draft.topics?.length?` 可能相关：${esc(draft.topics.join('、'))}`:''}</small>`):'';
+  return `<div class="confirm-dialog handoff-workspace-dialog" role="dialog" aria-modal="true" aria-labelledby="handoffWorkspaceTitle">
+    <div class="workspace-head"><div><h3 id="handoffWorkspaceTitle">${esc(c.userName||'未知用户')} · ${esc(c.platformName||'')}</h3><p>${esc(CONVERSATION_MODE_LABEL[c.handlingMode]||c.handlingMode||'')}${c.takenOverBy?` · ${esc(c.takenOverBy)} 接管`:''}</p></div><button class="knowledge-edit-close workspace-close" type="button" aria-label="关闭">×</button></div>
+    <div class="workspace-facts">${c.handoffReason&&human?`<div class="workspace-fact"><span>转人工原因</span><b>${esc(STATUS_LABELS[c.handoffReason]||c.handoffReason)}</b></div>`:''}${ack}${idle}</div>
+    ${questions}
+    <div class="workspace-transcript">${transcript}</div>
+    <div class="workspace-compose">
+      <textarea class="ui-dialog-input workspace-reply" rows="3" placeholder="${w.pendingMessageId?'输入回复，发送给该用户最新一条待处理消息':'当前没有待人工回复的消息'}" ${w.pendingMessageId?'':'disabled'}>${esc(draft?.draft||'')}</textarea>
+      ${draftNote}
+      <div class="confirm-actions"><button class="btn secondary workspace-draft" type="button" ${busy?'disabled':''}>${busy==='draft'?'生成中…':'知识库草稿'}</button>${human?'<button class="btn secondary workspace-release" type="button">交还 AI</button>':'<button class="btn secondary workspace-takeover" type="button">接管会话</button>'}<button class="btn workspace-send" type="button" ${w.pendingMessageId&&!busy?'':'disabled'}>${busy==='send'?'提交中…':'发送回复'}</button></div>
+      <small class="workspace-hint">发送后同一会话更早的待处理消息会一并标记为已处理。草稿不会自动发送。</small>
+    </div></div>`;
+}
+async function openHandoffWorkspace(conversationId){
+  let workspace;
+  try{workspace=(await api(`/api/conversations/${conversationId}/workspace`)).workspace}catch(e){return toast(e.message,true)}
+  const overlay=document.createElement('div');overlay.className='confirm-overlay handoff-workspace-overlay';
+  let draft=null;let changed=false;
+  const close=()=>{document.removeEventListener('keydown',onKey);overlay.remove();if(changed)renderMessages()};
+  const onKey=event=>{if(event.key==='Escape')close()};
+  const paint=(busy='')=>{
+    const typed=overlay.querySelector('.workspace-reply')?.value;
+    overlay.innerHTML=handoffWorkspaceHtml(workspace,{draft,busy});
+    const box=overlay.querySelector('.workspace-reply');if(typed!==undefined&&box&&!box.disabled&&!draft?.fresh)box.value=typed;if(draft)draft.fresh=false;
+    overlay.querySelector('.workspace-transcript')?.scrollTo?.(0,1e9);
+    overlay.querySelector('.workspace-close').onclick=close;
+    overlay.querySelector('.workspace-draft').onclick=async()=>{paint('draft');try{draft={...(await api(`/api/conversations/${conversationId}/draft`,{method:'POST',body:'{}'})).draft,fresh:true}}catch(e){toast(e.message,true)}paint()};
+    overlay.querySelector('.workspace-send').onclick=async()=>{
+      const text=overlay.querySelector('.workspace-reply').value.trim().normalize('NFC');
+      if(!text)return toast('人工回复不能为空',true);
+      paint('send');
+      try{const d=await api(`/api/conversations/${conversationId}/reply`,{method:'POST',body:JSON.stringify({replyText:text,handledBy:'运营人员'})});workspace=d.workspace;draft=null;changed=true;overlay.querySelector('.workspace-reply')&&(overlay.querySelector('.workspace-reply').value='');toast(`人工回复任务 Job#${d.jobId} 已创建，系统将定位原消息并核验发送回执`)}catch(e){toast(e.message,true)}
+      paint();
+    };
+    const takeover=overlay.querySelector('.workspace-takeover');if(takeover)takeover.onclick=async()=>{try{const w=await takeOverConversationAction(conversationId);if(w){workspace=w;changed=true;paint()}}catch(e){toast(e.message,true)}};
+    const release=overlay.querySelector('.workspace-release');if(release)release.onclick=async()=>{try{const w=await releaseConversationAction(conversationId);if(w){workspace=w;changed=true;paint()}}catch(e){toast(e.message,true)}};
+  };
+  document.body.appendChild(overlay);document.addEventListener('keydown',onKey);
+  overlay.onclick=event=>{if(event.target===overlay)close()};
+  paint();
+}
 function aiTimeoutNoticeStatus(m){
   return ({SENT:'已通知人工',PENDING:'正在通知人工',FAILED:'人工通知发送失败',SIMULATED:'未配置企微，仅在 Web 记录'}[String(m.wecom_notification_status||'').toUpperCase()]||'等待通知人工');
 }
@@ -1933,7 +1999,7 @@ function aiTimeoutAlert(m){
 }
 function messageDecisionDetail(m){const platformReply=m.reply_status?.platform?.replied;const platformNote='已检测到平台回复，发送方式未确认；为避免重复，未再次发送。';return `${aiTimeoutAlert(m)}<div class="message-decision-detail"><span>处理结果：${esc(platformReply?'平台已有回复':statusName(m.decision||m.status))}</span><span>置信度：${m.confidence??'—'}</span><span>知识：${m.knowledge_id?'#'+m.knowledge_id:'—'}</span>${m.reason?`<span class="wide">原因：${esc(platformReply?platformNote:m.decision==='AI_REPLY_TIMEOUT'?'AI回复超时':statusName(m.reason))}</span>`:''}${m.reply_text?`<span class="wide">${platformReply?'平台回复内容':'AI回复内容'}：${esc(m.reply_text)}</span>`:''}${m.handler_note?`<span class="wide">${platformReply?'同步记录':'人工处理记录'}：${esc(platformReply?platformNote:m.handler_note)}</span>`:''}</div>`}
 function commentMessageCard(m){return `<article class="interaction-card comment-item" data-refresh-key="message:${m.id}"><div class="interaction-head"><div><span class="user-avatar">${esc(String(m.user_name||'?').trim().slice(0,1)||'?')}</span><b>${esc(cleanText(m.user_name)||'未知用户')}</b></div><time>${fmt(m.collected_at||m.created_at)}</time></div><div class="message-content"><span class="content-label">评论内容</span><p>${esc(m.content)}</p></div><div class="reply-status-row">${replyStatusChip('ai',m.reply_status?.ai)}${replyStatusChip('manual',m.reply_status?.manual)}${badge(m.status)}${messageSourceBadge(m)}</div>${messageDecisionDetail(m)}${messageActions(m)}</article>`}
-function privateMessageCard(m){return `<article class="interaction-card private-item" data-refresh-key="message:${m.id}"><div class="interaction-head"><div><span class="user-avatar private">${esc(String(m.user_name||'?').trim().slice(0,1)||'?')}</span><span><b>${esc(cleanText(m.user_name)||'未知用户')}</b><small>${esc(m.ui_account_label)}</small></span></div><time>${fmt(m.collected_at||m.created_at)}</time></div><div class="message-content private-content"><span class="content-label">私信内容</span><p>${esc(m.content)}</p></div><div class="reply-status-row">${messageReplyBadges(m)}${messageSourceBadge(m)}</div>${messageDecisionDetail(m)}${messageActions(m)}</article>`}
+function privateMessageCard(m){return `<article class="interaction-card private-item" data-refresh-key="message:${m.id}"><div class="interaction-head"><div><span class="user-avatar private">${esc(String(m.user_name||'?').trim().slice(0,1)||'?')}</span><span><b>${esc(cleanText(m.user_name)||'未知用户')}</b><small>${esc(m.ui_account_label)}</small></span></div><time>${fmt(m.collected_at||m.created_at)}</time></div><div class="message-content private-content"><span class="content-label">私信内容</span><p>${esc(m.content)}</p></div><div class="reply-status-row">${conversationModeChip(m)}${messageReplyBadges(m)}${messageSourceBadge(m)}</div>${messageDecisionDetail(m)}${messageActions(m)}</article>`}
 function commentPostPublishedTimestamp(value){
   if(value===null||value===undefined||String(value).trim()==='')return null;
   const text=String(value).trim().replace(/^(?:发布于|发布时间[：:]?)\s*/,'');
@@ -2120,7 +2186,7 @@ const miniProgramStatusLabels=Object.freeze({
   callback:Object.freeze({PENDING:'等待发送',SENDING:'发送中',RETRY_WAIT:'等待重试',NOT_CONFIGURED:'未配置回调',FAILED:'发送失败',SENT:'已发送',CANCELLED:'已取消',UNKNOWN:'未知状态'}),
   notification:Object.freeze({PENDING:'等待通知',SENDING:'通知中',RETRY_WAIT:'等待重试',FAILED:'通知失败',SENT:'已通知',CONFIRMED:'已确认',UNKNOWN:'未知状态'}),
   message:Object.freeze({NEW:'新消息',REPLY_QUEUED:'待发送',REPLY_RUNNING:'发送中',AUTO_REPLIED:'已自动回复',MANUAL_REQUIRED:'需人工处理',MANUAL_HANDLED:'人工已处理',CLOSED:'已关闭',SUPERSEDED:'已被新消息替代',UNKNOWN:'未知状态'}),
-  decision:Object.freeze({AUTO_REPLY:'高可信自动回复',AUTO_REPLY_PARTIAL_KNOWLEDGE:'部分问题已回复，仍有问题待确认',SMALL_TALK:'闲聊回复',GREETING_GUIDANCE:'问候引导',KNOWLEDGE_GAP_GUIDANCE:'知识库未命中，正在引导用户补充',SIMPLE_GREETING:'简单问候',ROUTER_IGNORED:'路由忽略',AUTO_REPLY_INELIGIBLE:'不满足自动回复条件',SUPERSEDED_BY_NEW_MESSAGE:'新消息已到达，旧回复已作废',RAG_ANSWERED:'知识库已回复',RAG_KNOWLEDGE_GAP:'知识证据不足', RAG_NEED_CLARIFICATION:'需要补充信息',RAG_CLARIFICATION_LIMIT:'引导已达上限，转人工',KNOWLEDGE_GUIDANCE_LIMIT:'引导已达上限，转人工',RAG_SERVICE_UNAVAILABLE:'知识服务不可用',HUMAN_HANDOFF:'转人工',HUMAN_FOLLOWUP_NOTIFIED:'已通知历史对接人工',HUMAN_FOLLOWUP_NOTIFICATION_PENDING:'历史人工通知中',MANUAL_HANDLED:'人工已处理',UNKNOWN:'未知状态'})
+  decision:Object.freeze({AUTO_REPLY:'高可信自动回复',AUTO_REPLY_PARTIAL_KNOWLEDGE:'部分问题已回复，仍有问题待确认',SMALL_TALK:'闲聊回复',GREETING_GUIDANCE:'问候引导',KNOWLEDGE_GAP_GUIDANCE:'知识库未命中，正在引导用户补充',SIMPLE_GREETING:'简单问候',ROUTER_IGNORED:'路由忽略',AUTO_REPLY_INELIGIBLE:'不满足自动回复条件',SUPERSEDED_BY_NEW_MESSAGE:'新消息已到达，旧回复已作废',RAG_ANSWERED:'知识库已回复',RAG_KNOWLEDGE_GAP:'知识证据不足', RAG_RELATED_CLARIFICATION:'低置信度，确认方向', RAG_OUT_OF_SCOPE:'无关问题，礼貌拒答', PRIVATE_HANDOFF_DECLINED:'用户暂不需要人工', RAG_NEED_CLARIFICATION:'需要补充信息',RAG_CLARIFICATION_LIMIT:'引导已达上限，转人工',KNOWLEDGE_GUIDANCE_LIMIT:'引导已达上限，转人工',RAG_SERVICE_UNAVAILABLE:'知识服务不可用',HUMAN_HANDOFF:'转人工',HUMAN_FOLLOWUP_NOTIFIED:'已通知历史对接人工',HUMAN_FOLLOWUP_NOTIFICATION_PENDING:'历史人工通知中',MANUAL_HANDLED:'人工已处理',UNKNOWN:'未知状态'})
 });
 function miniProgramStatusMeta(value,kind='message'){
   const labels=miniProgramStatusLabels[kind]||miniProgramStatusLabels.message;
@@ -2545,11 +2611,14 @@ async function renderMessages(prefetchedData=null,{background=false}={}){
     toast('已标记人工处理，自动回复任务已禁止补发');
     renderMessages();
   });
+  document.querySelectorAll('.open-workspace').forEach(b=>b.onclick=()=>openHandoffWorkspace(b.dataset.conversationId));
+  document.querySelectorAll('.takeover-conversation').forEach(b=>b.onclick=async()=>{try{if(await takeOverConversationAction(b.dataset.conversationId))await renderMessages()}catch(e){toast(e.message,true)}});
+  document.querySelectorAll('.release-conversation').forEach(b=>b.onclick=async()=>{try{if(await releaseConversationAction(b.dataset.conversationId))await renderMessages()}catch(e){toast(e.message,true)}});
   document.querySelectorAll('.manual-reply').forEach(b=>b.onclick=async()=>{
     const message=messages.find(item=>Number(item.id)===Number(b.dataset.id));
     const policy=data.replyLimits?.[message?.platform_code]?.[message?.message_type];
     const limit=policy?.safeMax;
-    const replyText=await uiPrompt('回复内容','',{title:'人工回复',message:'输入要发送到微博的完整回复，提交后由系统代为发送。',maxLength:limit||0,required:true,confirmLabel:'发送回复'});
+    const replyText=await uiPrompt('回复内容','',{title:'人工回复',message:`输入要发送到${message?.platform_name||'原平台'}的完整回复，提交后由系统代为发送并核验回执。`,maxLength:limit||0,required:true,confirmLabel:'发送回复'});
     if(replyText===null)return;
     const normalized=replyText.trim().normalize('NFC');
     if(!normalized)return toast('人工回复不能为空',true);
@@ -2559,7 +2628,7 @@ async function renderMessages(prefetchedData=null,{background=false}={}){
     b.disabled=true;b.textContent='提交中…';
     try{
       const d=await api(`/api/messages/${b.dataset.id}/manual-reply`,{method:'POST',body:JSON.stringify({replyText:normalized,handledBy:'运营人员'})});
-      toast(`微博人工回复任务 Job#${d.jobId} 已创建，系统将精确定位并核验发送回执`);
+      toast(`人工回复任务 Job#${d.jobId} 已创建，系统将精确定位并核验发送回执`);
       await renderMessages();
     }catch(e){toast(e.message,true);b.disabled=false;b.textContent=originalText}
   });

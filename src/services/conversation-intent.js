@@ -1,12 +1,22 @@
 import { BUSINESS_GUIDANCE_MAX_ATTEMPTS } from './conversation-policy.js';
+import { withoutIdentityClauses } from './social-reply.js';
 export { BUSINESS_GUIDANCE_MAX_ATTEMPTS };
 
 const GREETING_TOKEN = /^(?:你好|您好|你好呀|您好呀|哈喽|嗨|hi|hello|在吗|在不在|有人吗|有人在吗|请问在吗|客服在吗|工作人员在吗|早上好|上午好|中午好|下午好|晚上好|早安|晚安)(?:啊|呀|啦|哟|哦|喔|诶|欸|嘛|哈|呢|呐|咯)*[!！。,.，？?～~\s]*$/i;
 const LEADING_GREETING = /^(?:(?:你好呀|您好呀|你好|您好|哈喽|嗨|hi|hello|在吗|在不在|有人吗|有人在吗|请问在吗|客服在吗|工作人员在吗|早上好|上午好|中午好|下午好|晚上好|早安|晚安)(?:啊|呀|啦|哟|哦|喔|诶|欸|嘛|哈|呢|呐|咯)*[!！。,.，？?～~\s]*)+/i;
-const HANDOFF_MENTION = '(?:转(?:接|到)?(?:一下|个|一个|一位)?(?:人工|真人|客服)|找(?:一下|个|一个|一位)?(?:人工|客服|工作人员|真人)|接(?:一下|个|一个|一位)?(?:人工|客服|工作人员|真人)|联系(?:一下|个|一个|一位)?(?:人工|客服|工作人员|真人)|人工处理|人工回复|客服处理|真人回复)';
-const NEGATED_HANDOFF = new RegExp(`(?:不想|不要|不用|无需|别|不需要|暂时不|先不|取消).{0,8}${HANDOFF_MENTION}`);
-const QUOTED_HANDOFF = new RegExp(`(?:输入|说|提示|写着|刚才|你说).{0,12}[“"']?${HANDOFF_MENTION}[”"']?`);
-const QUESTION_HANDOFF = new RegExp(`(?:是不是|是否|要不要|需要吗|可以吗|能不能).{0,10}${HANDOFF_MENTION}|${HANDOFF_MENTION}.{0,8}(?:吗|呢|么)(?:[?？])?$`);
+const HANDOFF_MENTION = '(?:转(?:接|到)?(?:一下|个|一个|一位)?(?:人工|真人|客服|工作人员)|找(?:一下|个|一个|一位)?(?:人工|客服|工作人员|真人)|接(?:一下|个|一个|一位)?(?:人工|客服|工作人员|真人)|联系(?:一下|个|一个|一位)?(?:人工|客服|工作人员|真人)|(?:人工|真人)客服|人工处理|人工回复|客服处理|真人回复)';
+const NEGATED_HANDOFF = new RegExp(`(?:不想|不要|不用|无需|别|不需要|暂时不|先不|取消|没必要).{0,8}${HANDOFF_MENTION}`);
+// 只排除真正的引用（“你刚才说「转人工」”“让我输入转人工”），不再因为句子里出现“说”“刚才”就忽略用户的转人工请求。
+const QUOTED_HANDOFF = new RegExp(`(?:输入|提示|写着|(?:你|您)(?:刚才|刚刚)?(?:说|讲)|让我(?:输入|回复?|发)?)[^，。！？,.!?]{0,4}[“"'「『]?${HANDOFF_MENTION}`);
+// “是不是需要转人工”这类在问要不要转，不是请求；“可以帮我转人工吗”是礼貌的请求，按请求处理。
+const QUESTION_HANDOFF = new RegExp(`(?:是不是|是否|要不要|需不需要|用不用|有没有必要|会不会|为什么|为啥|干嘛).{0,10}${HANDOFF_MENTION}|${HANDOFF_MENTION}.{0,4}(?:是什么|什么意思|啥意思|是啥|怎么用|怎么操作|有什么用)`);
+const EMBEDDED_HANDOFF = new RegExp(HANDOFF_MENTION);
+const TRADITIONAL_HANDOFF_CHARS = Object.freeze({ 轉: '转', 幫: '帮', 請: '请', 給: '给', 個: '个', 員: '员', 聯: '联', 繫: '系', 嗎: '吗', 麼: '么', 這: '这', 們: '们', 處: '处', 話: '话', 對: '对', 專: '专', 問: '问', 題: '题', 煩: '烦', 謝: '谢', 該: '该', 須: '须', 覆: '复', 復: '复', 搵: '找' });
+
+/** 转人工识别前的轻量归一：繁体常用字、粤语“搵”、常见错别字“人公”。只用于识别，不改写用户原文。 */
+export function normalizeHandoffText(value = '') {
+  return String(value || '').normalize('NFKC').replace(/[轉幫請給個員聯繫嗎麼這們處話對專問題煩謝該須覆復搵]/gu, char => TRADITIONAL_HANDOFF_CHARS[char] || char).replace(/人公/gu, '人工');
+}
 
 const SMALL_TALK_BUSINESS_SIGNAL = /(?:活动|报名|收费|费用|价格|多少钱|地址|地点|时间|几点|什么时候|电话|联系方式|材料|证件|资格|条件|政策|规定|流程|办理|退款|取消|修改|账号|账户|登录|密码|支付|支付宝|微信|银行卡|视频|帖子|评论|私信|转载|授权|发布|审核|社区|志愿者|孩子|小孩|儿童|办公|营业|开放|预约|名额|发票|合同|投诉|售后|订单|物流)/i;
 const SMALL_TALK_REALTIME_OR_FACT = /(?:天气|气温|股票|汇率|新闻|热搜|比赛|比分|今天几号|现在几点|总统|市长|政策最新)/i;
@@ -28,9 +38,9 @@ export function normalizeConversationText(value = '') {
 }
 
 export function normalizeManualHandoffPhrase(value = '') {
-  return normalizeConversationText(value)
+  return normalizeHandoffText(normalizeConversationText(value))
     .toLocaleLowerCase('zh-CN')
-    .replace(/[\s，,。.!！?？、；;:：~～“”"'‘’（）()【】\[\]]+/gu, '');
+    .replace(/[\s，,。.!！?？、；;:：~～“”"'‘’（）()【】\[\]「」『』]+/gu, '');
 }
 
 export function detectGreetingIntent(value = '') {
@@ -140,14 +150,21 @@ export function detectManualHandoffCommand(value = '', options = {}) {
     return Boolean(candidate) && normalizeManualHandoffPhrase(candidate) === compact;
   });
   if (customMatched) return { matched: true, command: '转人工', reason: 'EXPLICIT_CUSTOM_HANDOFF_PHRASE' };
-  if (NEGATED_HANDOFF.test(text) || QUOTED_HANDOFF.test(text) || QUESTION_HANDOFF.test(text)) {
+  // 英文私信：回复话术里请用户回 "human"，这里也要认得出来。
+  if (/^(?:human|agent|real person|live agent|(?:please )?(?:transfer|connect) me to (?:a )?(?:human|agent|real person|colleague|someone))[.!\s]*(?:please)?[.!\s]*$/iu.test(text)) return { matched: true, command: '转人工', reason: 'EXPLICIT_HANDOFF_COMMAND' };
+  if (!/\b(?:no|not|don't|dont|no need)\b/iu.test(text) && /\b(?:talk|speak|chat) (?:to|with) (?:a )?(?:human|real person|live agent|colleague)\b|\btransfer (?:me )?to (?:a )?(?:human|agent)\b/iu.test(text)) return { matched: true, command: '转人工', reason: 'EMBEDDED_HANDOFF_REQUEST' };
+  const readable = normalizeHandoffText(text);
+  if (NEGATED_HANDOFF.test(readable) || QUOTED_HANDOFF.test(readable) || QUESTION_HANDOFF.test(readable)) {
     return { matched: false, command: null, reason: 'NOT_EXPLICIT_HANDOFF' };
   }
   const politePrefix = '(?:(?:那|那就|那麻烦|好的|好吧|行吧|行|可以|你|请|麻烦|帮我|请帮我|我要|我想|需要|给我|替我)){0,4}';
   const handoffAction = '(?:转(?:接|到)?(?:一下|个|一个|一位)?(?:人工|真人|客服)(?:处理|回复|服务)?|找(?:一下|个|一个|一位)?(?:人工|客服|工作人员|真人)|接(?:一下|个|一个|一位)?(?:人工|客服|工作人员|真人)|联系(?:一下|个|一个|一位)?(?:人工|客服|工作人员|真人)|人工处理|人工回复|客服处理|真人回复)';
   const politeSuffix = '(?:吧|啊|呀|啦|谢谢|麻烦了)?';
-  const matched = new RegExp(`^${politePrefix}${handoffAction}${politeSuffix}$`).test(compact);
-  return { matched, command: matched ? '转人工' : null, reason: matched ? 'EXPLICIT_HANDOFF_COMMAND' : 'NOT_EXPLICIT_HANDOFF' };
+  if (new RegExp(`^${politePrefix}${handoffAction}${politeSuffix}$`).test(compact)) return { matched: true, command: '转人工', reason: 'EXPLICIT_HANDOFF_COMMAND' };
+  // 用户常把转人工写在一句话里（“好的那就麻烦给我转人工吧，我想问…”“轉人工，唔該”），同样是明确请求。
+  // “你是人工客服还是机器人”是在问身份，不是要转人工；去掉身份子句后再看有没有转人工的说法。
+  if (EMBEDDED_HANDOFF.test(normalizeHandoffText(withoutIdentityClauses(text)))) return { matched: true, command: '转人工', reason: 'EMBEDDED_HANDOFF_REQUEST' };
+  return { matched: false, command: null, reason: 'NOT_EXPLICIT_HANDOFF' };
 }
 
 export function isExplicitHumanRequest(value = '') {

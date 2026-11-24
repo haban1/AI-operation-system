@@ -480,7 +480,12 @@ function migrateSchema() {
     handoff_requested_at: 'TEXT',
     handoff_confirmed_at: 'TEXT',
     handoff_notification_id: 'INTEGER REFERENCES notifications(id)',
-    last_recovery_scan_at: 'TEXT'
+    last_recovery_scan_at: 'TEXT',
+    // 本次转人工发给用户的回执任务；交还 AI 后清空，下次转人工重新发送。
+    handoff_ack_job_id: 'INTEGER',
+    handoff_taken_over_by: 'TEXT',
+    handoff_released_at: 'TEXT',
+    handoff_release_reason: 'TEXT'
   };
   for (const [table, columns] of Object.entries(additions)) {
     for (const [name, definition] of Object.entries(columns)) ensureColumn(table, name, definition);

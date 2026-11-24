@@ -137,6 +137,17 @@ export const config = {
   ocrVideoFrameCount: Math.max(3, Math.min(5, numberEnv('OCR_VIDEO_FRAME_COUNT', 5))),
   autoReplyThreshold: numberEnv('AUTO_REPLY_THRESHOLD', 0.58),
   businessGuidanceMaxAttempts: Math.max(1, Math.min(20, numberEnv('BUSINESS_GUIDANCE_MAX_ATTEMPTS', BUSINESS_GUIDANCE_MAX_ATTEMPTS))),
+  // 人工会话期间同一会话的跟进消息，在该窗口内只通知一次企微；0 表示每条都通知。
+  handoffFollowupNotifyWindowMinutes: Math.max(0, Math.min(1440, numberEnv('HANDOFF_FOLLOWUP_NOTIFY_WINDOW_MINUTES', 10))),
+  // 转人工后给私信用户发一条回执；工作时间外追加说明，留空表示不区分工作时间。
+  handoffAckEnabled: booleanEnv('HANDOFF_ACK_ENABLED', true),
+  handoffServiceHours: process.env.HANDOFF_SERVICE_HOURS || '',
+  handoffServiceTimeZone: process.env.HANDOFF_SERVICE_TIME_ZONE || 'Asia/Shanghai',
+  // 人工会话闲置超过该小时数（无新来信、无人工处理）自动交还 AI；0 表示关闭。
+  handoffIdleReleaseHours: Math.max(0, Math.min(720, numberEnv('HANDOFF_IDLE_RELEASE_HOURS', 24))),
+  handoffIdleScanIntervalMs: Math.max(100, numberEnv('HANDOFF_IDLE_SCAN_INTERVAL_MS', 10 * 60_000)),
+  // 低于 RAG 作答门槛、但相关度达到该值的候选，即使字面不重合也会拿来确认方向。
+  ragRelatedMinScore: Math.max(0, Math.min(1, numberEnv('RAG_RELATED_MIN_SCORE', 0.25))),
   wecomWebhookUrl: process.env.WECOM_WEBHOOK_URL || '',
   rpaMode: process.env.RPA_MODE || 'simulated',
   ragBaseUrl,

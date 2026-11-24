@@ -10,7 +10,7 @@ import { config, ROOT } from './config.js';
 import { db, immediateTransaction, json, now, row, rows } from './db.js';
 import { miniProgramProcessingLockHeld, miniProgramProcessingTransaction, runWithMiniProgramProcessingClaim as run, safeMiniProgramProcessingError } from './services/mini-program-processing-context.js';
 import { searchKnowledge } from './services/knowledge.js';
-import { composeReply, selectKnowledgeForReply, testAiConnection } from './services/qwen.js';
+import { composeReply, detectChineseScript, selectKnowledgeForReply, testAiConnection } from './services/qwen.js';
 import { detectRisk, validateReply } from './services/decision.js';
 import { assessDouyinPrivatePreview } from './services/message-precision.js';
 import { isSameDouyinPrivateOccurrence } from './services/douyin-message-identity.js';
@@ -19,7 +19,8 @@ import { assessWeiboMessagePrecision } from './services/weibo-message-precision.
 import { assessWeiboConversationSource } from './services/weibo-message-source.js';
 import { hasReliableWeiboReplyEvidence } from './services/weibo-reply-evidence.js';
 import { archiveResolvedMessageNotifications, reconcileResolvedHandoffNotifications, countHandoffNotifications, listHandoffNotifications, notify, startNotificationOutboxWorker, stopNotificationOutboxWorker } from './services/notification.js';
-import { beginConversationHandoff, conversationAutomationDisabled, markHumanFollowupMessage } from './services/conversation-control.js';
+import { beginConversationHandoff, conversationAutomationDisabled, markHumanFollowupMessage, releaseConversationToBot, releaseIdleHandoffConversations, takeOverConversation } from './services/conversation-control.js';
+import { handoffAckText } from './services/handoff-ack.js';
 import { buildManualNotification, resolveRelatedNote } from './services/manual-notification.js';
 import { MINI_PROGRAM_PLATFORM_CODE, requestMiniProgramHandoff } from './services/mini-program-channel.js';
 import { proxyWechatAdmin } from './services/wechat-admin-proxy.js';
@@ -95,6 +96,9 @@ import { evaluateReply } from './services/reply-engine.js';
 import { MESSAGE_ROUTE, outerRouteReplyResult, routeIncomingMessage } from './services/message-router.js';
 import { RagClient } from './services/rag-client.js';
 import { buildFormalRagRequest, commentHandoffOfferResult, formalRagReplyResult, routeBusinessClarification, validateFormalRagResponseSnapshot } from './services/formal-rag-routing.js';
+import { handoffOfferResponse, questionAfterHandoffDecline, relatedTopics, resolveClarificationSelection } from './services/reply-composer.js';
+import { detectReplyLanguage } from './services/social-reply.js';
+import { CONVERSATION_HANDLING_MODE, isNotificationConfirmed, normalizeHandlingMode } from './services/operation-state.js';
 import { composeCommentHandoffOffer } from './services/comment-handoff-offer.js';
 import { commentHandoffConfirmation, findCommentHandoffOffer } from './services/comment-handoff-confirmation.js';
 import { enforceBusinessGuidanceLimit, nextBusinessGuidanceAttempt, businessGuidanceProgress } from './services/conversation-policy.js';
@@ -1665,9 +1669,11 @@ function getMessageChannelRuntimeStates() {
 
 function getMessages(accountId = null) {
   const messages = rows(`SELECT m.*, p.name AS platform_name, a.display_name AS account_name,
-      reply_job.status AS reply_job_status, reply_job.result AS reply_job_result
+      reply_job.status AS reply_job_status, reply_job.result AS reply_job_result,
+      conv.handling_mode AS conversation_handling_mode, conv.human_followup_state AS conversation_followup_state
     FROM messages m JOIN platforms p ON p.code=m.platform_code JOIN accounts a ON a.id=m.account_id
     LEFT JOIN agent_jobs reply_job ON reply_job.id=m.reply_job_id
+    LEFT JOIN conversations conv ON conv.id=m.conversation_id
     WHERE ${visibleInteractionMessagesSql}${accountId === null ? '' : ' AND m.account_id=?'}
     ORDER BY m.id DESC LIMIT 200`, ...(accountId === null ? [] : [accountId]));
   const candidateCache = new Map();
@@ -1702,6 +1708,9 @@ function getMessages(accountId = null) {
       wecom_notification_id: wecomNotificationId,
       context,
       post,
+      conversation_handling_mode: item.conversation_id ? normalizeHandlingMode(item.conversation_handling_mode, item.conversation_followup_state) : null,
+      // 前端据此决定是否展示“人工回复”：与 AI 自动回复同一套目标定位校验。
+      manual_reply_supported: !item.handled_at && ['MANUAL_REQUIRED', 'KNOWLEDGE_GAP'].includes(item.status) ? manualReplySupported(item, context) : false,
       reply_status: messageReplyStatus(item)
     };
   });
@@ -2198,6 +2207,208 @@ export async function queueStaticReply(message, replyText, { decision, reason, c
   return jobId;
 }
 
+function manualReplySupported(message, context = json(message?.context_json, {})) {
+  if (!message || message.platform_code === MINI_PROGRAM_PLATFORM_CODE || context.simulated) return false;
+  if (message.platform_code === 'weibo') return assessWeiboMessagePrecision({ platformCode: message.platform_code, messageType: message.message_type, context }).ok === true;
+  return assessMessageAutoReplyEligibility({
+    platformCode: message.platform_code, accountId: message.account_id, messageType: message.message_type,
+    externalId: message.external_id, externalUrl: message.external_url, sourceContent: message.content,
+    userName: message.user_name, messageContext: context
+  }, { phase: 'creation' }).allowed === true;
+}
+
+function latestPendingConversationMessage(conversationId) {
+  return row(`SELECT * FROM messages WHERE conversation_id=? AND deleted_at IS NULL AND handled_at IS NULL AND reply_job_id IS NULL
+    AND status IN ('MANUAL_REQUIRED','KNOWLEDGE_GAP') ORDER BY id DESC LIMIT 1`, Number(conversationId));
+}
+
+/** 人工接待面板：会话状态、转人工原因、用户原问题、最近对话和回执状态。只读。 */
+function conversationWorkspace(conversationId) {
+  const id = Number(conversationId);
+  const conversation = row(`SELECT c.*,p.name AS platform_name FROM conversations c LEFT JOIN platforms p ON p.code=c.platform_code WHERE c.id=?`, id);
+  if (!conversation) throw Object.assign(new Error('会话不存在'), { statusCode: 404 });
+  const handlingMode = normalizeHandlingMode(conversation.handling_mode, conversation.human_followup_state);
+  const messages = rows(`SELECT id,message_type,content,reply_text,status,decision,reason,handled_at,handled_by,handler_note,reply_job_id,created_at,collected_at
+    FROM messages WHERE conversation_id=? AND deleted_at IS NULL ORDER BY id DESC LIMIT 30`, id).reverse();
+  const pending = latestPendingConversationMessage(id);
+  const keys = [...new Set([conversation.namespace, ...rows('SELECT DISTINCT conversation_key_snapshot AS key FROM messages WHERE conversation_id=? AND conversation_key_snapshot IS NOT NULL', id).map(item => item.key)].filter(Boolean))];
+  const intent = keys.length ? row(`SELECT id,status,unresolved_questions_json,requested_at,created_at FROM manual_handoff_intents
+    WHERE conversation_key IN (${keys.map(() => '?').join(',')}) ORDER BY id DESC LIMIT 1`, ...keys) : null;
+  const ackJob = conversation.handoff_ack_job_id ? row('SELECT id,status,payload FROM agent_jobs WHERE id=?', conversation.handoff_ack_job_id) : null;
+  const lastActivity = [conversation.last_message_at, conversation.handoff_requested_at, conversation.handoff_confirmed_at, ...messages.map(item => item.handled_at)]
+    .filter(Boolean).sort().at(-1) || null;
+  const idleReleaseAt = handlingMode !== CONVERSATION_HANDLING_MODE.BOT_ACTIVE && config.handoffIdleReleaseHours > 0 && lastActivity
+    ? new Date(new Date(lastActivity).getTime() + config.handoffIdleReleaseHours * 3_600_000).toISOString() : null;
+  return {
+    conversation: {
+      id, platformCode: conversation.platform_code, platformName: conversation.platform_name || conversation.platform_code,
+      userName: conversation.user_name, messageType: conversation.message_type, handlingMode,
+      handoffReason: conversation.handoff_reason, handoffRequestedAt: conversation.handoff_requested_at,
+      takenOverBy: conversation.handoff_taken_over_by, releasedAt: conversation.handoff_released_at, releaseReason: conversation.handoff_release_reason,
+      idleReleaseAt, miniProgram: conversation.platform_code === MINI_PROGRAM_PLATFORM_CODE
+    },
+    unresolvedQuestions: intent && !['CLOSED_BY_RELEASE', 'DECLINED', 'RESOLVED_BY_KNOWLEDGE'].includes(intent.status) ? json(intent.unresolved_questions_json, []) : [],
+    handoffAck: ackJob ? { jobId: ackJob.id, status: ackJob.status, text: json(ackJob.payload, {}).replyText || '' } : null,
+    pendingMessageId: pending?.id || null,
+    messages: messages.map(item => ({
+      id: item.id, content: item.content, createdAt: item.collected_at || item.created_at, status: item.status, decision: item.decision,
+      reply: item.reply_text && ['AUTO_REPLIED', 'MANUAL_HANDLED', 'REPLY_QUEUED', 'REPLY_RUNNING'].includes(item.status)
+        ? { text: item.reply_text, by: item.decision === 'MANUAL_REPLY' || item.decision === 'MANUAL_HANDLED' ? 'HUMAN' : 'AI', delivered: ['AUTO_REPLIED', 'MANUAL_HANDLED'].includes(item.status) }
+        : null,
+      handledBy: item.handled_by, handlerNote: item.handler_note
+    }))
+  };
+}
+
+/**
+ * 给人工的回复草稿：用会话里最新的待处理问题走一次正式 RAG。有依据时给出草稿和来源；
+ * 没有时只给出可能相关的方向，由人工自己确认，草稿永远不会自动发送。
+ */
+async function conversationReplyDraft(conversationId) {
+  const id = Number(conversationId);
+  const conversation = row('SELECT * FROM conversations WHERE id=?', id);
+  if (!conversation) throw Object.assign(new Error('会话不存在'), { statusCode: 404 });
+  if (!formalRagClient.configured) throw Object.assign(new Error('知识问答服务未配置，无法生成草稿'), { statusCode: 409, code: 'RAG_NOT_CONFIGURED' });
+  const target = latestPendingConversationMessage(id)
+    || row(`SELECT * FROM messages WHERE conversation_id=? AND deleted_at IS NULL ORDER BY id DESC LIMIT 1`, id);
+  if (!target) throw Object.assign(new Error('该会话还没有消息'), { statusCode: 409 });
+  const request = buildFormalRagRequest({ message: target, conversation, recentMessages: recentConversationMessages(target) });
+  const response = await formalRagClient.queryFormalKnowledge(request);
+  const status = String(response?.status || response?.result || '').toUpperCase();
+  const text = String(response?.answer?.text || '').trim();
+  if (status === 'ANSWERED' && text) {
+    const references = response.grounding?.sourceReferences || response.sourceReferences || [];
+    return { grounded: true, messageId: target.id, question: target.content, draft: text,
+      sources: [...new Set(references.map(item => String(item.title || item.documentTitle || '').trim()).filter(Boolean))].slice(0, 5) };
+  }
+  return { grounded: false, messageId: target.id, question: target.content, draft: '',
+    topics: relatedTopics(response, { question: target.content, context: request.context, minScore: config.ragRelatedMinScore }).map(item => item.topic),
+    note: status === 'NO_ANSWER' ? '知识库没有可靠答案，请人工确认后回复。' : '知识问答服务暂时不可用，请人工回复。' };
+}
+
+function isHandoffAckPayload(payload) {
+  return payload?.auxiliaryKind === 'HANDOFF_ACK';
+}
+
+/**
+ * 转人工后给私信用户发一条回执。它是独立的“辅助回复”任务：不占用消息的 reply_job_id，
+ * 不改变消息的待人工状态；每次转人工只发一次，交还 AI 后清空，下次转人工再发。
+ */
+async function queueHandoffAck(message, { kind = 'REQUESTED' } = {}) {
+  if (!config.handoffAckEnabled || !message?.conversation_id) return null;
+  if (String(message.message_type || '').toUpperCase() !== 'PRIVATE_MESSAGE' || message.platform_code === MINI_PROGRAM_PLATFORM_CODE) return null;
+  const conversation = row('SELECT * FROM conversations WHERE id=?', message.conversation_id);
+  if (!conversation || conversation.handoff_ack_job_id || !conversationAutomationDisabled(conversation)) return null;
+  const messageContext = json(message.context_json, {});
+  const eligibility = assessMessageAutoReplyEligibility({
+    platformCode: message.platform_code, accountId: message.account_id, messageType: message.message_type,
+    externalId: message.external_id, externalUrl: message.external_url, sourceContent: message.content,
+    userName: message.user_name, messageContext
+  }, { phase: 'creation' });
+  if (!eligibility.allowed) return null;
+  const script = replyScriptFor(message.content);
+  const replyText = handoffAckText({ kind, script, serviceHours: config.handoffServiceHours, timeZone: config.handoffServiceTimeZone });
+  if (!validateReplyTextLength({ platformCode: message.platform_code, messageType: message.message_type, text: replyText }).ok) return null;
+  const account = row('SELECT * FROM accounts WHERE id=?', message.account_id);
+  if (!account) return null;
+  const jobId = createJob(account.device_id, 'REPLY', {
+    auxiliaryKind: 'HANDOFF_ACK', replyMode: 'HANDOFF_ACK', conversationId: Number(message.conversation_id), sourceMessageId: Number(message.id),
+    platformCode: message.platform_code, accountId: message.account_id, platformUserId: account.platform_user_id || null, profileName: account.profile_name,
+    externalId: message.external_id, externalUrl: message.external_url, sourceContent: message.content, userName: message.user_name,
+    messageType: message.message_type, channelType: message.message_type, queueLane: message.message_type,
+    conversationNamespace: message.conversation_key_snapshot || null, firstPendingAt: message.collected_at || message.created_at || now(),
+    messageContext, replyEligibility: eligibility, replyText
+  }, { idempotencyKey: `handoff-ack:conversation:${message.conversation_id}:${conversation.handoff_requested_at || message.id}` });
+  run('UPDATE conversations SET handoff_ack_job_id=?,updated_at=? WHERE id=? AND handoff_ack_job_id IS NULL', jobId, now(), message.conversation_id);
+  return jobId;
+}
+
+/**
+ * 网页端人工回复。微博沿用原有的精确定位校验；其他平台使用与 AI 自动回复相同的目标定位校验，
+ * 能安全自动回复的消息，才能由系统代发人工回复。返回 { status, message, code?, jobId?, data? }。
+ */
+function createManualReplyJob(messageId, { replyText: rawText, handledBy: rawHandledBy, coversEarlierPending = false } = {}) {
+  const id = Number(messageId);
+  const message = row(`SELECT m.*,a.device_id,a.profile_name,a.platform_user_id FROM messages m JOIN accounts a ON a.id=m.account_id WHERE m.id=?`, id);
+  if (!message) return { status: 404, message: '消息不存在' };
+  if (message.platform_code === MINI_PROGRAM_PLATFORM_CODE) return { status: 409, message: '小程序消息请使用专用管理接口', code: 'MINI_PROGRAM_DEDICATED_API_REQUIRED' };
+  if (message.handled_at || terminalMessageStatuses.has(message.status)) return { status: 409, message: '该消息已经处理完成' };
+  if (['REPLY_QUEUED','REPLY_RUNNING'].includes(message.status)) return { status: 409, message: '该消息已有回复任务执行中' };
+  const replyText = String(rawText || '').trim().normalize('NFC');
+  if (!replyText) return { status: 400, message: '人工回复不能为空' };
+  const replyLength = validateReplyTextLength({ platformCode: message.platform_code, messageType: message.message_type, text: replyText });
+  if (!replyLength.ok) return { status: 400, message: replyLength.message, data: { characterCount: replyLength.count, characterLimit: replyLength.limit } };
+  const messageContext = json(message.context_json, {});
+  if (messageContext.simulated) return { status: 409, message: '模拟消息不能发送到真实平台' };
+  let replyEligibility = null;
+  if (message.platform_code === 'weibo') {
+    const sourceAssessment = assessStoredWeiboSource(message, messageContext);
+    if (sourceAssessment?.isOfficial === true && sourceAssessment.confidence === 'HIGH') return { status: 409, message: '微博官方或系统会话已被排除，不允许回复' };
+    const precision = assessWeiboMessagePrecision({ platformCode: message.platform_code, messageType: message.message_type, context: messageContext });
+    if (!precision.ok) return { status: 409, message: precision.message || '原消息定位信息不完整，无法安全回复' };
+  } else {
+    replyEligibility = assessMessageAutoReplyEligibility({
+      platformCode: message.platform_code, accountId: message.account_id, messageType: message.message_type,
+      externalId: message.external_id, externalUrl: message.external_url, sourceContent: message.content,
+      userName: message.user_name, messageContext
+    }, { phase: 'creation' });
+    if (!replyEligibility.allowed) return { status: 409, code: 'MANUAL_REPLY_TARGET_UNVERIFIED', message: `原消息定位信息不足，系统无法安全代发：${replyEligibility.reason}。请在平台 App 中回复后使用“检测App人工回复”核验。` };
+  }
+  const handledBy = String(rawHandledBy || '运营人员').trim().slice(0, 100) || '运营人员';
+  const jobId = createJob(message.device_id, 'REPLY', {
+    messageId: id, platformCode: message.platform_code, accountId: message.account_id, platformUserId: message.platform_user_id || null, profileName: message.profile_name,
+    externalId: message.external_id, externalUrl: message.external_url, sourceContent: message.content,
+    userName: message.user_name, messageType: message.message_type, channelType: message.message_type, queueLane: message.message_type,
+    conversationNamespace: message.conversation_key_snapshot || null, conversationId: message.conversation_id || null,
+    firstPendingAt: message.collected_at || message.created_at || now(),
+    messageContext, ...(replyEligibility ? { replyEligibility } : {}), replyText, replyMode: 'MANUAL', handledBy,
+    coversEarlierPending: coversEarlierPending === true
+  }, { idempotencyKey: `manual-reply:${id}:${hashString(replyText)}:${Date.now()}` });
+  run(`UPDATE messages SET status='REPLY_QUEUED',decision='MANUAL_REPLY',reply_text=?,reason=?,reply_job_id=?,updated_at=? WHERE id=?`, replyText, '运营人员已在 Web 端提交人工回复', jobId, now(), id);
+  return { status: 200, jobId, message: row('SELECT * FROM messages WHERE id=?', id) };
+}
+
+function scheduleIdleHandoffRelease() {
+  if (!(config.handoffIdleReleaseHours > 0)) return;
+  const scan = () => {
+    try {
+      const released = releaseIdleHandoffConversations({ idleHours: config.handoffIdleReleaseHours });
+      if (released.length) console.log(`[handoff] ${released.length} 个闲置人工会话已自动交还 AI：${released.join(',')}`);
+    } catch (error) {
+      console.warn('[handoff] 闲置会话扫描失败', String(error?.message || error));
+    }
+  };
+  setTimeout(scan, 1000).unref?.();
+  setInterval(scan, config.handoffIdleScanIntervalMs).unref?.();
+}
+
+// 只看用户实际收到的上一条机器人回复：旧的确认或邀约不能被之后的“好的”“是”误触发。
+/** 追问、知识缺口说明和转人工回执跟随用户的语言：英文、繁体或默认简体。 */
+function replyScriptFor(content = '') {
+  if (detectReplyLanguage(content) === 'english') return 'english';
+  return detectChineseScript(content) === 'traditional' ? 'traditional' : 'auto';
+}
+
+/** 用户本轮或最近几轮已经说过不用转人工时，知识缺口说明不再反复邀请转人工。 */
+function handoffRecentlyDeclined(message, recentMessages = []) {
+  if (/(?:不想|不要|不用|无需|無需|别|別|不需要|先不|没必要|沒必要)[^，,。！!？?]{0,6}(?:转|轉|找)?(?:人工|真人|客服|同事)/u.test(String(message?.content || ''))) return true;
+  return (recentMessages || []).slice(-6).some(item => json(item.reply_context_json, {})?.handoffDeclined === true);
+}
+
+function latestVisibleReplyContext(recentMessages = []) {
+  const last = (recentMessages || []).at(-1);
+  if (!last || String(last.status || '').toUpperCase() !== 'AUTO_REPLIED' || !String(last.reply_text || '').trim()) return null;
+  return json(last.reply_context_json, null);
+}
+
+function recentHumanFollowupNotification(conversationId) {
+  const windowMinutes = Number(config.handoffFollowupNotifyWindowMinutes) || 0;
+  if (!conversationId || windowMinutes <= 0) return null;
+  const since = new Date(Date.now() - windowMinutes * 60_000).toISOString();
+  return row(`SELECT id,status FROM notifications WHERE conversation_id=? AND created_at>=? AND status<>'FAILED'
+    AND json_extract(metadata_json,'$.handoff')=1 ORDER BY id DESC LIMIT 1`, Number(conversationId), since);
+}
+
 function recoverPendingClarificationIntent(recentMessages = []) {
   for (let index = (recentMessages || []).length - 1; index >= 0; index -= 1) {
     const item = recentMessages[index] || {};
@@ -2242,6 +2453,12 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
     }
     beginConversationHandoff({ conversationId: handlingConversation.id, messageId: message.id, reason: handlingReason });
     markHumanFollowupMessage(message.id, { reason: handlingReason });
+    // 人工会话期间用户连发多条时，窗口内只通知一次，避免企微刷屏；消息本身仍标记待人工。
+    const merged = recentHumanFollowupNotification(handlingConversation.id);
+    if (merged) {
+      markHumanFollowupMessage(message.id, { notificationId: merged.id, confirmed: isNotificationConfirmed(merged.status), reason: `${handlingReason}；${config.handoffFollowupNotifyWindowMinutes}分钟内已通知人工，本条已合并` });
+      return row('SELECT * FROM messages WHERE id=?', messageId);
+    }
     const notification = await notifyManual(
       message,
       'HUMAN_FOLLOWUP_MESSAGE',
@@ -2267,6 +2484,11 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
     }
     beginConversationHandoff({ conversationId: message.conversation_id, messageId: message.id, reason: handlingReason });
     markHumanFollowupMessage(message.id, { reason: handlingReason });
+    const merged = recentHumanFollowupNotification(message.conversation_id);
+    if (merged) {
+      markHumanFollowupMessage(message.id, { notificationId: merged.id, confirmed: isNotificationConfirmed(merged.status), reason: `${handlingReason}；${config.handoffFollowupNotifyWindowMinutes}分钟内已通知人工，本条已合并` });
+      return row('SELECT * FROM messages WHERE id=?', messageId);
+    }
     const notification = await notifyManual(message, 'HUMAN_FOLLOWUP_MESSAGE', '人工会话收到新消息', handlingReason, {
       handoff: true,
       conversationId: message.conversation_id,
@@ -2277,10 +2499,23 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
     return row('SELECT * FROM messages WHERE id=?', messageId);
   }
   // 评论的普通肯定只能确认同一用户实际收到的邀约；明确“转人工”仍可直接提出请求。
-  const routeDecision = routeIncomingMessage({ message, conversation: handlingConversation, sourceAssessment: storedSourceAssessment, customHandoffPhrases: [] });
+  const routedDecision = routeIncomingMessage({ message, conversation: handlingConversation, sourceAssessment: storedSourceAssessment, customHandoffPhrases: [] });
+  // 私信只看用户实际收到的上一条机器人回复：它若是“你是想了解…吗”，用户回“是/好的/2”就是确认方向；
+  // 若是转人工邀请，“好的/不用了”就是对邀请的答复。两者都不能被当作闲聊另起话题。
+  const formalPrivateChannel = isPrivateMessage && message.platform_code !== MINI_PROGRAM_PLATFORM_CODE && config.ragFormalRoutingEnabled
+    && ![MESSAGE_ROUTE.HUMAN_HANDOFF, MESSAGE_ROUTE.IGNORE].includes(routedDecision.route);
+  const latestPrivateReply = formalPrivateChannel ? latestVisibleReplyContext(recentConversationMessages(message)) : null;
+  const confirmedClarification = latestPrivateReply?.clarificationCandidate
+    ? resolveClarificationSelection(message.content, latestPrivateReply.clarificationCandidate) : null;
+  const routeDecision = confirmedClarification && routedDecision.route === MESSAGE_ROUTE.DIRECT_REPLY
+    ? { ...routedDecision, route: MESSAGE_ROUTE.RAG_QUERY, reasonCode: 'CLARIFICATION_CONFIRMED', reason: '用户确认了上一轮给出的咨询方向', allowRag: true, allowAutoReply: true }
+    : routedDecision;
   const commentConfirmation = commentOffer && ![MESSAGE_ROUTE.HUMAN_HANDOFF, MESSAGE_ROUTE.IGNORE].includes(routeDecision.route)
     ? commentHandoffConfirmation(message.content) : null;
-  const handoffCommand = routeDecision.handoffCommand || (commentConfirmation === 'ACCEPT'
+  // 私信：上一条机器人回复刚邀请过转人工时，“好的”“需要”即视为确认，“不用了”视为婉拒。
+  const privateOfferConfirmation = existingIntent?.status === 'WAITING_USER_CONFIRMATION' && latestPrivateReply?.handoffOffered === true
+    ? handoffOfferResponse(message.content) : null;
+  const handoffCommand = routeDecision.handoffCommand || (commentConfirmation === 'ACCEPT' || privateOfferConfirmation === 'ACCEPT'
     ? { matched: true, reason: '用户确认需要人工协助' } : null);
   if (handoffCommand?.matched) {
     if (message.platform_code === MINI_PROGRAM_PLATFORM_CODE) {
@@ -2295,7 +2530,9 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
     run("UPDATE manual_handoff_intents SET status='NOTIFY_QUEUED',request_message_id=?,requested_at=COALESCE(requested_at,?),updated_at=? WHERE id=? AND status IN ('WAITING_USER_CONFIRMATION','REQUESTED','NOTIFY_QUEUED','NOTIFIED')", message.id, stamp, stamp, intent.id);
     const sourceMessage = row('SELECT * FROM messages WHERE id=?', intent.source_message_id) || message;
     const unresolved = json(intent.unresolved_questions_json, []);
-    const notificationMessage = { ...sourceMessage, content: unresolved.length ? unresolved.join('\n') : sourceMessage.content };
+    // 用户同意转人工时常顺带补充情况（“好的，麻烦了，我再补一句…”），一起带给人工。
+    const supplement = sourceMessage.id !== message.id && [...String(message.content || '')].length > 12 && !unresolved.includes(message.content) ? [`用户补充：${message.content}`] : [];
+    const notificationMessage = { ...sourceMessage, content: [...(unresolved.length ? unresolved : [sourceMessage.content]), ...supplement].join('\n') };
     markMessageWecomStatus(message.id, 'PENDING');
     const notification = await notifyManual(notificationMessage, 'KNOWLEDGE_GAP_CONFIRMED', '用户明确要求转人工', `用户输入“${message.content}”，请人工处理此前无法确认的问题`, { handoff: true, conversationId: message.conversation_id, messageId: message.id, idempotencyKey: isPrivateMessage ? `wecom:handoff:message:${message.id}` : `wecom:comment-handoff:intent:${intent.id}` });
     const wecomStatus = notification.delivered ? 'SENT' : (notification.simulated ? 'SIMULATED' : 'PENDING');
@@ -2306,6 +2543,7 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
       ? `人工请求#${intent.id}已成功通知企业微信`
       : `人工请求#${intent.id}正在通过Outbox重试通知企业微信`;
     markHumanFollowupMessage(message.id, { notificationId: notification.notificationId, confirmed: notification.delivered, reason: handlingReason });
+    if (isPrivateMessage) await queueHandoffAck(message, { kind: 'REQUESTED' });
     return row('SELECT * FROM messages WHERE id=?', messageId);
   }
 
@@ -2323,6 +2561,8 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
       idempotencyKey: `wecom:risk-handoff:message:${message.id}`
     });
     markHumanFollowupMessage(message.id, { notificationId: notification.notificationId, confirmed: notification.delivered, reason: routeDecision.reason });
+    // 投诉、纠纷属于正常诉求，先让用户知道已经有人跟进；辱骂、敏感等风险消息不自动回应。
+    if (isPrivateMessage && ['COMPLAINT', 'DISPUTE'].includes(routeDecision.reasonCode)) await queueHandoffAck(message, { kind: 'COMPLAINT' });
     return row('SELECT * FROM messages WHERE id=?', messageId);
   }
   if (routeDecision.route === MESSAGE_ROUTE.IGNORE) {
@@ -2342,12 +2582,23 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
     return row('SELECT * FROM messages WHERE id=?', messageId);
   }
 
-  if (commentConfirmation === 'DECLINE') {
-    run("UPDATE manual_handoff_intents SET status='DECLINED',updated_at=? WHERE id=? AND status='WAITING_USER_CONFIRMATION'", now(), commentOffer.intent.id);
-    const replyText = '好的，有其他问题也可以继续留言。';
+  // 婉拒转人工时顺带问了新问题（“不用啦～对了，5月10号的课讲不讲…”）：记下婉拒，新问题照常检索作答。
+  const questionAfterDecline = privateOfferConfirmation === 'DECLINE' ? questionAfterHandoffDecline(message.content) : '';
+  if (questionAfterDecline) {
+    run("UPDATE manual_handoff_intents SET status='DECLINED',updated_at=? WHERE id=? AND status='WAITING_USER_CONFIRMATION'", now(), existingIntent.id);
+    if (message.conversation_id) run('UPDATE conversations SET handoff_offered_at=NULL,updated_at=? WHERE id=?', now(), message.conversation_id);
+  }
+  if (!questionAfterDecline && (commentConfirmation === 'DECLINE' || privateOfferConfirmation === 'DECLINE')) {
+    const declinedIntent = commentConfirmation === 'DECLINE' ? commentOffer.intent : existingIntent;
+    run("UPDATE manual_handoff_intents SET status='DECLINED',updated_at=? WHERE id=? AND status='WAITING_USER_CONFIRMATION'", now(), declinedIntent.id);
+    // 婉拒的同时在道谢、夸奖时，用社交回应收尾，比固定的“好的～”自然。
+    const socialText = routeDecision.route === MESSAGE_ROUTE.DIRECT_REPLY && String(routeDecision.reasonCode || '').startsWith('PRIVATE_SOCIAL_') ? routeDecision.replyText : '';
+    const replyText = commentConfirmation === 'DECLINE' ? '好的，有其他问题也可以继续留言。' : (socialText || '好的～那有其他想了解的随时问我。');
     const replyContext = { handoffOffered: false, handoffRequested: false, handoffDeclined: true };
     run('UPDATE messages SET reply_context_json=?,updated_at=? WHERE id=?', JSON.stringify(replyContext), now(), message.id);
-    await queueStaticReply(message, replyText, { decision: 'COMMENT_HANDOFF_DECLINED', reason: '用户暂不需要人工协助，继续保留自动回复', handoffIntentId: commentOffer.intent.id, responseMode: 'COMMENT_HANDOFF_DECLINED', replaceCancelledReplyJob, replyBatch, replyContext });
+    if (privateOfferConfirmation === 'DECLINE' && message.conversation_id) run('UPDATE conversations SET handoff_offered_at=NULL,updated_at=? WHERE id=?', now(), message.conversation_id);
+    const declineDecision = commentConfirmation === 'DECLINE' ? 'COMMENT_HANDOFF_DECLINED' : 'PRIVATE_HANDOFF_DECLINED';
+    await queueStaticReply(message, replyText, { decision: declineDecision, reason: '用户暂不需要人工协助，继续保留自动回复', handoffIntentId: declinedIntent.id, responseMode: declineDecision, replaceCancelledReplyJob, replyBatch, replyContext });
     return row('SELECT * FROM messages WHERE id=?', messageId);
   }
 
@@ -2374,8 +2625,14 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
   let replyResult;
   try {
     if ((message.platform_code === MINI_PROGRAM_PLATFORM_CODE || config.ragFormalRoutingEnabled) && routeDecision.route === MESSAGE_ROUTE.RAG_QUERY) {
-      const ragRequest = buildFormalRagRequest({ message, conversation, recentMessages });
-      const preflight = routeBusinessClarification({ question: message.content, context: ragRequest.context, messageType: message.message_type, guidanceAttempt: nextClarificationAttempt, maxGuidanceAttempts: config.businessGuidanceMaxAttempts });
+      // 上一条回复是“你是想了解…吗”，用户回“是”或序号时，用确认后的方向检索。
+      const confirmedQuestion = confirmedClarification;
+      const effectiveQuestion = confirmedQuestion || questionAfterDecline || '';
+      const ragRequest = buildFormalRagRequest({ message, conversation, recentMessages, queryTextOverride: effectiveQuestion || undefined });
+      // 用户写繁体或英文时，追问、知识缺口说明和回执也跟着用繁体或英文。
+      const replyScript = replyScriptFor(message.content);
+      const handoffDeclined = Boolean(questionAfterDecline) || handoffRecentlyDeclined(message, recentMessages);
+      const preflight = confirmedQuestion ? null : routeBusinessClarification({ question: questionAfterDecline || message.content, context: ragRequest.context, messageType: message.message_type, script: replyScript, guidanceAttempt: nextClarificationAttempt, maxGuidanceAttempts: config.businessGuidanceMaxAttempts });
       const ragResponse = preflight ? null : await formalRagClient.queryFormalKnowledge(ragRequest);
       const ragAnswered = ['ANSWERED', 'NO_ANSWER'].includes(String(ragResponse?.status || ragResponse?.result || '').toUpperCase());
       if (!isMessageConversationCurrent(message)) {
@@ -2386,7 +2643,9 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
       const checkedRagResponse = snapshotValidation.ok
         ? ragResponse
         : { status: 'INVALID_RESPONSE', retryable: false, error: { code: snapshotValidation.code, message: snapshotValidation.reason } };
-      const formalResult = preflight || formalRagReplyResult(checkedRagResponse, { platformCode: message.platform_code, messageType: message.message_type, question: message.content, context: ragRequest.context, guidanceAttempt: nextClarificationAttempt, maxGuidanceAttempts: config.businessGuidanceMaxAttempts });
+      const formalResult = preflight || formalRagReplyResult(checkedRagResponse, { platformCode: message.platform_code, messageType: message.message_type, question: effectiveQuestion || message.content, context: ragRequest.context, script: replyScript, handoffDeclined, guidanceAttempt: nextClarificationAttempt, maxGuidanceAttempts: config.businessGuidanceMaxAttempts });
+      if (confirmedQuestion) formalResult.clarificationConfirmed = true;
+      if (handoffDeclined) formalResult.handoffDeclined = true;
       if (formalResult.action === 'HANDOFF') {
         const reason = formalResult.reason;
         const notificationTypes = {
@@ -2412,6 +2671,7 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
         markMessageWecomStatus(message.id, 'PENDING');
         const notification = await notifyManual(message, notificationType, notificationTitle, reason, { handoff: true, conversationId: message.conversation_id, messageId: message.id, idempotencyKey: `wecom:rag-handoff:message:${message.id}` });
         markHumanFollowupMessage(message.id, { notificationId: notification.notificationId, confirmed: notification.delivered, reason });
+        if (isPrivateMessage) await queueHandoffAck(message, { kind: 'SYSTEM' });
         return row('SELECT * FROM messages WHERE id=?', messageId);
       }
       replyResult = {
@@ -2498,7 +2758,7 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
   run(`UPDATE messages SET subquestions_json=?,message_group_id=?,reply_context_json=?,updated_at=? WHERE id=?`,
     JSON.stringify({ questions: replyResult.resolvedQuestions || [], matches: compactMatches, unknownQuestions: replyResult.unknownQuestions || [], truncated: replyResult.truncated === true }),
     (replyResult.resolvedQuestions || []).length > 1 ? `message-${message.id}` : null,
-    JSON.stringify({ contextUsed: replyResult.contextUsed, topicSwitched: replyResult.topicSwitched, matchMethod: replyResult.matchMethod, ragStatus: replyResult.ragStatus, guidanceAttempt: replyResult.guidanceAttempt || 0, maxGuidanceAttempts: replyResult.maxGuidanceAttempts || config.businessGuidanceMaxAttempts, handoffOffered: replyResult.handoffOffered === true, handoffRequested: replyResult.handoffRequested === true, offerModel: replyResult.offerModel, offerFallback: replyResult.offerFallback, clarificationCandidate: replyResult.clarificationCandidate || null, clarificationConfirmed: replyResult.clarificationConfirmed === true, clarificationDenied: replyResult.clarificationDenied === true, pendingIntentRecovered, contextExpired, identityConfidence: message.identity_confidence, recentMessageIds: recentMessages.map(item => item.id) }),
+    JSON.stringify({ contextUsed: replyResult.contextUsed, topicSwitched: replyResult.topicSwitched, matchMethod: replyResult.matchMethod, ragStatus: replyResult.ragStatus, guidanceAttempt: replyResult.guidanceAttempt || 0, maxGuidanceAttempts: replyResult.maxGuidanceAttempts || config.businessGuidanceMaxAttempts, handoffOffered: replyResult.handoffOffered === true, handoffRequested: replyResult.handoffRequested === true, handoffDeclined: replyResult.handoffDeclined === true, offerModel: replyResult.offerModel, offerFallback: replyResult.offerFallback, clarificationCandidate: replyResult.clarificationCandidate || null, clarificationConfirmed: replyResult.clarificationConfirmed === true, clarificationDenied: replyResult.clarificationDenied === true, pendingIntentRecovered, contextExpired, identityConfidence: message.identity_confidence, recentMessageIds: recentMessages.map(item => item.id) }),
     now(), message.id);
 
   if (replyResult.action === 'HANDOFF' && (message.message_type === 'COMMENT' || replyResult.decision === 'REPLY_TOO_LONG' || replyResult.handoffRequested)) {
@@ -2515,6 +2775,7 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
     const notificationKey = `wecom:${replyResult.handoffRequested ? 'guidance-limit' : replyTooLong ? 'reply-length' : 'comment-knowledge'}-handoff:message:${message.id}`;
     const notification = await notifyManual(message, notificationType, notificationTitle, reason, { handoff: true, conversationId: message.conversation_id, messageId: message.id, idempotencyKey: notificationKey });
     markHumanFollowupMessage(message.id, { notificationId: notification.notificationId, confirmed: notification.delivered, reason });
+    if (isPrivateMessage) await queueHandoffAck(message, { kind: 'SYSTEM' });
     return row('SELECT * FROM messages WHERE id=?', messageId);
   }
 
@@ -2528,6 +2789,9 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
     } else if (guidanceProgress.guiding && !replyResult.handoffOffered) {
       const candidate = replyResult.clarificationCandidate || null;
       run(`UPDATE conversations SET clarification_attempts=?,pending_intent_json=?,updated_at=? WHERE id=?`, guidanceProgress.attempts, candidate ? JSON.stringify({ ...candidate, original_user_message: message.content, source_message_id: message.id, attempt: guidanceProgress.attempts, created_at: now() }) : null, now(), conversation.id);
+    } else if (replyResult.handoffOffered && replyResult.preserveGuidanceCount) {
+      // 知识缺口里的转人工邀请只是一个选项：正常累计引导次数，不把计数直接推到上限。
+      run(`UPDATE conversations SET clarification_attempts=?,pending_intent_json=NULL,handoff_offered_at=?,updated_at=? WHERE id=?`, guidanceProgress.attempts, now(), now(), conversation.id);
     } else if (replyResult.handoffOffered) {
       run(`UPDATE conversations SET clarification_attempts=?,pending_intent_json=NULL,handoff_offered_at=COALESCE(handoff_offered_at,?),updated_at=? WHERE id=?`, isPrivateMessage ? config.businessGuidanceMaxAttempts : 0, now(), now(), conversation.id);
     }
@@ -2535,7 +2799,7 @@ async function processMessageInternal(messageId, { replaceCancelledReplyJob = fa
   if (unresolvedQuestions.length) {
     const gapReason = `以下问题没有可靠知识答案：${unresolvedQuestions.join('；')}`;
     replyResult.reason = `${replyResult.reason} / ${gapReason}`;
-  } else if ((replyResult.matches || []).length || (message.message_type === 'COMMENT' && replyResult.ragStatus === 'ANSWERED')) {
+  } else if ((replyResult.matches || []).length || replyResult.ragStatus === 'ANSWERED') {
     // 命中可靠知识后结束此前尚未确认的人工意图，新的模糊咨询将重新计数。
     run(`UPDATE manual_handoff_intents SET status='RESOLVED_BY_KNOWLEDGE',updated_at=? WHERE conversation_key=? AND status='WAITING_USER_CONFIRMATION'`, now(), messageConversationKey(message));
   }
@@ -4728,6 +4992,38 @@ async function api(req, res, url) {
     if (result.runningReplyJobId) return fail(res, 409, '该消息正在向平台发送回复，当前不能删除；请等待发送完成或转人工确认后再操作', { jobId: result.runningReplyJobId }, 'MESSAGE_DELETE_RUNNING');
     return ok(res, { deleted: true, alreadyDeleted: result.alreadyDeleted, cancelledJobs: result.cancelledJobs, processingClosed: result.processingClosed, message: result.message });
   }
+  const conversationAction = pathname.match(/^\/api\/conversations\/(\d+)\/(takeover|release|workspace|draft|reply)$/);
+  if (conversationAction) {
+    const conversationId = Number(conversationAction[1]);
+    const action = conversationAction[2];
+    const session = adminSession(req);
+    const operator = session?.sub || '运营人员';
+    try {
+      if (req.method === 'GET' && action === 'workspace') return ok(res, { workspace: conversationWorkspace(conversationId) });
+      if (req.method !== 'POST') return fail(res, 405, '不支持的请求方法');
+      const data = await body(req);
+      if (action === 'takeover') {
+        const result = takeOverConversation({ conversationId, operator: String(data.operator || operator) });
+        return ok(res, { conversation: result.conversation, cancelled: result.cancelled, workspace: conversationWorkspace(conversationId) });
+      }
+      if (action === 'release') {
+        const result = releaseConversationToBot({ conversationId, operator: String(data.operator || operator), reason: 'OPERATOR_RELEASE' });
+        return ok(res, { conversation: result.conversation, cancelled: result.cancelled, workspace: conversationWorkspace(conversationId) });
+      }
+      if (action === 'draft') return ok(res, { draft: await conversationReplyDraft(conversationId) });
+      if (action === 'reply') {
+        const pending = latestPendingConversationMessage(conversationId);
+        if (!pending) return fail(res, 409, '该会话没有待人工回复的消息', null, 'NO_PENDING_MESSAGE');
+        if (!requirePlatformOperationsEnabled(res, pending.platform_code)) return;
+        const created = createManualReplyJob(pending.id, { replyText: data.replyText, handledBy: data.handledBy || operator, coversEarlierPending: true });
+        if (created.status !== 200) return fail(res, created.status, created.message, created.data || null, created.code);
+        return ok(res, { jobId: created.jobId, message: created.message, workspace: conversationWorkspace(conversationId) });
+      }
+    } catch (error) {
+      if (error.statusCode) return fail(res, error.statusCode, error.message, null, error.code);
+      throw error;
+    }
+  }
   if (req.method === 'GET' && pathname === '/api/messages') {
     const accountId = url.searchParams.has('accountId') ? Number(url.searchParams.get('accountId')) : null;
     if (accountId !== null && (!Number.isSafeInteger(accountId) || accountId <= 0)) return fail(res, 400, '账号无效');
@@ -4775,30 +5071,12 @@ async function api(req, res, url) {
   }
   if (req.method === 'POST' && /^\/api\/messages\/\d+\/manual-reply$/.test(pathname)) {
     const id = parseId(pathname, /^\/api\/messages\/(\d+)\/manual-reply$/); const data = await body(req);
-    const message = row(`SELECT m.*,a.device_id,a.profile_name,a.platform_user_id FROM messages m JOIN accounts a ON a.id=m.account_id WHERE m.id=?`, id);
-    if (!message) return fail(res, 404, '消息不存在');
-    if (!requirePlatformOperationsEnabled(res, message.platform_code)) return;
-    if (message.platform_code !== 'weibo') return fail(res, 409, '当前 Web 端直接人工回复仅对微博开放');
-    if (message.handled_at || terminalMessageStatuses.has(message.status)) return fail(res, 409, '该消息已经处理完成');
-    if (['REPLY_QUEUED','REPLY_RUNNING'].includes(message.status)) return fail(res, 409, '该消息已有回复任务执行中');
-    const replyText = String(data.replyText || '').trim().normalize('NFC');
-    if (!replyText) return fail(res, 400, '人工回复不能为空');
-    const replyLength = validateReplyTextLength({ platformCode: message.platform_code, messageType: message.message_type, text: replyText });
-    if (!replyLength.ok) return fail(res, 400, replyLength.message, { characterCount: replyLength.count, characterLimit: replyLength.limit });
-    const messageContext = json(message.context_json, {});
-    if (messageContext.simulated) return fail(res, 409, '模拟消息不能发送到真实平台');
-    const sourceAssessment = assessStoredWeiboSource(message, messageContext);
-    if (sourceAssessment?.isOfficial === true && sourceAssessment.confidence === 'HIGH') return fail(res, 409, '微博官方或系统会话已被排除，不允许回复');
-    const precision = assessWeiboMessagePrecision({ platformCode: message.platform_code, messageType: message.message_type, context: messageContext });
-    if (!precision.ok) return fail(res, 409, precision.message || '原消息定位信息不完整，无法安全回复');
-    const handledBy = String(data.handledBy || '运营人员').trim().slice(0, 100) || '运营人员';
-    const jobId = createJob(message.device_id, 'REPLY', {
-      messageId: id, platformCode: message.platform_code, accountId: message.account_id, platformUserId: message.platform_user_id || null, profileName: message.profile_name,
-      externalId: message.external_id, externalUrl: message.external_url, sourceContent: message.content,
-      userName: message.user_name, messageType: message.message_type, messageContext, replyText, replyMode: 'MANUAL', handledBy
-    }, { idempotencyKey: `manual-reply:${id}:${hashString(replyText)}:${Date.now()}` });
-    run(`UPDATE messages SET status='REPLY_QUEUED',decision='MANUAL_REPLY',reply_text=?,reason=?,reply_job_id=?,updated_at=? WHERE id=?`, replyText, '运营人员已在 Web 端提交人工回复', jobId, now(), id);
-    return ok(res, { jobId, message: row('SELECT * FROM messages WHERE id=?', id) });
+    const target = row('SELECT platform_code FROM messages WHERE id=?', id);
+    if (!target) return fail(res, 404, '消息不存在');
+    if (!requirePlatformOperationsEnabled(res, target.platform_code)) return;
+    const created = createManualReplyJob(id, { replyText: data.replyText, handledBy: data.handledBy });
+    if (created.status !== 200) return fail(res, created.status, created.message, created.data || null, created.code);
+    return ok(res, { jobId: created.jobId, message: created.message });
   }
   if (req.method === 'POST' && /^\/api\/messages\/\d+\/detect-manual$/.test(pathname)) {
     if (!requireOperationsEnabled(res)) return;
@@ -5273,10 +5551,19 @@ async function api(req, res, url) {
           });
           if (laneConflict) continue;
         }
-        if (candidate.job_type === 'REPLY') {
+        if (candidate.job_type === 'REPLY' && isHandoffAckPayload(candidatePayload)) {
+          // 转人工回执不归属于任何消息的 reply_job_id，只要求它仍是该会话当前这次转人工的回执。
+          const ackConversation = row('SELECT handling_mode,human_followup_state,handoff_ack_job_id FROM conversations WHERE id=?', Number(candidatePayload.conversationId));
+          if (!ackConversation || !conversationAutomationDisabled(ackConversation) || Number(ackConversation.handoff_ack_job_id) !== Number(candidate.id)) {
+            run("UPDATE agent_jobs SET status='CANCELLED',completed_at=?,lease_expires_at=NULL,result=? WHERE id=? AND status='QUEUED'",
+              stamp, JSON.stringify({ ignored: true, ignoreReason: 'STALE_HANDOFF_ACK', conversationId: candidatePayload.conversationId }), candidate.id);
+            continue;
+          }
+        } else if (candidate.job_type === 'REPLY') {
           const currentMessage = row(`SELECT m.reply_job_id,m.handled_at,m.conversation_id,c.handling_mode,c.human_followup_state
             FROM messages m LEFT JOIN conversations c ON c.id=m.conversation_id WHERE m.id=?`, candidatePayload.messageId);
-          if (currentMessage?.conversation_id && conversationAutomationDisabled(currentMessage)) {
+          // 人工会话里只拦截机器人回复；运营在网页端提交的人工回复本来就是为人工会话准备的。
+          if (candidatePayload.replyMode !== 'MANUAL' && currentMessage?.conversation_id && conversationAutomationDisabled(currentMessage)) {
             const reason = '发送任务领取前检测到会话已转人工或正在通知人工，禁止机器人继续回复';
             run("UPDATE agent_jobs SET status='CANCELLED',completed_at=?,lease_expires_at=NULL,result=? WHERE id=? AND status='QUEUED'",
               stamp, JSON.stringify({ ignored: true, ignoreReason: 'CONVERSATION_AUTOMATION_DISABLED', conversationId: currentMessage.conversation_id }), candidate.id);
@@ -5373,6 +5660,11 @@ async function api(req, res, url) {
     if (!job) return fail(res, 404, '\u4efb\u52a1\u4e0d\u5b58\u5728');
     const payload = json(job.payload, {});
     const stamp = now();
+    if (job.job_type === 'REPLY' && isHandoffAckPayload(payload)) {
+      if (job.status !== 'RUNNING') return fail(res, 409, '任务已不在执行中，无需延后');
+      run("UPDATE agent_jobs SET status='QUEUED',attempts=MAX(attempts-1,0),claimed_at=NULL,lease_expires_at=NULL,available_at=?,result=? WHERE id=? AND status='RUNNING'", stamp, JSON.stringify({ deferred: true, reason: data.reason || 'PLATFORM_STOPPED_PRE_EXECUTION' }), stamp, id);
+      return ok(res, { job: row('SELECT * FROM agent_jobs WHERE id=?', id), platform: platformRuntime(payload.platformCode) });
+    }
     if (job.job_type === 'REPLY') {
       db.exec('BEGIN IMMEDIATE');
       try {
@@ -5525,6 +5817,13 @@ async function api(req, res, url) {
       }
       run('UPDATE agent_jobs SET result=? WHERE id=?', JSON.stringify(result), id);
     }
+    if (job.job_type === 'REPLY' && isHandoffAckPayload(payload)) {
+      // 回执只记录发送结果，不改变任何消息的待人工状态；失败也不重试，避免重复打扰用户。
+      const completed = run("UPDATE agent_jobs SET status=?,result=?,completed_at=?,lease_expires_at=NULL WHERE id=? AND status='RUNNING'", outerStatus, JSON.stringify(result), stamp, id);
+      if (completed.changes !== 1) return ok(res, { ignored: true, reason: 'STALE_HANDOFF_ACK_COMPLETION' });
+      completeBrowserCommand(job, outerStatus, result, stamp);
+      return ok(res, { jobId: id, status: outerStatus, handoffAck: true });
+    }
     if (job.job_type === 'REPLY') {
       db.exec('BEGIN IMMEDIATE');
       try {
@@ -5669,6 +5968,16 @@ async function api(req, res, url) {
       } else if (hasReliableReplyEvidence(payload, result, outerStatus)) {
         if (payload.replyMode === 'MANUAL') {
           run("UPDATE messages SET status='MANUAL_HANDLED',decision='MANUAL_HANDLED',handled_at=?,handled_by=?,handler_note=?,updated_at=? WHERE id=? AND reply_job_id=? AND handled_at IS NULL", stamp, payload.handledBy || '\u8fd0\u8425\u4eba\u5458', result.message || '\u4eba\u5de5\u56de\u590d\u5df2\u53d1\u9001\uff0c\u5e76\u5df2\u9a8c\u8bc1\u5e73\u53f0\u56de\u6267', stamp, payload.messageId, id);
+          if (payload.coversEarlierPending === true && payload.conversationId) {
+            // 接待面板回复的是会话里最新的一条；同一会话更早的待人工消息由这次回复一并处理。
+            const earlierPending = rows(`SELECT id FROM messages WHERE conversation_id=? AND id<? AND handled_at IS NULL AND reply_job_id IS NULL
+              AND status IN ('MANUAL_REQUIRED','KNOWLEDGE_GAP')`, Number(payload.conversationId), Number(payload.messageId));
+            for (const earlier of earlierPending) {
+              run(`UPDATE messages SET status='MANUAL_HANDLED',decision='MANUAL_HANDLED',handled_at=?,handled_by=?,handler_note=?,updated_at=? WHERE id=? AND handled_at IS NULL`,
+                stamp, payload.handledBy || '运营人员', `已在同一会话的人工回复（消息#${payload.messageId}）中一并处理`, stamp, earlier.id);
+              syncMessageProcessingRegistry(earlier.id, stamp);
+            }
+          }
         } else {
           run("UPDATE messages SET status='AUTO_REPLIED',handled_at=?,handled_by='AI_RPA',handler_note=?,updated_at=? WHERE id=? AND reply_job_id=? AND handled_at IS NULL", stamp, result.message || '\u81ea\u52a8\u56de\u590d\u6210\u529f\uff0c\u5e76\u5df2\u9a8c\u8bc1\u5e73\u53f0\u56de\u6267', stamp, payload.messageId, id);
         }
@@ -5873,6 +6182,7 @@ server.listen(config.port, config.host, () => {
   const messageCollection = getMessageCollectionSettings();
   console.log(`AI 调用模式：${aiSettings.mode}`);
   startNotificationOutboxWorker();
+  scheduleIdleHandoffRelease();
   startScheduledPublishScheduler();
   hotTopicKnowledge.start();
   platformAnalyticsScheduler.start();

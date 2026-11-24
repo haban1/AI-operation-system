@@ -8,7 +8,7 @@ import { businessSubjectClarificationReply } from './rag-clarification.js';
 import { ragQuestionForMessage } from './message-source-context.js';
 import { isAiReplyTimeout } from './ai-reply-error.js';
 import { commentHandoffCopy } from './comment-handoff-copy.js';
-import { knowledgeConsultationReply } from './knowledge-reply-text.js';
+import { composeNoAnswerReply, NO_ANSWER_KIND } from './reply-composer.js';
 
 const PLATFORM_MAP = Object.freeze({
   douyin: 'DOUYIN',
@@ -36,10 +36,12 @@ function fingerprintPayload({ conversationKey, conversationVersion, queryText, m
   return JSON.stringify({ conversationKey, conversationVersion, queryText, messageIds, context });
 }
 
-export function buildFormalRagRequest({ message, conversation, recentMessages = [] } = {}) {
+export function buildFormalRagRequest({ message, conversation, recentMessages = [], queryTextOverride = null } = {}) {
   const conversationKey = String(message?.conversation_key_snapshot || conversation?.namespace || `message:${message?.id || 'unknown'}`);
   const conversationVersion = Number(message?.conversation_version ?? conversation?.version ?? 0);
-  const queryText = ragQuestionForMessage(message);
+  // 用户确认了上一轮给出的方向（“是”“第二个”）时，用确认后的问题检索，而不是检索“是”。
+  const override = String(queryTextOverride || '').trim();
+  const queryText = override && message?.message_type !== 'COMMENT' ? [...override].slice(0, 4000).join('') : ragQuestionForMessage(message);
   // Comments are single-turn; a verified source topic stays in query.text only.
   const history = (message?.message_type === 'COMMENT' ? [] : (Array.isArray(recentMessages) ? recentMessages : []))
     .filter(item => item && item !== message && (item.id == null || String(item.id) !== String(message?.id)))
@@ -135,7 +137,37 @@ export function commentHandoffOfferResult({ ragStatus = 'NO_ANSWER', maxGuidance
   };
 }
 
-export function formalRagReplyResult(response, { platformCode = '', messageType = 'PRIVATE_MESSAGE', question = '', context = [], script = 'auto', guidanceAttempt = 1, maxGuidanceAttempts = BUSINESS_GUIDANCE_MAX_ATTEMPTS } = {}) {
+// 低置信度时不再统一回“建议咨询人工客服”：相关候选 → 带选项确认方向；
+// 明显无关 → 友好划定范围；真正缺知识 → 积极说明并邀请转人工（登记原问题）。
+// 候选只用于确认方向，sourceReferences 始终为空，不把候选当作已作答的引用。
+function knowledgeGapResult(response, { question, context, script, status, attempt, maxGuidanceAttempts, handoffDeclined = false }) {
+  const denied = isNegativeReply(question) || /^(?:不是|不对|不對)[，,。\s]/u.test(String(question));
+  const composed = composeNoAnswerReply(response, { question, context, script, attempt, denied, handoffDeclined, relatedMinScore: config.ragRelatedMinScore });
+  const base = {
+    action: 'REPLY', confidence: 0, maxGuidanceAttempts, handoffRequested: false,
+    sourceReferences: [], ragStatus: status, ragReasonCode: response?.reasonCode || null
+  };
+  if (composed.kind === NO_ANSWER_KIND.OUT_OF_SCOPE) return {
+    ...base, decision: 'RAG_OUT_OF_SCOPE', replyText: composed.replyText,
+    reason: `问题与当前业务无关或不适合回答：${response?.reasonCode || status}`,
+    responseMode: 'FORMAL_RAG_OUT_OF_SCOPE', guidanceAttempt: 0, handoffOffered: false, clarificationCandidate: null
+  };
+  if (composed.kind === NO_ANSWER_KIND.RELATED) return {
+    ...base, decision: 'RAG_RELATED_CLARIFICATION', replyText: composed.replyText,
+    reason: `证据未达作答门槛，按相关候选确认方向：${composed.topics.join('；')}`,
+    responseMode: 'FORMAL_RAG_RELATED_CLARIFICATION', guidanceAttempt: attempt, handoffOffered: false,
+    clarificationCandidate: composed.clarificationCandidate
+  };
+  return {
+    ...base, decision: 'RAG_KNOWLEDGE_GAP', replyText: composed.replyText,
+    reason: `RAG 检索或证据不足：${status}`,
+    responseMode: 'FORMAL_RAG_KNOWLEDGE_GAP', guidanceAttempt: attempt,
+    // 邀请了转人工，但不改写引导计数为上限，不触发自动转人工。
+    handoffOffered: composed.handoffOffered, preserveGuidanceCount: true, clarificationCandidate: null
+  };
+}
+
+export function formalRagReplyResult(response, { platformCode = '', messageType = 'PRIVATE_MESSAGE', question = '', context = [], script = 'auto', guidanceAttempt = 1, maxGuidanceAttempts = BUSINESS_GUIDANCE_MAX_ATTEMPTS, handoffDeclined = false } = {}) {
   const status = String(response?.status || response?.result || RAG_RESULT.INVALID_RESPONSE).toUpperCase();
   const isComment = String(messageType).toUpperCase() === 'COMMENT';
   const safeMax = Math.max(1, Number(maxGuidanceAttempts) || BUSINESS_GUIDANCE_MAX_ATTEMPTS);
@@ -164,9 +196,6 @@ export function formalRagReplyResult(response, { platformCode = '', messageType 
   if ([RAG_RESULT.NO_ANSWER, RAG_RESULT.NEED_CLARIFICATION, RAG_RESULT.REJECTED].includes(status)) {
     if (isComment && status !== RAG_RESULT.REJECTED) return commentHandoffOfferResult({ ragStatus: status, maxGuidanceAttempts: safeMax, platformCode, script, question });
     if (isComment) return { action: 'HANDOFF', decision: 'COMMENT_KNOWLEDGE_GAP', replyText: null, confidence: 0, reason: `评论知识库未提供可靠答案，直接转人工：${status}`, responseMode: 'COMMENT_HANDOFF', guidanceAttempt: 0, maxGuidanceAttempts: safeMax, handoffOffered: false, handoffRequested: true, ragStatus: status };
-    // A retrieval/evidence failure does not mean the customer omitted their intent.
-    // Only a genuine missing subject may consume the bounded clarification budget;
-    // never turn a low-confidence candidate into a question asking for confirmation.
     const missingSubject = status === RAG_RESULT.NEED_CLARIFICATION
       ? routeBusinessClarification({ question, context, messageType, script, guidanceAttempt: safeAttempt, maxGuidanceAttempts: safeMax })
       : null;
@@ -176,14 +205,7 @@ export function formalRagReplyResult(response, { platformCode = '', messageType 
       responseMode: missingSubject.action === 'HANDOFF' ? 'BUSINESS_GUIDANCE_HANDOFF' : 'RAG_CLARIFICATION',
       matchMethod: 'FORMAL_RAG', ragStatus: status
     };
-    return {
-      action: 'REPLY', decision: 'RAG_KNOWLEDGE_GAP',
-      replyText: knowledgeConsultationReply(question, { context, script }),
-      confidence: 0, reason: `RAG 检索或证据不足：${status}`,
-      responseMode: 'FORMAL_RAG_KNOWLEDGE_GAP', guidanceAttempt: 0,
-      maxGuidanceAttempts: safeMax, handoffOffered: false, handoffRequested: false,
-      clarificationCandidate: null, sourceReferences: [], ragStatus: status
-    };
+    return knowledgeGapResult(response, { question, context, script, status, attempt: safeAttempt, maxGuidanceAttempts: safeMax, handoffDeclined });
   }
   const timeout = isAiReplyTimeout(response?.error || {});
   return {

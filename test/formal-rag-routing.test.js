@@ -150,7 +150,7 @@ test('RAG 拒绝、空答案或服务不可用的评论仍走人工处理', () =
   }
 });
 
-test('私信证据不足独立于澄清预算，不把检索失败变成回问或自动人工', () => {
+test('私信证据不足：积极说明并邀请转人工，计入引导次数但不自动转人工', () => {
   for (const status of ['NO_ANSWER', 'REJECTED', 'NEED_CLARIFICATION']) {
     for (const guidanceAttempt of [1, 2, 3, 4, 5]) {
       const result = formalRagReplyResult({ result: status, reasonCode: 'INSUFFICIENT_EVIDENCE' }, {
@@ -159,14 +159,16 @@ test('私信证据不足独立于澄清预算，不把检索失败变成回问�
       assert.equal(result.action, 'REPLY');
       assert.equal(result.decision, 'RAG_KNOWLEDGE_GAP');
       assert.equal(result.responseMode, 'FORMAL_RAG_KNOWLEDGE_GAP');
-      assert.equal(result.guidanceAttempt, 0);
+      assert.equal(result.guidanceAttempt, guidanceAttempt);
       assert.equal(result.handoffRequested, false);
-      assert.equal(result.handoffOffered, false);
+      assert.equal(result.handoffOffered, true);
+      assert.equal(result.preserveGuidanceCount, true);
       assert.equal(result.clarificationCandidate, null);
-      assert.equal(result.replyText, '这个问题建议向人工客服咨询一下。');
-      assert.doesNotMatch(result.replyText, /[？?]|哪方面|兴趣|偏好|INSUFFICIENT_EVIDENCE|检索|依据|资料不足/);
-      const progress = businessGuidanceProgress(result, 2);
-      assert.deepEqual(progress, { answered: false, guiding: false, attempts: 2 });
+      assert.match(result.replyText, /转人工/);
+      assert.doesNotMatch(result.replyText, /建议向人工客服咨询|INSUFFICIENT_EVIDENCE|检索|知识库|资料不足|查不到|已转接|已通知/);
+      if (guidanceAttempt >= 2) assert.match(result.replyText, /同事/);
+      const progress = businessGuidanceProgress(result, guidanceAttempt - 1);
+      assert.deepEqual(progress, { answered: false, guiding: true, attempts: guidanceAttempt });
     }
   }
 });
@@ -233,33 +235,39 @@ test('默认五次预算也约束真正缺对象的 RAG 澄清，前四次仍正
   }
 });
 
-test('连续五次证据不足不消耗五次澄清预算，也不把已有四次澄清误推到人工', () => {
-  for (const initialAttempts of [0, 4]) {
-    let attempts = initialAttempts;
-    for (let index = 0; index < 5; index += 1) {
-      const result = formalRagReplyResult({ result: 'NO_ANSWER', reasonCode: 'INSUFFICIENT_EVIDENCE' }, {
-        question: '社区入驻有什么要求？', guidanceAttempt: nextBusinessGuidanceAttempt(attempts)
-      });
-      assert.equal(result.action, 'REPLY');
-      assert.equal(result.decision, 'RAG_KNOWLEDGE_GAP');
-      assert.equal(result.maxGuidanceAttempts, 5);
-      assert.equal(result.guidanceAttempt, 0);
-      assert.equal(result.handoffRequested, false);
-      attempts = businessGuidanceProgress(result, attempts).attempts;
-      assert.equal(attempts, initialAttempts);
-    }
+test('连续证据不足逐次累计引导，始终回复而不静默转人工', () => {
+  let attempts = 0;
+  for (let index = 0; index < 6; index += 1) {
+    const result = formalRagReplyResult({ result: 'NO_ANSWER', reasonCode: 'INSUFFICIENT_EVIDENCE' }, {
+      question: '社区入驻有什么要求？', guidanceAttempt: nextBusinessGuidanceAttempt(attempts)
+    });
+    assert.equal(result.action, 'REPLY');
+    assert.equal(result.decision, 'RAG_KNOWLEDGE_GAP');
+    assert.equal(result.maxGuidanceAttempts, 5);
+    assert.equal(result.handoffRequested, false);
+    attempts = businessGuidanceProgress(result, attempts).attempts;
+    assert.equal(attempts, Math.min(5, index + 1));
   }
 });
 
-test('检索候选不能制造用户意图歧义，也不能当作已可靠作答的引用', () => {
+test('相关候选只用来确认方向：不陈述事实、不作为引用，无关或被否认时不提候选', () => {
   const reference = { documentId: 'doc-policy', chunkId: 'chunk-policy', title: '什么是“七免两低”扶持政策？', sectionPath: ['OPC港澳服务社区'], verificationStatus: 'VERIFIED' };
   const response = { result: 'NO_ANSWER', grounding: { sourceReferences: [reference] }, diagnostics: { selectedCandidates: [{ ...reference, selected: true }] } };
-  for (const question of ['App在哪里下载？', '社区有哪些政策？', '不是，还有其他政策吗？']) {
+  const related = formalRagReplyResult(response, { question: '社区有哪些政策？', guidanceAttempt: 1 });
+  assert.equal(related.decision, 'RAG_RELATED_CLARIFICATION');
+  assert.match(related.replyText, /七免两低/);
+  assert.match(related.replyText, /[？?]/);
+  assert.deepEqual(related.sourceReferences, []);
+  assert.equal(related.clarificationCandidate.candidateQuestion, '“七免两低”扶持政策');
+  assert.equal(related.guidanceAttempt, 1);
+  for (const question of ['App在哪里下载？', '不是，还有其他政策吗？']) {
     const result = formalRagReplyResult(response, { question, guidanceAttempt: 3 });
-    assert.equal(result.decision, 'RAG_KNOWLEDGE_GAP');
-    assert.doesNotMatch(result.replyText, /七免两低|对吗|哪方面/);
+    assert.equal(result.decision, 'RAG_KNOWLEDGE_GAP', question);
+    assert.doesNotMatch(result.replyText, /七免两低/);
     assert.deepEqual(result.sourceReferences, []);
   }
+  const asked = formalRagReplyResult(response, { question: '社区有哪些政策？', context: [{ role: 'ASSISTANT', text: related.replyText }] });
+  assert.equal(asked.decision, 'RAG_KNOWLEDGE_GAP', '同一方向不重复追问');
 });
 
 test('宽泛但有意义的业务与学习咨询默认在当前知识范围检索', () => {

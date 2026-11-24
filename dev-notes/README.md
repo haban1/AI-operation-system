@@ -1,5 +1,7 @@
 # 开发交接入口
 
+2026-11-23（晚）：知识问答低置信度回复与转人工链路优化（P0–P2）见[本次记录](changes/20261123-reply-handoff-optimization.md)、[ADR 0003](decisions/0003-low-confidence-reply-orchestration.md)与[ADR 0004](decisions/0004-handoff-conversation-lifecycle.md)。分支 `feat/reply-handoff-optimization`，本地验证通过，未部署、未真实收发验收。
+
 2026-11-23：最新净化源码交付涵盖第三套可复用混剪模板、发布与素材流转、互动采集/提醒、知识问答及微信接入。接手时先读[本次开发记录](changes/20261123-source-release.md)，不要根据旧测试或远端提交推断正式平台就绪。
 
 2026-11-12 晚的最新 main/本机集成、LAN混剪修复与重启见[接续记录](changes/20261112-main-local-integration.md)，完整验证和回退见[集成记录](../docs/changes/2026-11-12-main-local-integration.md)。

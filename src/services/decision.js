@@ -3,7 +3,7 @@ import { isExplicitHumanRequest } from './conversation-intent.js';
 
 const benignPrivacyPolicyQuestion = /(?:提交|提供|收集|填写)?的?(?:隐私|个人信息).{0,12}(?:会不会|会|是否|能否|怎么|如何|怎样)?(?:被)?(?:保密|保护|保存|使用|删除)/;
 export const BUSINESS_RISK_KEYWORDS = Object.freeze({
-  SENSITIVE: Object.freeze(['敏感词', '政治敏感', '涉政', '暴力', '色情', '毒品', '赌博', '自杀', '恐怖']),
+  SENSITIVE: Object.freeze(['敏感词', '政治敏感', '涉政', '暴力', '色情', '毒品', '赌博', '自杀', '恐怖主义', '恐怖袭击', '恐怖分子', '恐袭']),
   COMPLAINT: Object.freeze(['投诉', '举报', '曝光', '差评', '维权']),
   DISPUTE: Object.freeze(['纠纷', '争议', '冲突', '赔偿', '退款', '责任认定']),
   PRIVACY: Object.freeze(['身份证', '手机号', '住址', '隐私', '个人信息', '病历', '银行卡']),
